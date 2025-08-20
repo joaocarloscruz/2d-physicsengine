@@ -1,0 +1,32 @@
+# Build directories
+/build/
+/bin/
+/out/
+
+# Object files and static libraries
+*.o
+*.obj
+*.lib
+*.a
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Visual Studio files (if you use it)
+.vs/
+*.vcxproj*
+*.user
+*.suo
+
+# VS Code settings and workspace
+.vscode/
+
+# MacOS files
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
