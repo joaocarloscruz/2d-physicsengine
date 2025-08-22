@@ -26,7 +26,25 @@ public:
     void ApplyForce(const Vector2& f);
     void ApplyTorque(float t);
     void Integrate(float deltaTime);
-    
+
+    // getters
+
+    float GetMass() const;
+    float GetInertia() const;
+    Vector2 GetPosition() const;
+    float GetOrientation() const;
+    Vector2 GetVelocity() const;
+    float GetAngularVelocity() const;
+    Vector2 GetForce() const;
+    float GetTorque() const;
+
+    // setters
+
+    void SetVelocity(const Vector2& v);
+    void SetPosition(const Vector2& p);
+    void SetMass(float m);
+    Vector2 GetAcceleration() const;
+
 };
 
 #endif // RIGIDBODY_H
