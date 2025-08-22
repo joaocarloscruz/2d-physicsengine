@@ -1,8 +1,8 @@
 #ifndef SHAPE_H
 #define SHAPE_H
 
-#define M_PI 3.14159265358979323846
 
+#include <cmath>
 enum class ShapeType {
     CIRCLE,
     RECTANGLE,
@@ -52,16 +52,16 @@ public:
 
 class Triangle : public Shape {
 public:
-    float height, base;
+    float base, height;
 
-    Triangle(float height, float base) : Shape(ShapeType::TRIANGLE), height(height), base(base) {}
+    Triangle(float base, float height) : Shape(ShapeType::TRIANGLE), base(base), height(height) {}
 
     float GetArea() const override { // 0.5 * b * h
         return 0.5f * base * height;
     }
 
-    float GetInertia(float mass) const override { // m b h^2 / 12
-        return (mass * base * height * height) / 12.0f;
+    float GetInertia(float mass) const override { // m (b^2 / 24 + h^2 / 18)
+        return mass * ((base * base) / 24.0f + (height * height) / 18.0f);
     }
 };
 
