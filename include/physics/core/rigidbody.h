@@ -31,6 +31,8 @@ public:
 
     float GetMass() const;
     float GetInertia() const;
+    float GetInverseMass() const;
+    float GetInverseInertia() const;
     Vector2 GetPosition() const;
     float GetOrientation() const;
     Vector2 GetVelocity() const;

@@ -25,6 +25,7 @@ void RigidBody::ApplyTorque(float t) {
 }
 
 void RigidBody::Integrate(float deltaTime) {
+    //TO-DO : update to Verlet integration
     // Update linear velocity
     Vector2 acceleration = force * inverseMass;
     velocity = velocity + acceleration * deltaTime;
@@ -71,6 +72,14 @@ float RigidBody::GetMass() const {
 
 float RigidBody::GetInertia() const {
     return inertia;
+}
+
+float RigidBody::GetInverseMass() const {
+    return inverseMass;
+}
+
+float RigidBody::GetInverseInertia() const {
+    return inverseInertia;
 }
 
 Vector2 RigidBody::GetPosition() const {
