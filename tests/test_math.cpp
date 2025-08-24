@@ -1,6 +1,6 @@
 #include "catch_amalgamated.hpp"
-#include "../../include/physics/math/vector2.h"
-#include "../../include/physics/math/matrix2x2.h"
+#include "../include/physics/math/vector2.h"
+#include "../include/physics/math/matrix2x2.h"
 
 using namespace Catch;
 

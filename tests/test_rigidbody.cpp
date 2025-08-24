@@ -1,6 +1,6 @@
 #include "catch_amalgamated.hpp"
-#include "../../include/physics/core/shape.h"
-#include "../../include/physics/core/rigidbody.h"
+#include "../include/physics/core/shape.h"
+#include "../include/physics/core/rigidbody.h"
 #include <cmath>
 
 using namespace Catch;
