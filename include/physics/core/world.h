@@ -2,27 +2,33 @@
 #define WORLD_H
 
 #include <vector>
+#include <memory> // For std::unique_ptr
 #include "rigidbody.h"
-#include "../math/vector2.h"
+#include "force_generator.h"
+
+// A structure to link a generator to a body
+struct ForceRegistration {
+    RigidBody* body;
+    std::unique_ptr<IForceGenerator> generator;
+};
 
 class World {
 public:
     World();
-    ~World(); 
+    ~World();
 
     void addBody(RigidBody* body);
-    void removeBody(RigidBody* body); 
+    void removeBody(RigidBody* body);
+
+    void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
+
     void step(float deltaTime);
-
-    // Gravity accessors
-    void setGravity(const Vector2& g);
-    Vector2 getGravity() const;
-
+    
     const std::vector<RigidBody*>& getBodies() const;
 
 private:
     std::vector<RigidBody*> bodies;
-    Vector2 gravity;
+    std::vector<ForceRegistration> forceRegistry; 
 };
 
 #endif // WORLD_H
