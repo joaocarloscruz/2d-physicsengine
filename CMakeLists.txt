@@ -29,6 +29,7 @@ add_executable(run_tests
     ${TESTS_SRC_DIR}/main_tests.cpp
     ${TESTS_SRC_DIR}/test_math.cpp
     ${TESTS_SRC_DIR}/test_rigidbody.cpp
+    ${TESTS_SRC_DIR}/test_world.cpp
     ${TESTS_SRC_DIR}/catch_amalgamated.cpp
 )
 

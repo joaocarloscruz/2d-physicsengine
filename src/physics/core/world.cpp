@@ -1,4 +1,4 @@
-#include "../../include/physics/core/world.h"
+#include "../include/physics/core/world.h"
 #include <utility>   // For std::move
 #include <algorithm> // For std::remove
 
