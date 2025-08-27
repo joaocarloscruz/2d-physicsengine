@@ -9,3 +9,7 @@ void Gravity::applyForce(RigidBody* body) {
 
     body->ApplyForce(gravity * body->GetMass());
 }
+
+void Gravity::setGravity(const Vector2& new_gravity) {
+    gravity = new_gravity;
+}

@@ -12,6 +12,8 @@ public:
     Gravity(const Vector2& gravity);
 
     void applyForce(RigidBody* body) override;
+
+    void setGravity(const Vector2& new_gravity);
 };
 
 #endif // GRAVITY_H
