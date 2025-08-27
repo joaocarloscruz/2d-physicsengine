@@ -3,21 +3,9 @@
 #include "../include/physics/core/rigidbody.h"
 #include "../include/physics/core/shape.h"
 #include "../include/physics/math/vector2.h"
-#include "../include/physics/core/force_generator.h"
+#include "../include/physics/core/forces/gravity.h"
 
 using namespace Catch;
-
-class GravityGenerator : public IForceGenerator {
-public:
-    GravityGenerator(const Vector2& gravity) : gravity(gravity) {}
-
-    void applyForce(RigidBody* body) override {
-        body->ApplyForce(gravity * body->GetMass());
-    }
-
-private:
-    Vector2 gravity;
-};
 
 TEST_CASE("World operations are correct", "[World]") {
     World world;
@@ -48,7 +36,7 @@ TEST_CASE("World operations are correct", "[World]") {
         RigidBody body(&circle, 1.0f, Vector2(0.0f, 0.0f));
         world.addBody(&body);
 
-        auto gravity = std::make_unique<GravityGenerator>(Vector2(0.0f, -9.8f));
+        auto gravity = std::make_unique<Gravity>(Vector2(0.0f, -9.8f));
         world.addForce(&body, std::move(gravity));
 
         world.step(0.1f);
