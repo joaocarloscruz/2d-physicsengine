@@ -41,3 +41,51 @@ add_executable(run_tests
 target_link_libraries(run_tests
     PhysicsEngine
 )
+
+# --- Installation Rules ---
+
+include(GNUInstallDirs)
+
+# Install the library target
+install(TARGETS PhysicsEngine
+    EXPORT PhysicsEngineTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# Install all the public headers
+install(FILES
+    include/physics_engine.h
+    include/physics/core/force_generator.h
+    include/physics/core/rigidbody.h
+    include/physics/core/shape.h
+    include/physics/core/world.h
+    include/physics/core/forces/gravity.h
+    include/physics/math/matrix2x2.h
+    include/physics/math/vector2.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/PhysicsEngine
+)
+
+# --- CMake Package Generation ---
+
+include(CMakePackageConfigHelpers)
+
+# Generate the package configuration file
+configure_package_config_file(
+    PhysicsEngineConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine
+)
+
+# Install the export set
+install(EXPORT PhysicsEngineTargets
+    FILE PhysicsEngineTargets.cmake
+    NAMESPACE PhysicsEngine::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine
+)
+
+# Install the generated package configuration file
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine
+)
