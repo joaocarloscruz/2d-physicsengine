@@ -6,11 +6,6 @@ World::World() {
 }
 
 World::~World() {
-
-    for (auto& body : bodies) {
-        delete body;
-    }
-    bodies.clear();
 }
 
 void World::addBody(RigidBody* body) {

@@ -22,6 +22,7 @@ add_library(PhysicsEngine STATIC
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
+    ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
 )
 
 # --- Test Executable
@@ -30,6 +31,7 @@ add_executable(run_tests
     ${TESTS_SRC_DIR}/test_math.cpp
     ${TESTS_SRC_DIR}/test_rigidbody.cpp
     ${TESTS_SRC_DIR}/test_world.cpp
+    ${TESTS_SRC_DIR}/test_forces.cpp
     ${TESTS_SRC_DIR}/catch_amalgamated.cpp
 )
 
