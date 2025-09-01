@@ -6,29 +6,33 @@
 #include "rigidbody.h"
 #include "force_generator.h"
 
-// A structure to link a generator to a body
-struct ForceRegistration {
-    RigidBody* body;
-    std::unique_ptr<IForceGenerator> generator;
-};
+namespace PhysicsEngine {
+    // A structure to link a generator to a body
+    struct ForceRegistration {
+        RigidBody* body;
+        std::unique_ptr<IForceGenerator> generator;
+    };
 
-class World {
-public:
-    World();
-    ~World();
+    class World {
+    public:
+        World();
+        ~World();
 
-    void addBody(RigidBody* body);
-    void removeBody(RigidBody* body);
+        void addBody(RigidBody* body);
+        void removeBody(RigidBody* body);
 
-    void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
+        void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
+        void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
 
-    void step(float deltaTime);
-    
-    const std::vector<RigidBody*>& getBodies() const;
+        void step(float deltaTime);
+        
+        const std::vector<RigidBody*>& getBodies() const;
 
-private:
-    std::vector<RigidBody*> bodies;
-    std::vector<ForceRegistration> forceRegistry; 
-};
+    private:
+        std::vector<RigidBody*> bodies;
+        std::vector<ForceRegistration> forceRegistry;
+        std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;
+    };
+}
 
 #endif // WORLD_H

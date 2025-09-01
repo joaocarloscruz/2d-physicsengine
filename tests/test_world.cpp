@@ -6,6 +6,7 @@
 #include "../include/physics/core/forces/gravity.h"
 
 using namespace Catch;
+using namespace PhysicsEngine;
 
 TEST_CASE("World operations are correct", "[World]") {
     World world;
@@ -37,7 +38,7 @@ TEST_CASE("World operations are correct", "[World]") {
         world.addBody(&body);
 
         auto gravity = std::make_unique<Gravity>(Vector2(0.0f, -9.8f));
-        world.addForce(&body, std::move(gravity));
+        world.addUniversalForce(std::move(gravity));
 
         world.step(0.1f);
 

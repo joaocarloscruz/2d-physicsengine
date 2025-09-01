@@ -4,16 +4,18 @@
 #include "../force_generator.h"
 #include "../../math/vector2.h"
 
-class Gravity : public IForceGenerator {
-private:
-    Vector2 gravity;
+namespace PhysicsEngine {
+    class Gravity : public IForceGenerator {
+    private:
+        Vector2 gravity;
 
-public:
-    Gravity(const Vector2& gravity);
+    public:
+        Gravity(const Vector2& gravity);
 
-    void applyForce(RigidBody* body) override;
+        void applyForce(RigidBody* body) override;
 
-    void setGravity(const Vector2& new_gravity);
-};
+        void setGravity(const Vector2& new_gravity);
+    };
+}
 
 #endif // GRAVITY_H

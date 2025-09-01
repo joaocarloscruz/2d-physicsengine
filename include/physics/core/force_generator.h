@@ -3,12 +3,14 @@
 
 #include "rigidbody.h"
 
-// This is the interface that all force generators will implement.
-class IForceGenerator {
-public:
-    virtual ~IForceGenerator() = default;
+namespace PhysicsEngine {
+    // This is the interface that all force generators will implement.
+    class IForceGenerator {
+    public:
+        virtual ~IForceGenerator() = default;
 
-    virtual void applyForce(RigidBody* body) = 0;
-};
+        virtual void applyForce(RigidBody* body) = 0;
+    };
+}
 
 #endif // FORCE_GENERATOR_H

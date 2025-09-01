@@ -3,6 +3,7 @@
 #include "../include/physics/math/matrix2x2.h"
 
 using namespace Catch;
+using namespace PhysicsEngine;
 
 TEST_CASE("Vector2 operations are correct", "[Vector2]") {
     Vector2 v1(2.0f, 3.0f);

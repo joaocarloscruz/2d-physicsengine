@@ -8,19 +8,22 @@
 #include "physics/core/shape.h"
 #include "physics/core/force_generator.h"
 
-class PhysicsEngine {
-public:
-    PhysicsEngine();
-    void step(float deltaTime);
+namespace PhysicsEngine {
+    class PhysicsEngine {
+    public:
+        PhysicsEngine();
+        void step(float deltaTime);
 
-    void addBody(RigidBody* body);
-    void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
-    const std::vector<RigidBody*>& getBodies() const;
+        void addBody(RigidBody* body);
+        void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
+        void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
+        const std::vector<RigidBody*>& getBodies() const;
 
-private:
-    World world;
-    std::vector<std::unique_ptr<Shape>> owned_shapes;
-    std::vector<std::unique_ptr<RigidBody>> owned_bodies;
-};
+    private:
+        World world;
+        std::vector<std::unique_ptr<Shape>> owned_shapes;
+        std::vector<std::unique_ptr<RigidBody>> owned_bodies;
+    };
+}
 
 #endif // PHYSICS_ENGINE_H

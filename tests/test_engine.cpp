@@ -2,15 +2,17 @@
 #include "../include/physics_engine.h"
 #include "../include/physics/core/forces/gravity.h"
 
+using namespace PhysicsEngine;
+
 TEST_CASE("Engine Simulation", "[Engine]") {
     SECTION("A body with gravity applied falls correctly") {
-        PhysicsEngine engine;
+        PhysicsEngine::PhysicsEngine engine;
 
         Circle circle(1.0f);
         RigidBody body(&circle, 1.0f, {0, 10});
 
         engine.addBody(&body);
-        engine.addForce(&body, std::make_unique<Gravity>(Vector2(0.0f, -9.8f)));
+        engine.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.8f)));
 
         const int max_frames = 500;
         const float dt = 0.016f;

@@ -4,6 +4,8 @@
 #include "../include/physics/math/vector2.h"
 #include "../include/physics/core/shape.h"
 
+using namespace PhysicsEngine;
+
 TEST_CASE("Gravity Force", "[forces]") {
     Circle circle(1.0f);
     RigidBody body(&circle, 1.0f, {0, 0});

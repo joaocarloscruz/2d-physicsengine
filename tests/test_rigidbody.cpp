@@ -4,6 +4,7 @@
 #include <cmath>
 
 using namespace Catch;
+using namespace PhysicsEngine;
 
 TEST_CASE("Shape operations are correct", "[Shape]") {
     Circle circle(5.0f);
