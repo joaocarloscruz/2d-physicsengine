@@ -49,7 +49,9 @@ namespace PhysicsEngine {
 
         // Integrate all bodies
         for (RigidBody* body : bodies) {
-            body->Integrate(deltaTime);
+            if (!body->IsStatic()) {
+                body->Integrate(deltaTime);
+            }
         }
     }
 

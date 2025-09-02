@@ -31,6 +31,13 @@ TEST_CASE("World operations are correct", "[World]") {
 
         REQUIRE(body.GetPosition().x == Approx(0.1f));
         REQUIRE(body.GetPosition().y == Approx(0.2f));
+
+        RigidBody staticBody(&circle, 1.0f, Vector2(5.0f, 5.0f), true);
+        world.addBody(&staticBody);
+        world.step(0.1f);
+
+        REQUIRE(staticBody.GetPosition().x == Approx(5.0f));
+        REQUIRE(staticBody.GetPosition().y == Approx(5.0f));
     }
 
     SECTION("Force") {

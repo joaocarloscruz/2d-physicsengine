@@ -4,17 +4,24 @@
 
 namespace PhysicsEngine {
 
-    RigidBody::RigidBody(Shape* s, float density, const Vector2& pos) : shape(s), position(pos), orientation(0.0f), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f) {
+    RigidBody::RigidBody(Shape* s, float density, const Vector2& pos, bool isStatic) : shape(s), position(pos), orientation(0.0f), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
         // Initialize mass and inertia based on the shape and density
         if (!shape) {
             throw std::invalid_argument("RigidBody requires a valid Shape.");
         }
-        float area = shape->GetArea();
-        mass = density * area;
-        inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
+        if (isStatic) {
+            mass = 0.0f;
+            inverseMass = 0.0f;
+            inertia = 0.0f;
+            inverseInertia = 0.0f;
+        } else {
+            float area = shape->GetArea();
+            mass = density * area;
+            inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
 
-        inertia = shape->GetInertia(mass);
-        inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
+            inertia = shape->GetInertia(mass);
+            inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
+        }
 
     }
 
@@ -27,6 +34,7 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::Integrate(float deltaTime) {
+        if (isStatic) return;
         //TO-DO : update to Verlet integration
         // Update linear velocity
         Vector2 acceleration = force * inverseMass;
@@ -106,6 +114,10 @@ namespace PhysicsEngine {
 
     float RigidBody::GetTorque() const {
         return torque;
+    }
+
+    bool RigidBody::IsStatic() const {
+        return isStatic;
     }
 
 }

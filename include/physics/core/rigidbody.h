@@ -22,7 +22,7 @@ namespace PhysicsEngine {
         float inertia;
         float inverseInertia; //1/inertia, used for calculations
 
-        RigidBody(Shape* s, float density, const Vector2& pos = {0, 0});
+        RigidBody(Shape* s, float density, const Vector2& pos = {0, 0}, bool isStatic = false);
 
         void ApplyForce(const Vector2& f);
         void ApplyTorque(float t);
@@ -41,6 +41,8 @@ namespace PhysicsEngine {
         Vector2 GetForce() const;
         float GetTorque() const;
 
+        bool IsStatic() const;
+
         // setters
 
         void SetVelocity(const Vector2& v);
@@ -48,6 +50,8 @@ namespace PhysicsEngine {
         void SetMass(float m);
         Vector2 GetAcceleration() const;
 
+    private:
+        bool isStatic;
     };
 }
 

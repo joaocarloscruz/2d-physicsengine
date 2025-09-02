@@ -105,3 +105,28 @@ TEST_CASE("RigidBody operations are correct", "[RigidBody]") {
         REQUIRE(rb.GetAngularVelocity() == Approx(0.0f));
     }
 }
+
+TEST_CASE("Static RigidBody", "[RigidBody]") {
+    Circle circle(5.0f);
+    RigidBody staticBody(&circle, 1.0f, Vector2(0.0f, 0.0f), true);
+
+    SECTION("Static body has zero mass and inverse mass") {
+        REQUIRE(staticBody.GetMass() == 0.0f);
+        REQUIRE(staticBody.GetInverseMass() == 0.0f);
+        REQUIRE(staticBody.GetInertia() == 0.0f);
+        REQUIRE(staticBody.GetInverseInertia() == 0.0f);
+    }
+
+    SECTION("Static body does not move") {
+        staticBody.ApplyForce(Vector2(10.0f, 10.0f));
+        staticBody.ApplyTorque(5.0f);
+        staticBody.Integrate(0.1f);
+
+        REQUIRE(staticBody.GetPosition().x == 0.0f);
+        REQUIRE(staticBody.GetPosition().y == 0.0f);
+        REQUIRE(staticBody.GetVelocity().x == 0.0f);
+        REQUIRE(staticBody.GetVelocity().y == 0.0f);
+        REQUIRE(staticBody.GetOrientation() == 0.0f);
+        REQUIRE(staticBody.GetAngularVelocity() == 0.0f);
+    }
+}
