@@ -47,6 +47,27 @@ namespace PhysicsEngine {
             }
         }
 
+        // TO-DO: improve this approach
+        for (size_t i = 0; i < bodies.size(); ++i) {
+            for (size_t j = i + 1; j < bodies.size(); ++j) {
+                RigidBody* bodyA = bodies[i];
+                RigidBody* bodyB = bodies[j];
+
+                if (bodyA->IsStatic() && bodyB->IsStatic()) {
+                    continue;
+                }
+
+                AABB aabbA = bodyA->GetAABB();
+                AABB aabbB = bodyB->GetAABB();
+
+                if (aabbA.IsOverlapping(aabbB)) {
+                    potentialCollisions.push_back({bodyA, bodyB});
+                }
+            }
+        }
+        
+        //TO-DO: narrow phase.
+
         // Integrate all bodies
         for (RigidBody* body : bodies) {
             if (!body->IsStatic()) {
@@ -57,6 +78,18 @@ namespace PhysicsEngine {
 
     const std::vector<RigidBody*>& World::getBodies() const {
         return bodies;
+    }
+
+    const std::vector<std::pair<RigidBody*, RigidBody*>>& World::getPotentialCollisions() const {
+        return potentialCollisions;
+    }
+
+    const std::vector<ForceRegistration>& World::getForceRegistry() const {
+        return forceRegistry;
+    }
+
+    const std::vector<std::unique_ptr<IForceGenerator>>& World::getUniversalForceRegistry() const {
+        return universalForceRegistry;
     }
 
 }

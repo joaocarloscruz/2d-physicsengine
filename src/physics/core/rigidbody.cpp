@@ -47,6 +47,12 @@ namespace PhysicsEngine {
         // Update position and orientation
         position = position + velocity * deltaTime;
         orientation += angularVelocity * deltaTime;
+        while (orientation > M_PI) {
+            orientation -= 2.0f * M_PI;
+        }
+        while (orientation < -M_PI) {
+            orientation += 2.0f * M_PI;
+        }
 
         // Reset forces
         force = Vector2(0.0f, 0.0f);
@@ -75,6 +81,16 @@ namespace PhysicsEngine {
     }
 
     // ----- Getters ---
+
+    AABB RigidBody::GetAABB() const {
+        if (shape->type == ShapeType::CIRCLE) {
+            Circle* circle = static_cast<Circle*>(shape);
+            Vector2 min = position - Vector2(circle->GetRadius(), circle->GetRadius());
+            Vector2 max = position + Vector2(circle->GetRadius(), circle->GetRadius());
+            return { min, max };
+        }
+        return { PhysicsEngine::Vector2(0, 0), PhysicsEngine::Vector2(0, 0) };
+    }
 
     float RigidBody::GetMass() const {
         return mass;

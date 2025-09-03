@@ -3,6 +3,7 @@
 
 #include "shape.h"
 #include "../math/Vector2.h"
+#include "../core/collisions/broad_phase/aabb.h"
 
 namespace PhysicsEngine {
     class RigidBody {
@@ -40,6 +41,8 @@ namespace PhysicsEngine {
         float GetAngularVelocity() const;
         Vector2 GetForce() const;
         float GetTorque() const;
+        Vector2 GetAcceleration() const;
+        AABB GetAABB() const;
 
         bool IsStatic() const;
 
@@ -48,7 +51,7 @@ namespace PhysicsEngine {
         void SetVelocity(const Vector2& v);
         void SetPosition(const Vector2& p);
         void SetMass(float m);
-        Vector2 GetAcceleration() const;
+        
 
     private:
         bool isStatic;

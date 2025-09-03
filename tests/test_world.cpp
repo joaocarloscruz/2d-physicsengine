@@ -52,4 +52,46 @@ TEST_CASE("World operations are correct", "[World]") {
         REQUIRE(body.GetVelocity().y == Approx(-0.98f));
         REQUIRE(body.GetPosition().y == Approx(-0.098f));
     }
+
+    SECTION("Broad Phase"){
+        RigidBody bodyA(&circle, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&circle, 1.0f, Vector2(1.5f, 0.0f));
+        RigidBody bodyC(&circle, 1.0f, Vector2(5.0f, 5.0f));
+
+        world.addBody(&bodyA);
+        world.addBody(&bodyB);
+        world.addBody(&bodyC);
+
+        AABB aabbA = bodyA.GetAABB();
+        AABB aabbB = bodyB.GetAABB();
+        AABB aabbC = bodyC.GetAABB();
+
+        REQUIRE(aabbA.IsOverlapping(aabbB) == true);
+        REQUIRE(aabbA.IsOverlapping(aabbC) == false);
+        REQUIRE(aabbB.IsOverlapping(aabbC) == false);
+    }
+
+    SECTION("Broad Phase finds correct pairs in step()") {
+        World world;
+        Circle circleA(1.0f);
+        Circle circleB(1.0f);
+        Circle circleC(1.0f);
+
+        RigidBody bodyA(&circleA, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&circleB, 1.0f, Vector2(1.5f, 0.0f));
+        RigidBody bodyC(&circleC, 1.0f, Vector2(5.0f, 5.0f));
+
+        world.addBody(&bodyA);
+        world.addBody(&bodyB);
+        world.addBody(&bodyC);
+
+        world.step(0.0f); // delta time at 0 so bodies are static.
+
+        
+        REQUIRE(world.getPotentialCollisions().size() == 1);
+        
+        const auto& pairs = world.getPotentialCollisions();
+        bool correctPair = (pairs[0].first == &bodyA && pairs[0].second == &bodyB) || (pairs[0].first == &bodyB && pairs[0].second == &bodyA);
+        REQUIRE(correctPair);
+    }
 }

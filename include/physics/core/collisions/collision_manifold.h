@@ -5,10 +5,10 @@
 #include "../../math/Vector2.h"
 
 struct CollisionManifold {
-    RigidBody* A;
-    RigidBody* B;
+    PhysicsEngine::RigidBody* A;
+    PhysicsEngine::RigidBody* B;
     bool hasCollision = false;
-    Vector2 normal;
+    PhysicsEngine::Vector2 normal;
     float penetration;
 };
 

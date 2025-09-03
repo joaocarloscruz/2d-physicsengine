@@ -5,6 +5,7 @@
 #include <memory> // For std::unique_ptr
 #include "rigidbody.h"
 #include "force_generator.h"
+#include "collisions/broad_phase/aabb.h"
 
 namespace PhysicsEngine {
     // A structure to link a generator to a body
@@ -27,11 +28,15 @@ namespace PhysicsEngine {
         void step(float deltaTime);
         
         const std::vector<RigidBody*>& getBodies() const;
+        const std::vector<ForceRegistration>& getForceRegistry() const;
+        const std::vector<std::unique_ptr<IForceGenerator>>& getUniversalForceRegistry() const;
+        const std::vector<std::pair<RigidBody*, RigidBody*>>& getPotentialCollisions() const;
 
     private:
         std::vector<RigidBody*> bodies;
         std::vector<ForceRegistration> forceRegistry;
         std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;
+        std::vector<std::pair<RigidBody*, RigidBody*>> potentialCollisions;
     };
 }
 
