@@ -17,13 +17,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- PhysicsEngine Library
-add_library(PhysicsEngine STATIC
+add_library(PhysicsEngine SHARED
     src/physics_engine.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/collision_resolver.cpp
+)
+
+set_target_properties(PhysicsEngine PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 # --- Test Executable
@@ -34,6 +41,7 @@ add_executable(run_tests
     ${TESTS_SRC_DIR}/test_world.cpp
     ${TESTS_SRC_DIR}/test_forces.cpp
     ${TESTS_SRC_DIR}/test_engine.cpp
+    ${TESTS_SRC_DIR}/test_collision.cpp
     ${TESTS_SRC_DIR}/catch_amalgamated.cpp
 )
 
