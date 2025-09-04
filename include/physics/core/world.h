@@ -6,6 +6,9 @@
 #include "rigidbody.h"
 #include "force_generator.h"
 #include "collisions/broad_phase/aabb.h"
+#include "collisions/collision_manifold.h"
+#include "collisions/collisions_dispatcher.h"
+#include "collisions/collision_resolver.h"
 
 namespace PhysicsEngine {
     // A structure to link a generator to a body

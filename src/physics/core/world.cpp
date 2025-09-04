@@ -1,4 +1,5 @@
 #include "physics/core/world.h"
+#include "physics/core/collisions/collision_resolver.h"
 #include <utility>   // For std::move
 #include <algorithm> // For std::remove
 
@@ -66,7 +67,13 @@ namespace PhysicsEngine {
             }
         }
         
-        //TO-DO: narrow phase.
+        
+        for (const auto& pair : potentialCollisions) {
+            CollisionManifold manifold = CheckCollision(pair.first, pair.second);
+            if (manifold.hasCollision) {
+                CollisionResolver::Resolve(manifold);
+            }
+        }
 
         // Integrate all bodies
         for (RigidBody* body : bodies) {
