@@ -36,6 +36,8 @@ namespace PhysicsEngine {
     }
 
     void World::step(float deltaTime) {
+        //potentialCollisions.clear();
+
         // Apply all registered forces from the registry
         for (auto& registration : forceRegistry) {
             registration.generator->applyForce(registration.body);
@@ -62,6 +64,9 @@ namespace PhysicsEngine {
                 AABB aabbB = bodyB->GetAABB();
 
                 if (aabbA.IsOverlapping(aabbB)) {
+                    // set velocities to -10 and 10
+                    bodyA->SetVelocity(Vector2(-10.0f, 0.0f));
+                    bodyB->SetVelocity(Vector2(10.0f, 0.0f));
                     potentialCollisions.push_back({bodyA, bodyB});
                 }
             }

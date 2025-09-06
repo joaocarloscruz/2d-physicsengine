@@ -1,4 +1,7 @@
 #include "physics/core/rigidbody.h"
+#include "physics/core/shape.h"
+#include "physics/math/vector2.h"
+#include "physics/math/matrix2x2.h"
 #include <stdexcept>
 #include <cmath>
 
@@ -87,6 +90,29 @@ namespace PhysicsEngine {
             Circle* circle = static_cast<Circle*>(shape);
             Vector2 min = position - Vector2(circle->GetRadius(), circle->GetRadius());
             Vector2 max = position + Vector2(circle->GetRadius(), circle->GetRadius());
+            return { min, max };
+        } else if (shape->type == ShapeType::RECTANGLE) {
+            Rectangle* rect = static_cast<Rectangle*>(shape);
+            float halfWidth = rect->GetWidth() / 2.0f;
+            float halfHeight = rect->GetHeight() / 2.0f;
+
+            Matrix2x2 rot = Matrix2x2::rotation(orientation);
+            Vector2 vertices[4];
+            vertices[0] = position + rot * Vector2(-halfWidth, -halfHeight);
+            vertices[1] = position + rot * Vector2( halfWidth, -halfHeight);
+            vertices[2] = position + rot * Vector2( halfWidth,  halfHeight);
+            vertices[3] = position + rot * Vector2(-halfWidth,  halfHeight);
+
+            Vector2 min = vertices[0];
+            Vector2 max = vertices[0];
+
+            for (int i = 1; i < 4; ++i) {
+                if (vertices[i].x < min.x) min.x = vertices[i].x;
+                if (vertices[i].y < min.y) min.y = vertices[i].y;
+                if (vertices[i].x > max.x) max.x = vertices[i].x;
+                if (vertices[i].y > max.y) max.y = vertices[i].y;
+            }
+
             return { min, max };
         }
         return { PhysicsEngine::Vector2(0, 0), PhysicsEngine::Vector2(0, 0) };

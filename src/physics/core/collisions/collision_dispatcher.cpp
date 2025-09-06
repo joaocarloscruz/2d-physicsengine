@@ -1,5 +1,6 @@
 #include "physics/core/collisions/collisions_dispatcher.h"
 #include "physics/core/collisions/narrow_phase/collision_circle_circle.h"
+#include "physics/core/collisions/narrow_phase/collision_rectangle_rectangle.h"
 #include "physics/core/shape.h"
 
 #include <utility>
@@ -19,7 +20,10 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CheckCollision(RigidBody* a, Rig
         return CollisionCircleCircle(a, b);
     }
     if (a->shape->type == ShapeType::RECTANGLE && b->shape->type == ShapeType::RECTANGLE) {
-        // TODO: Call rectangle-rectangle collision function
+        // set velocities to -10 and 10
+        a->SetVelocity(Vector2(-10.0f, 0.0f));
+        b->SetVelocity(Vector2(10.0f, 0.0f));
+        return CollisionRectangleRectangle(a, b);
     }
     if (a->shape->type == ShapeType::CIRCLE && b->shape->type == ShapeType::RECTANGLE) {
         // TODO: Call circle-rectangle collision function

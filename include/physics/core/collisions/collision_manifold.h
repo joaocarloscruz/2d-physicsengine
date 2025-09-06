@@ -11,6 +11,7 @@ namespace PhysicsEngine {
         bool hasCollision = false;
         Vector2 normal;
         float penetration;
+        Vector2 contactPoint;
     };
 }
 
