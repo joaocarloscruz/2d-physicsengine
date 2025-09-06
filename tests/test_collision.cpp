@@ -33,3 +33,30 @@ TEST_CASE("Circle-Circle Collision", "[collision]") {
         REQUIRE(bodyB.GetPosition().x > bodyA.GetPosition().x);
     }
 }
+
+TEST_CASE("Rectangle-Rectangle Collision", "[collision]") {
+    SECTION("Two rectangles colliding head-on") {
+        World world;
+        Rectangle rectangleShape(1.0f, 1.0f);
+
+        RigidBody bodyA(&rectangleShape, 1.0f, Vector2(0.0f, 0.0f));
+        bodyA.SetVelocity(Vector2(1.0f, 0.0f));
+
+        RigidBody bodyB(&rectangleShape, 1.0f, Vector2(0.5f, 0.0f));
+        bodyB.SetVelocity(Vector2(-1.0f, 0.0f));
+
+        world.addBody(&bodyA);
+        world.addBody(&bodyB);
+
+        // Let the simulation run for a short time
+        world.step(0.1f);
+
+        // Assertions to check the result of the collision
+        // For a head-on collision of equal mass, they should reverse velocity
+        REQUIRE(bodyA.GetVelocity().x < 0.0f);
+        REQUIRE(bodyB.GetVelocity().x > 0.0f);
+
+        // They should also have moved apart
+        REQUIRE(bodyB.GetPosition().x > bodyA.GetPosition().x);
+    }
+}

@@ -94,4 +94,34 @@ TEST_CASE("World operations are correct", "[World]") {
         bool correctPair = (pairs[0].first == &bodyA && pairs[0].second == &bodyB) || (pairs[0].first == &bodyB && pairs[0].second == &bodyA);
         REQUIRE(correctPair);
     }
+
+    SECTION("Two rectangles overlapping in AABB") {
+        World world;
+        Rectangle rect1(2.0f, 2.0f);
+        Rectangle rect2(2.0f, 2.0f);
+
+        // Create two bodies that should definitely overlap
+        RigidBody bodyA(&rect1, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&rect2, 1.0f, Vector2(1.5f, 0.0f));
+
+        world.addBody(&bodyA);
+        world.addBody(&bodyB);
+
+        // Call step() to trigger the broad phase
+        world.step(0.0f); 
+
+        // Get the potential collisions via your new getter
+        REQUIRE(world.getPotentialCollisions().size() == 1);
+
+        // Verify the pair is correct
+        const auto& pairs = world.getPotentialCollisions();
+        bool correctPairFound = false;
+        if (!pairs.empty()) {
+            if ((pairs[0].first == &bodyA && pairs[0].second == &bodyB) ||
+                (pairs[0].first == &bodyB && pairs[0].second == &bodyA)) {
+                correctPairFound = true;
+            }
+        }
+        REQUIRE(correctPairFound);
+    }
 }
