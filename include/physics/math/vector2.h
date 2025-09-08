@@ -14,6 +14,7 @@ namespace PhysicsEngine {
         Vector2 operator-(const Vector2& other) const;
         Vector2 operator*(float scalar) const;
         Vector2 operator/(float scalar) const;
+        bool operator==(const Vector2& other) const;
 
         float magnitude() const;
         float magnitudeSquared() const;
