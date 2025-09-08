@@ -13,6 +13,9 @@ namespace PhysicsEngine {
         Vector2 velocity; // linear velocity
         float angularVelocity;
 
+        Vector2 previousPosition;
+        float previousOrientation;
+
         Shape* shape;
 
         Vector2 force; // Accumulated force
@@ -51,6 +54,7 @@ namespace PhysicsEngine {
         void SetVelocity(const Vector2& v);
         void SetPosition(const Vector2& p);
         void SetMass(float m);
+        void SetOrientation(float o);
         
 
     private:

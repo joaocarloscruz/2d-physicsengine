@@ -25,6 +25,6 @@ TEST_CASE("Engine Simulation", "[Engine]") {
 
         // This value is the expected result after 500 frames of simulation
         // with dt=0.016 and g=-9.8, as observed from a previous run.
-        REQUIRE(final_pos.y == Catch::Approx(-304.226));
+        REQUIRE(final_pos.y == Catch::Approx(-304.1805));
     }
 }

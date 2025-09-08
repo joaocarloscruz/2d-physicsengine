@@ -7,7 +7,9 @@
 
 namespace PhysicsEngine {
 
-    RigidBody::RigidBody(Shape* s, float density, const Vector2& pos, bool isStatic) : shape(s), position(pos), orientation(0.0f), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
+    RigidBody::RigidBody(Shape* s, float density, const Vector2& pos, bool isStatic) : shape(s), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
+        SetPosition(pos);
+        SetOrientation(0.0f);
         // Initialize mass and inertia based on the shape and density
         if (!shape) {
             throw std::invalid_argument("RigidBody requires a valid Shape.");
@@ -38,24 +40,28 @@ namespace PhysicsEngine {
 
     void RigidBody::Integrate(float deltaTime) {
         if (isStatic) return;
-        //TO-DO : update to Verlet integration
-        // Update linear velocity
+
+        if (position == previousPosition) {
+            previousPosition = position - velocity * deltaTime;
+        }
+
+        // Verlet Integration for linear motion
         Vector2 acceleration = force * inverseMass;
-        velocity = velocity + acceleration * deltaTime;
+        Vector2 tempPosition = position;
+        position = position * 2.0f - previousPosition + acceleration * deltaTime * deltaTime;
+        previousPosition = tempPosition;
+
+        // Update velocity
+        velocity = (position - previousPosition) / deltaTime;
+
+        // Verlet Integration for angular motion
+        float angularAcceleration = torque * inverseInertia;
+        float tempOrientation = orientation;
+        orientation = orientation * 2.0f - previousOrientation + angularAcceleration * deltaTime * deltaTime;
+        previousOrientation = tempOrientation;
 
         // Update angular velocity
-        float angularAcceleration = torque * inverseInertia;
-        angularVelocity += angularAcceleration * deltaTime;
-
-        // Update position and orientation
-        position = position + velocity * deltaTime;
-        orientation += angularVelocity * deltaTime;
-        while (orientation > M_PI) {
-            orientation -= 2.0f * M_PI;
-        }
-        while (orientation < -M_PI) {
-            orientation += 2.0f * M_PI;
-        }
+        angularVelocity = (orientation - previousOrientation) / deltaTime;
 
         // Reset forces
         force = Vector2(0.0f, 0.0f);
@@ -70,6 +76,12 @@ namespace PhysicsEngine {
 
     void RigidBody::SetPosition(const Vector2& p) {
         position = p;
+        previousPosition = p;
+    }
+
+    void RigidBody::SetOrientation(float o) {
+        orientation = o;
+        previousOrientation = o;
     }
 
     void RigidBody::SetMass(float m) {

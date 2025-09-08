@@ -84,6 +84,13 @@ namespace PhysicsEngine {
         for (RigidBody* body : bodies) {
             if (!body->IsStatic()) {
                 body->Integrate(deltaTime);
+
+                while (body->GetOrientation() > M_PI) {
+                    body->SetOrientation(body->GetOrientation() - 2.0f * M_PI);
+                }
+                while (body->GetOrientation() < -M_PI) {
+                    body->SetOrientation(body->GetOrientation() + 2.0f * M_PI);
+                }
             }
         }
     }
