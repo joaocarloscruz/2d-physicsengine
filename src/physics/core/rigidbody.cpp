@@ -41,33 +41,31 @@ namespace PhysicsEngine {
     void RigidBody::Integrate(float deltaTime) {
         if (isStatic) return;
 
-        if (position == previousPosition) {
-            previousPosition = position - velocity * deltaTime;
-        }
+        // --- Velocity Verlet Integration ---
 
-        // Verlet Integration for linear motion
-        Vector2 acceleration = force * inverseMass;
-        Vector2 tempPosition = position;
-        position = position * 2.0f - previousPosition + acceleration * deltaTime * deltaTime;
-        previousPosition = tempPosition;
-
-        // Update velocity
-        velocity = (position - previousPosition) / deltaTime;
-
-        // Verlet Integration for angular motion
+        // 1. Calculate acceleration from forces
+        Vector2 linearAcceleration = force * inverseMass;
         float angularAcceleration = torque * inverseInertia;
-        float tempOrientation = orientation;
-        orientation = orientation * 2.0f - previousOrientation + angularAcceleration * deltaTime * deltaTime;
-        previousOrientation = tempOrientation;
 
-        // Update angular velocity
-        angularVelocity = (orientation - previousOrientation) / deltaTime;
+        // 2. Update position
+        // p(t + dt) = p(t) + v(t) * dt + 0.5 * a(t) * dt^2
+        position = position + velocity * deltaTime + linearAcceleration * (0.5f * deltaTime * deltaTime);
+        orientation = orientation + angularVelocity * deltaTime + angularAcceleration * (0.5f * deltaTime * deltaTime);
 
-        // Reset forces
+        // 3. Calculate new acceleration (if forces were dependent on the new position/orientation)
+        // In this simple model, we assume forces are constant over the timestep, so a(t+dt) = a(t)
+        Vector2 nextLinearAcceleration = force * inverseMass;
+        float nextAngularAcceleration = torque * inverseInertia;
+
+        // 4. Update velocity
+        // v(t + dt) = v(t) + 0.5 * (a(t) + a(t+dt)) * dt
+        velocity = velocity + (linearAcceleration + nextLinearAcceleration) * (0.5f * deltaTime);
+        angularVelocity = angularVelocity + (angularAcceleration + nextAngularAcceleration) * (0.5f * deltaTime);
+
+        // 5. Reset forces and torque for the next frame
         force = Vector2(0.0f, 0.0f);
         torque = 0.0f;
     }
-
     // ---- Setters ----
 
     void RigidBody::SetVelocity(const Vector2& v) {
@@ -76,12 +74,10 @@ namespace PhysicsEngine {
 
     void RigidBody::SetPosition(const Vector2& p) {
         position = p;
-        previousPosition = p;
     }
 
     void RigidBody::SetOrientation(float o) {
         orientation = o;
-        previousOrientation = o;
     }
 
     void RigidBody::SetMass(float m) {
