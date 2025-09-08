@@ -1,5 +1,6 @@
 #include "physics/core/world.h"
 #include "physics/core/collisions/collision_resolver.h"
+#include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include <utility>   // For std::move
 #include <algorithm> // For std::remove
 
@@ -36,7 +37,7 @@ namespace PhysicsEngine {
     }
 
     void World::step(float deltaTime) {
-        //potentialCollisions.clear();
+        potentialCollisions.clear();
 
         // Apply all registered forces from the registry
         for (auto& registration : forceRegistry) {
@@ -50,27 +51,7 @@ namespace PhysicsEngine {
             }
         }
 
-        // TO-DO: improve this approach
-        for (size_t i = 0; i < bodies.size(); ++i) {
-            for (size_t j = i + 1; j < bodies.size(); ++j) {
-                RigidBody* bodyA = bodies[i];
-                RigidBody* bodyB = bodies[j];
-
-                if (bodyA->IsStatic() && bodyB->IsStatic()) {
-                    continue;
-                }
-
-                AABB aabbA = bodyA->GetAABB();
-                AABB aabbB = bodyB->GetAABB();
-
-                if (aabbA.IsOverlapping(aabbB)) {
-                    // set velocities to -10 and 10
-                    bodyA->SetVelocity(Vector2(-10.0f, 0.0f));
-                    bodyB->SetVelocity(Vector2(10.0f, 0.0f));
-                    potentialCollisions.push_back({bodyA, bodyB});
-                }
-            }
-        }
+        potentialCollisions = SweepAndPrune::FindPotentialCollisions(bodies);
         
         
         for (const auto& pair : potentialCollisions) {

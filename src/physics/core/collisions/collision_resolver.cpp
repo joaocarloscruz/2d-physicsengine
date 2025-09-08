@@ -24,12 +24,10 @@ namespace PhysicsEngine {
         // Apply impulse
         Vector2 impulse = manifold.normal * impulseScalar;
         if (!bodyA->IsStatic()) {
-            bodyA->SetVelocity(PhysicsEngine::Vector2(-10.0f, 0.0f));
-            //bodyA->SetVelocity(bodyA->GetVelocity() - impulse * bodyA->GetInverseMass());
+            bodyA->SetVelocity(bodyA->GetVelocity() - impulse * bodyA->GetInverseMass());
         }
         if (!bodyB->IsStatic()) {
-            bodyB->SetVelocity(PhysicsEngine::Vector2(10.0f, 0.0f));
-            //bodyB->SetVelocity(bodyB->GetVelocity() + impulse * bodyB->GetInverseMass());
+            bodyB->SetVelocity(bodyB->GetVelocity() + impulse * bodyB->GetInverseMass());
         }
     }
 }
