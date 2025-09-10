@@ -1,5 +1,6 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include <algorithm>
+#include <list>
 
 namespace PhysicsEngine {
 
@@ -22,7 +23,6 @@ namespace PhysicsEngine {
         std::vector<Endpoint> endpoints;
         endpoints.reserve(bodies.size() * 2);
         for (RigidBody* body : bodies) {
-            if (body->IsStatic()) continue;
             AABB aabb = body->GetAABB();
             endpoints.push_back({body, aabb.min.x, true});
             endpoints.push_back({body, aabb.max.x, false});
@@ -30,10 +30,13 @@ namespace PhysicsEngine {
 
         std::sort(endpoints.begin(), endpoints.end());
 
-        std::vector<RigidBody*> activeList;
+        std::list<RigidBody*> activeList;
         for (const auto& endpoint : endpoints) {
             if (endpoint.isStart) {
                 for (RigidBody* activeBody : activeList) {
+                    if (endpoint.body->IsStatic() && activeBody->IsStatic()) {
+                        continue;
+                    }  
                     AABB aabbA = endpoint.body->GetAABB();
                     AABB aabbB = activeBody->GetAABB();
                     if (aabbA.IsOverlapping(aabbB)) {
@@ -42,11 +45,10 @@ namespace PhysicsEngine {
                 }
                 activeList.push_back(endpoint.body);
             } else {
-                activeList.erase(std::remove(activeList.begin(), activeList.end(), endpoint.body), activeList.end());
+                activeList.remove(endpoint.body);
             }
         }
 
         return potentialCollisions;
     }
-
 }

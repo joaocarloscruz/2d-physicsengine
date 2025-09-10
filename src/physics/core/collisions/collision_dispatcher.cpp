@@ -20,9 +20,6 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CheckCollision(RigidBody* a, Rig
         return CollisionCircleCircle(a, b);
     }
     if (a->shape->type == ShapeType::RECTANGLE && b->shape->type == ShapeType::RECTANGLE) {
-        // set velocities to -10 and 10
-        a->SetVelocity(Vector2(-10.0f, 0.0f));
-        b->SetVelocity(Vector2(10.0f, 0.0f));
         return CollisionRectangleRectangle(a, b);
     }
     if (a->shape->type == ShapeType::CIRCLE && b->shape->type == ShapeType::RECTANGLE) {
