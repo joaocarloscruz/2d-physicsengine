@@ -11,9 +11,8 @@ namespace PhysicsEngine {
         const float slop = 0.01f;   // A small allowance for penetration to prevent jittering at rest.
 
         // Calculate the correction vector based on penetration depth and inverse masses.
-        Vector2 correction = std::max(manifold.penetration - slop, 0.0f) / 
-                             (bodyA->GetInverseMass() + bodyB->GetInverseMass()) * 
-                             percent * manifold.normal;
+        float scalarPart = std::max(manifold.penetration - slop, 0.0f) / (bodyA->GetInverseMass() + bodyB->GetInverseMass()) * percent;
+        Vector2 correction = manifold.normal * scalarPart;
 
         // Apply the positional correction to the dynamic bodies.
         if (!bodyA->IsStatic()) {
