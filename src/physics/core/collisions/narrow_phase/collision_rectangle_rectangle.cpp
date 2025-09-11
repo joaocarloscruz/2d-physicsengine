@@ -31,8 +31,6 @@ namespace PhysicsEngine {
 
         CollisionManifold manifold;
         // set velocity to -1 and 1
-        a->SetVelocity(Vector2(-10.0f, 0.0f));
-        b->SetVelocity(Vector2(10.0f, 0.0f));
         manifold.A = a;
         manifold.B = b;
         manifold.hasCollision = false;
