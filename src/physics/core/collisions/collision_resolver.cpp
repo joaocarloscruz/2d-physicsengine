@@ -1,4 +1,5 @@
 #include "physics/core/collisions/collision_resolver.h"
+#include "physics/core/rigidbody.h"
 #include <algorithm> // Required for std::max
 
 namespace PhysicsEngine {
@@ -32,8 +33,7 @@ namespace PhysicsEngine {
             return;
         }
 
-        // Coefficient of restitution (bounciness). A value less than 1 allows objects to come to rest.
-        float restitution = 0.5f;
+        float restitution = std::max(bodyA->material.restitution, bodyB->material.restitution);
 
         // Calculate the impulse magnitude (scalar).
         float impulseScalar = -(1 + restitution) * relativeVelocityAlongNormal;

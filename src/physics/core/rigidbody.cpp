@@ -7,7 +7,7 @@
 
 namespace PhysicsEngine {
 
-    RigidBody::RigidBody(Shape* s, float density, const Vector2& pos, bool isStatic) : shape(s), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
+    RigidBody::RigidBody(Shape* s, const Material& mat, const Vector2& pos, bool isStatic) : shape(s), material(mat), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
         SetPosition(pos);
         SetOrientation(0.0f);
         // Initialize mass and inertia based on the shape and density
@@ -21,7 +21,7 @@ namespace PhysicsEngine {
             inverseInertia = 0.0f;
         } else {
             float area = shape->GetArea();
-            mass = density * area;
+            mass = material.density * area;
             inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
 
             inertia = shape->GetInertia(mass);

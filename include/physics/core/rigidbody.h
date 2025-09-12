@@ -2,7 +2,8 @@
 #define RIGIDBODY_H
 
 #include "shape.h"
-#include "../math/Vector2.h"
+#include "material.h"
+#include "../math/vector2.h"
 #include "../core/collisions/broad_phase/aabb.h"
 
 namespace PhysicsEngine {
@@ -17,6 +18,7 @@ namespace PhysicsEngine {
         float previousOrientation;
 
         Shape* shape;
+        Material material;
 
         Vector2 force; // Accumulated force
         float torque; // Accumulated torque
@@ -26,7 +28,7 @@ namespace PhysicsEngine {
         float inertia;
         float inverseInertia; //1/inertia, used for calculations
 
-        RigidBody(Shape* s, float density, const Vector2& pos = {0, 0}, bool isStatic = false);
+        RigidBody(Shape* s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false);
 
         void ApplyForce(const Vector2& f);
         void ApplyTorque(float t);
