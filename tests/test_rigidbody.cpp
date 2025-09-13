@@ -47,7 +47,8 @@ TEST_CASE("Shape operations are correct", "[Shape]") {
 
 TEST_CASE("RigidBody operations are correct", "[RigidBody]") {
     Circle circle(5.0f);
-    RigidBody rb(&circle, 1.0f, Vector2(0.0f, 0.0f));
+    Material material = {1.0f, 0.5f};
+    RigidBody rb(&circle, material, Vector2(0.0f, 0.0f));
 
     SECTION("Apply forces of rigid body is correct"){
         // apply force
@@ -108,7 +109,8 @@ TEST_CASE("RigidBody operations are correct", "[RigidBody]") {
 
 TEST_CASE("Static RigidBody", "[RigidBody]") {
     Circle circle(5.0f);
-    RigidBody staticBody(&circle, 1.0f, Vector2(0.0f, 0.0f), true);
+    Material material = {1.0f, 0.5f};
+    RigidBody staticBody(&circle, material, Vector2(0.0f, 0.0f), true);
 
     SECTION("Static body has zero mass and inverse mass") {
         REQUIRE(staticBody.GetMass() == 0.0f);

@@ -8,7 +8,8 @@ using namespace PhysicsEngine;
 
 TEST_CASE("Gravity Force", "[forces]") {
     Circle circle(1.0f);
-    RigidBody body(&circle, 1.0f, {0, 0});
+    Material material = {1.0f, 0.5f};
+    RigidBody body(&circle, material, {0, 0});
     body.SetMass(10.0f);
 
     SECTION("Gravity applies force correctly") {

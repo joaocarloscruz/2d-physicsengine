@@ -11,11 +11,12 @@ TEST_CASE("Circle-Circle Collision", "[collision]") {
     SECTION("Two circles colliding head-on") {
         World world;
         Circle circleShape(1.0f);
+        Material material = {1.0f, 0.5f};
 
-        RigidBody bodyA(&circleShape, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody bodyA(&circleShape, material, Vector2(0.0f, 0.0f));
         bodyA.SetVelocity(Vector2(1.0f, 0.0f));
 
-        RigidBody bodyB(&circleShape, 1.0f, Vector2(1.5f, 0.0f));
+        RigidBody bodyB(&circleShape, material, Vector2(1.5f, 0.0f));
         bodyB.SetVelocity(Vector2(-1.0f, 0.0f));
 
         world.addBody(&bodyA);
@@ -38,11 +39,12 @@ TEST_CASE("Rectangle-Rectangle Collision", "[collision]") {
     SECTION("Two rectangles colliding head-on") {
         World world;
         Rectangle rectangleShape(1.0f, 1.0f);
+        Material material = {1.0f, 0.5f};
 
-        RigidBody bodyA(&rectangleShape, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody bodyA(&rectangleShape, material, Vector2(0.0f, 0.0f));
         bodyA.SetVelocity(Vector2(1.0f, 0.0f));
 
-        RigidBody bodyB(&rectangleShape, 1.0f, Vector2(0.5f, 0.0f));
+        RigidBody bodyB(&rectangleShape, material, Vector2(0.5f, 0.0f));
         bodyB.SetVelocity(Vector2(-1.0f, 0.0f));
 
         world.addBody(&bodyA);

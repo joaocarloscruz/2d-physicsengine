@@ -9,7 +9,8 @@ TEST_CASE("Engine Simulation", "[Engine]") {
         PhysicsEngine::PhysicsEngine engine;
 
         Circle circle(1.0f);
-        RigidBody body(&circle, 1.0f, {0, 10});
+        Material material = {1.0f, 0.5f};
+        RigidBody body(&circle, material, {0, 10});
 
         engine.addBody(&body);
         engine.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.8f)));

@@ -11,9 +11,10 @@ using namespace PhysicsEngine;
 TEST_CASE("World operations are correct", "[World]") {
     World world;
     Circle circle(1.0f);
+    Material material = {1.0f, 0.5f};
 
     SECTION("Add and Remove Body") {
-        RigidBody body(&circle, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody body(&circle, material, Vector2(0.0f, 0.0f));
         world.addBody(&body);
         REQUIRE(world.getBodies().size() == 1);
         REQUIRE(world.getBodies()[0] == &body);
@@ -23,7 +24,7 @@ TEST_CASE("World operations are correct", "[World]") {
     }
 
     SECTION("Step") {
-        RigidBody body(&circle, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody body(&circle, material, Vector2(0.0f, 0.0f));
         body.SetVelocity(Vector2(1.0f, 2.0f));
         world.addBody(&body);
 
@@ -32,7 +33,7 @@ TEST_CASE("World operations are correct", "[World]") {
         REQUIRE(body.GetPosition().x == Approx(0.1f));
         REQUIRE(body.GetPosition().y == Approx(0.2f));
 
-        RigidBody staticBody(&circle, 1.0f, Vector2(5.0f, 5.0f), true);
+        RigidBody staticBody(&circle, material, Vector2(5.0f, 5.0f), true);
         world.addBody(&staticBody);
         world.step(0.1f);
 
@@ -41,7 +42,7 @@ TEST_CASE("World operations are correct", "[World]") {
     }
 
     SECTION("Force") {
-        RigidBody body(&circle, 1.0f, Vector2(0.0f, 0.0f));
+        RigidBody body(&circle, material, Vector2(0.0f, 0.0f));
         world.addBody(&body);
 
         auto gravity = std::make_unique<Gravity>(Vector2(0.0f, -9.8f));
@@ -54,9 +55,9 @@ TEST_CASE("World operations are correct", "[World]") {
     }
 
     SECTION("Broad Phase"){
-        RigidBody bodyA(&circle, 1.0f, Vector2(0.0f, 0.0f));
-        RigidBody bodyB(&circle, 1.0f, Vector2(1.5f, 0.0f));
-        RigidBody bodyC(&circle, 1.0f, Vector2(5.0f, 5.0f));
+        RigidBody bodyA(&circle, material, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&circle, material, Vector2(1.5f, 0.0f));
+        RigidBody bodyC(&circle, material, Vector2(5.0f, 5.0f));
 
         world.addBody(&bodyA);
         world.addBody(&bodyB);
@@ -77,9 +78,9 @@ TEST_CASE("World operations are correct", "[World]") {
         Circle circleB(1.0f);
         Circle circleC(1.0f);
 
-        RigidBody bodyA(&circleA, 1.0f, Vector2(0.0f, 0.0f));
-        RigidBody bodyB(&circleB, 1.0f, Vector2(1.5f, 0.0f));
-        RigidBody bodyC(&circleC, 1.0f, Vector2(5.0f, 5.0f));
+        RigidBody bodyA(&circleA, material, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&circleB, material, Vector2(1.5f, 0.0f));
+        RigidBody bodyC(&circleC, material, Vector2(5.0f, 5.0f));
 
         world.addBody(&bodyA);
         world.addBody(&bodyB);
@@ -101,8 +102,8 @@ TEST_CASE("World operations are correct", "[World]") {
         Rectangle rect2(2.0f, 2.0f);
 
         // Create two bodies that should definitely overlap
-        RigidBody bodyA(&rect1, 1.0f, Vector2(0.0f, 0.0f));
-        RigidBody bodyB(&rect2, 1.0f, Vector2(1.5f, 0.0f));
+        RigidBody bodyA(&rect1, material, Vector2(0.0f, 0.0f));
+        RigidBody bodyB(&rect2, material, Vector2(1.5f, 0.0f));
 
         world.addBody(&bodyA);
         world.addBody(&bodyB);
