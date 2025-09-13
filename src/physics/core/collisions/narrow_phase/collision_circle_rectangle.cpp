@@ -3,6 +3,7 @@
 #include "physics/math/vector2.h"
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 namespace PhysicsEngine
 {
@@ -46,16 +47,62 @@ namespace PhysicsEngine
 
         if (distanceSquared < (circleRadius * circleRadius)){
             float dist = std::sqrt(distanceSquared);
-            Vector2 normal = distance / dist;
-            float penetration = circleRadius - dist;
-            
-            CollisionManifold manifold;
-            manifold.A = a;
-            manifold.B = b;
-            manifold.normal = normal;
-            manifold.penetration = penetration;
-            manifold.hasCollision = true;
-            return manifold;
+
+            // If the distance is very small, the circle center is inside the rectangle.
+            if (dist < 1e-6)
+            {
+                // Find the closest edge to push the circle out.
+                float min_dist = std::numeric_limits<float>::max();
+                Vector2 normal;
+
+                // Distance from left edge
+                float d = circleCenter.x - (rectCenter.x - rectWidth / 2.0f);
+                if (d < min_dist) {
+                    min_dist = d;
+                    normal = Vector2(1, 0);
+                }
+
+                // Distance from right edge
+                d = (rectCenter.x + rectWidth / 2.0f) - circleCenter.x;
+                if (d < min_dist) {
+                    min_dist = d;
+                    normal = Vector2(-1, 0);
+                }
+
+                // Distance from top edge
+                d = circleCenter.y - (rectCenter.y - rectHeight / 2.0f);
+                if (d < min_dist) {
+                    min_dist = d;
+                    normal = Vector2(0, 1);
+                }
+
+                // Distance from bottom edge
+                d = (rectCenter.y + rectHeight / 2.0f) - circleCenter.y;
+                if (d < min_dist) {
+                    min_dist = d;
+                    normal = Vector2(0, -1);
+                }
+
+                CollisionManifold manifold;
+                manifold.A = a;
+                manifold.B = b;
+                manifold.normal = normal;
+                manifold.penetration = min_dist + circleRadius;
+                manifold.hasCollision = true;
+                return manifold;
+
+            } else {
+                Vector2 normal = distance / dist;
+                float penetration = circleRadius - dist;
+                
+                CollisionManifold manifold;
+                manifold.A = a;
+                manifold.B = b;
+                manifold.normal = normal;
+                manifold.penetration = penetration;
+                manifold.hasCollision = true;
+                return manifold;
+            }
         }
 
         return CollisionManifold();
