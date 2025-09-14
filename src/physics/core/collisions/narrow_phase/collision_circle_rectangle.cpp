@@ -1,110 +1,130 @@
 #include "physics/core/collisions/narrow_phase/collision_circle_rectangle.h"
 #include "physics/core/shape.h"
 #include "physics/math/vector2.h"
-#include <cmath>
+#include "physics/math/matrix2x2.h"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace PhysicsEngine
 {
+    static inline float clampf(float v, float lo, float hi) {
+        return std::max(lo, std::min(v, hi));
+    }
+
     CollisionManifold CollisionCircleRectangle(RigidBody *a, RigidBody *b)
     {
+        // Identify which is circle and which is rectangle, but keep original A/B
         Shape *shapeA = a->shape;
         Shape *shapeB = b->shape;
 
-        Shape *circle_shape = nullptr;
-        Shape *rectangle_shape = nullptr;
-        RigidBody *circle_body = nullptr;
-        RigidBody *rectangle_body = nullptr;
+        if (!shapeA || !shapeB) return CollisionManifold();
 
-        if (shapeA->type == ShapeType::CIRCLE && shapeB->type == ShapeType::RECTANGLE){
-            circle_shape = shapeA;
-            rectangle_shape = shapeB;
-            circle_body = a;
-            rectangle_body = b;
+        RigidBody *circleBody = nullptr;
+        RigidBody *rectBody   = nullptr;
+        Circle    *circle     = nullptr;
+        Rectangle *rect       = nullptr;
+
+        if (shapeA->type == ShapeType::CIRCLE && shapeB->type == ShapeType::RECTANGLE) {
+            circleBody = a; rectBody = b;
+            circle = static_cast<Circle*>(shapeA);
+            rect   = static_cast<Rectangle*>(shapeB);
         } else if (shapeA->type == ShapeType::RECTANGLE && shapeB->type == ShapeType::CIRCLE) {
-            circle_shape = shapeB;
-            rectangle_shape = shapeA;
-            circle_body = b;
-            rectangle_body = a;
-        } else {     
+            circleBody = b; rectBody = a;
+            circle = static_cast<Circle*>(shapeB);
+            rect   = static_cast<Rectangle*>(shapeA);
+        } else {
             return CollisionManifold();
         }
 
-        Vector2 circleCenter = circle_body->position;
-        float circleRadius = circle_shape->GetRadius();
+        CollisionManifold manifold;
+        manifold.A = a;
+        manifold.B = b;
+        manifold.hasCollision = false;
 
-        Vector2 rectCenter = rectangle_body->position;
-        float rectWidth = rectangle_shape->GetWidth();
-        float rectHeight = rectangle_shape->GetHeight();
+        // Rectangle half extents
+        const float hx = rect->GetWidth()  * 0.5f;
+        const float hy = rect->GetHeight() * 0.5f;
 
-        Vector2 closestPoint = circleCenter;
-        closestPoint.x = std::max(rectCenter.x - rectWidth / 2.0f, std::min(closestPoint.x, rectCenter.x + rectWidth / 2.0f));
-        closestPoint.y = std::max(rectCenter.y - rectHeight / 2.0f, std::min(closestPoint.y, rectCenter.y + rectHeight / 2.0f));
+        const Vector2 cCenter = circleBody->GetPosition();
+        const Vector2 rCenter = rectBody->GetPosition();
 
-        Vector2 distance = circleCenter - closestPoint;
-        float distanceSquared = distance.magnitudeSquared();
+        // Transform circle center into rectangle's local space
+        Matrix2x2 R = Matrix2x2::rotation(rectBody->GetOrientation());
+        Matrix2x2 Rinv = R.inverse();
+        Vector2 localC = Rinv * (cCenter - rCenter);
 
-        if (distanceSquared < (circleRadius * circleRadius)){
-            float dist = std::sqrt(distanceSquared);
+        // Closest point on rectangle in local space
+        Vector2 closestLocal(
+            clampf(localC.x, -hx, hx),
+            clampf(localC.y, -hy, hy)
+        );
 
-            // If the distance is very small, the circle center is inside the rectangle.
-            if (dist < 1e-6)
-            {
-                // Find the closest edge to push the circle out.
-                float min_dist = std::numeric_limits<float>::max();
-                Vector2 normal;
+        Vector2 deltaLocal = localC - closestLocal;
+        float distSq = deltaLocal.magnitudeSquared();
+        const float r = circle->GetRadius();
 
-                // Distance from left edge
-                float d = circleCenter.x - (rectCenter.x - rectWidth / 2.0f);
-                if (d < min_dist) {
-                    min_dist = d;
-                    normal = Vector2(1, 0);
-                }
+        Vector2 normalLocal;
+        float penetration = 0.0f;
+        Vector2 contactLocal;
 
-                // Distance from right edge
-                d = (rectCenter.x + rectWidth / 2.0f) - circleCenter.x;
-                if (d < min_dist) {
-                    min_dist = d;
-                    normal = Vector2(-1, 0);
-                }
-
-                // Distance from top edge
-                d = circleCenter.y - (rectCenter.y - rectHeight / 2.0f);
-                if (d < min_dist) {
-                    min_dist = d;
-                    normal = Vector2(0, 1);
-                }
-
-                // Distance from bottom edge
-                d = (rectCenter.y + rectHeight / 2.0f) - circleCenter.y;
-                if (d < min_dist) {
-                    min_dist = d;
-                    normal = Vector2(0, -1);
-                }
-
-                CollisionManifold manifold;
-                manifold.A = a;
-                manifold.B = b;
-                manifold.normal = normal;
-                manifold.penetration = min_dist + circleRadius;
-                manifold.hasCollision = true;
-                return manifold;
-
-            } else {
-                Vector2 normal = distance / dist;
-                float penetration = circleRadius - dist;
-                
-                CollisionManifold manifold;
-                manifold.A = a;
-                manifold.B = b;
-                manifold.normal = normal;
-                manifold.penetration = penetration;
-                manifold.hasCollision = true;
-                return manifold;
-            }
+        if (distSq > r * r) {
+            // No overlap
+            return manifold;
         }
 
-        return CollisionManifold();
+        if (distSq > 1e-12f) {
+            // Circle center is outside the rectangle hull
+            float dist = std::sqrt(distSq);
+            normalLocal = deltaLocal / dist;  // from rect -> circle in local space
+            penetration = r - dist;
+            contactLocal = closestLocal;      // point on rect hull
+        } else {
+            // Circle center is inside rectangle; push out along nearest face
+            float rightDist  =  hx - localC.x;
+            float leftDist   =  localC.x + hx;
+            float topDist    =  hy - localC.y;
+            float bottomDist =  localC.y + hy;
+
+            float minDist = rightDist;
+            normalLocal = Vector2(1.0f, 0.0f);
+            contactLocal = Vector2(hx, localC.y);
+
+            if (leftDist < minDist) {
+                minDist = leftDist;
+                normalLocal = Vector2(-1.0f, 0.0f);
+                contactLocal = Vector2(-hx, localC.y);
+            }
+            if (topDist < minDist) {
+                minDist = topDist;
+                normalLocal = Vector2(0.0f, 1.0f);
+                contactLocal = Vector2(localC.x, hy);
+            }
+            if (bottomDist < minDist) {
+                minDist = bottomDist;
+                normalLocal = Vector2(0.0f, -1.0f);
+                contactLocal = Vector2(localC.x, -hy);
+            }
+
+            // Move the circle out by (radius + distance to face)
+            penetration = r + minDist;
+        }
+
+        // Transform normal and contact back to world space
+        Vector2 normalWorld = R * normalLocal;                
+        Vector2 contactWorld = rCenter + (R * contactLocal);
+
+        // Fill manifold
+        manifold.hasCollision = true;
+        manifold.normal = normalWorld;
+        manifold.penetration = penetration;
+        manifold.contactPoint = contactWorld;
+
+        Vector2 toB = manifold.B->GetPosition() - manifold.A->GetPosition();
+        if (toB.dot(manifold.normal) < 0.0f) {
+            manifold.normal = manifold.normal * -1.0f;
+        }
+
+        return manifold;
     }
 }
