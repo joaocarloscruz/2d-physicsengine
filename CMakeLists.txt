@@ -24,6 +24,7 @@ add_library(PhysicsEngine SHARED
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
+    ${PHYSICS_SRC_DIR}/core/forces/drag.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_rectangle_rectangle.cpp
