@@ -13,7 +13,7 @@ namespace PhysicsEngine {
         dragCoeff = k1 * dragCoeff + k2 * dragCoeff * dragCoeff;
 
         // Apply the force in the opposite direction of velocity
-        force.normalize();
+        force = force.normalized();
         body->ApplyForce(force * -dragCoeff);
     }
 
