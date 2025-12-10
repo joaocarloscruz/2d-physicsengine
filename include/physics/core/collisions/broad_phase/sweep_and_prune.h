@@ -2,6 +2,7 @@
 #define SWEEP_AND_PRUNE_H
 
 #include "../../rigidbody.h"
+#include "../../types.h"
 #include <vector>
 #include <utility>
 
@@ -9,7 +10,7 @@ namespace PhysicsEngine {
 
     class SweepAndPrune {
     public:
-        static std::vector<std::pair<RigidBody*, RigidBody*>> FindPotentialCollisions(const std::vector<RigidBody*>& bodies);
+        static std::vector<CollisionPair> FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies);
     };
 
 }

@@ -6,10 +6,10 @@
 #include <string>
 #include <map>
 #include "physics/core/world.h"
-#include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
 #include "physics/core/force_generator.h"
 #include "physics/core/material.h"
+#include "physics/core/types.h"
 
 namespace PhysicsEngine {
     class Engine {
@@ -17,10 +17,10 @@ namespace PhysicsEngine {
         Engine();
         void step(float deltaTime);
 
-        void addBody(RigidBody* body);
-        void addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator);
+        void addBody(RigidBodyPtr body);
+        void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
         void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
-        const std::vector<RigidBody*>& getBodies() const;
+        const std::vector<RigidBodyPtr>& getBodies() const;
 
         void addMaterial(const std::string& name, const Material& material);
         const Material& getMaterial(const std::string& name) const;
@@ -29,7 +29,7 @@ namespace PhysicsEngine {
         World world;
         std::map<std::string, Material> materials;
         std::vector<std::unique_ptr<Shape>> owned_shapes;
-        std::vector<std::unique_ptr<RigidBody>> owned_bodies;
+        std::vector<RigidBodyPtr> owned_bodies;
     };
 }
 

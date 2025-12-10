@@ -15,11 +15,11 @@ namespace PhysicsEngine {
         world.step(deltaTime);
     }
 
-    void Engine::addBody(RigidBody* body) {
+    void Engine::addBody(RigidBodyPtr body) {
         world.addBody(body);
     }
 
-    void Engine::addForce(RigidBody* body, std::unique_ptr<IForceGenerator> generator) {
+    void Engine::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
         world.addForce(body, std::move(generator));
     }
 
@@ -27,7 +27,7 @@ namespace PhysicsEngine {
         world.addUniversalForce(std::move(generator));
     }
 
-    const std::vector<RigidBody*>& Engine::getBodies() const {
+    const std::vector<RigidBodyPtr>& Engine::getBodies() const {
         return world.getBodies();
     }
 

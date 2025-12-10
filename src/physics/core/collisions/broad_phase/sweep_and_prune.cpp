@@ -1,11 +1,12 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
+#include "physics/core/types.h"
 #include <algorithm>
 #include <list>
 
 namespace PhysicsEngine {
 
     struct Endpoint {
-        RigidBody* body;
+        RigidBodyPtr body;
         float value;
         bool isStart;
 
@@ -14,15 +15,15 @@ namespace PhysicsEngine {
         }
     };
 
-    std::vector<std::pair<RigidBody*, RigidBody*>> SweepAndPrune::FindPotentialCollisions(const std::vector<RigidBody*>& bodies) {
-        std::vector<std::pair<RigidBody*, RigidBody*>> potentialCollisions;
+    std::vector<CollisionPair> SweepAndPrune::FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) {
+        std::vector<CollisionPair> potentialCollisions;
         if (bodies.size() < 2) {
             return potentialCollisions;
         }
 
         std::vector<Endpoint> endpoints;
         endpoints.reserve(bodies.size() * 2);
-        for (RigidBody* body : bodies) {
+        for (const auto& body : bodies) {
             AABB aabb = body->GetAABB();
             endpoints.push_back({body, aabb.min.x, true});
             endpoints.push_back({body, aabb.max.x, false});
@@ -30,10 +31,10 @@ namespace PhysicsEngine {
 
         std::sort(endpoints.begin(), endpoints.end());
 
-        std::list<RigidBody*> activeList;
+        std::list<RigidBodyPtr> activeList;
         for (const auto& endpoint : endpoints) {
             if (endpoint.isStart) {
-                for (RigidBody* activeBody : activeList) {
+                for (const auto& activeBody : activeList) {
                     if (endpoint.body->IsStatic() && activeBody->IsStatic()) {
                         continue;
                     }  

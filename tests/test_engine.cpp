@@ -1,6 +1,7 @@
 #include "catch_amalgamated.hpp"
 #include "../include/engine.h"
 #include "../include/physics/core/forces/gravity.h"
+#include <memory>
 
 using namespace PhysicsEngine;
 
@@ -10,9 +11,9 @@ TEST_CASE("Engine Simulation", "[Engine]") {
 
         Circle circle(1.0f);
         Material material = {1.0f, 0.5f};
-        RigidBody body(&circle, material, {0, 10});
+        auto body = std::make_shared<RigidBody>(&circle, material, Vector2(0, 10));
 
-        engine.addBody(&body);
+        engine.addBody(body);
         engine.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.8f)));
 
         const int max_frames = 500;
