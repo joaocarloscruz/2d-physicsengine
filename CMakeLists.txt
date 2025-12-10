@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(PhysicsEngine CXX)
+project(Engine CXX)
 
 # Source directory for library
 set(PHYSICS_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/physics)
@@ -16,9 +16,9 @@ include_directories(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- PhysicsEngine Library
-add_library(PhysicsEngine SHARED
-    src/physics_engine.cpp
+# --- Engine Library
+add_library(Engine SHARED
+    src/engine.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
@@ -33,7 +33,7 @@ add_library(PhysicsEngine SHARED
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/sweep_and_prune.cpp
 )
 
-set_target_properties(PhysicsEngine PROPERTIES
+set_target_properties(Engine PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
@@ -51,5 +51,5 @@ add_executable(run_tests
 
 # Link the test executable with the physics library
 target_link_libraries(run_tests
-    PhysicsEngine
+    Engine
 )

@@ -1,5 +1,5 @@
-#ifndef PHYSICS_ENGINE_H
-#define PHYSICS_ENGINE_H
+#ifndef ENGINE_H
+#define ENGINE_H
 
 #include <vector>
 #include <memory>
@@ -12,9 +12,9 @@
 #include "physics/core/material.h"
 
 namespace PhysicsEngine {
-    class PhysicsEngine {
+    class Engine {
     public:
-        PhysicsEngine();
+        Engine();
         void step(float deltaTime);
 
         void addBody(RigidBody* body);
@@ -33,4 +33,4 @@ namespace PhysicsEngine {
     };
 }
 
-#endif // PHYSICS_ENGINE_H
+#endif // ENGINE_H

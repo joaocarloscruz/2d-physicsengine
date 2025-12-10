@@ -1,12 +1,12 @@
 #include "catch_amalgamated.hpp"
-#include "../include/physics_engine.h"
+#include "../include/engine.h"
 #include "../include/physics/core/forces/gravity.h"
 
 using namespace PhysicsEngine;
 
 TEST_CASE("Engine Simulation", "[Engine]") {
     SECTION("A body with gravity applied falls correctly") {
-        PhysicsEngine::PhysicsEngine engine;
+        Engine engine;
 
         Circle circle(1.0f);
         Material material = {1.0f, 0.5f};
