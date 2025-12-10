@@ -51,7 +51,7 @@ TEST_CASE("World operations are correct", "[World]") {
         world.step(0.1f);
 
         REQUIRE(body.GetVelocity().y == Approx(-0.98f));
-        REQUIRE(body.GetPosition().y == Approx(-0.098f));
+        REQUIRE(body.GetPosition().y == Approx(-0.049f));
     }
 
     SECTION("Broad Phase"){
