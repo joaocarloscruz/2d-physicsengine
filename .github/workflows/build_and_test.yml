@@ -1,0 +1,25 @@
+name: Build and Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Create Build Directory
+      run: mkdir -p build
+
+    - name: Configure CMake
+      run: cd build && cmake ..
+
+    - name: Build
+      run: cd build && make
+
+    - name: Run Tests
+      run: cd build && ./run_tests
