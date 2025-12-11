@@ -14,28 +14,11 @@ namespace PhysicsEngine
 
     CollisionManifold CollisionCircleRectangle(RigidBody *a, RigidBody *b)
     {
-        // Identify which is circle and which is rectangle, but keep original A/B
-        Shape *shapeA = a->shape;
-        Shape *shapeB = b->shape;
+        // a is Circle, b is Rectangle, guaranteed by the dispatcher
+        Circle*    circle = static_cast<Circle*>(a->shape);
+        Rectangle* rect   = static_cast<Rectangle*>(b->shape);
 
-        if (!shapeA || !shapeB) return CollisionManifold();
-
-        RigidBody *circleBody = nullptr;
-        RigidBody *rectBody   = nullptr;
-        Circle    *circle     = nullptr;
-        Rectangle *rect       = nullptr;
-
-        if (shapeA->type == ShapeType::CIRCLE && shapeB->type == ShapeType::RECTANGLE) {
-            circleBody = a; rectBody = b;
-            circle = static_cast<Circle*>(shapeA);
-            rect   = static_cast<Rectangle*>(shapeB);
-        } else if (shapeA->type == ShapeType::RECTANGLE && shapeB->type == ShapeType::CIRCLE) {
-            circleBody = b; rectBody = a;
-            circle = static_cast<Circle*>(shapeB);
-            rect   = static_cast<Rectangle*>(shapeA);
-        } else {
-            return CollisionManifold();
-        }
+        if (!circle || !rect) return CollisionManifold();
 
         CollisionManifold manifold;
         manifold.A = a;
@@ -46,11 +29,11 @@ namespace PhysicsEngine
         const float hx = rect->GetWidth()  * 0.5f;
         const float hy = rect->GetHeight() * 0.5f;
 
-        const Vector2 cCenter = circleBody->GetPosition();
-        const Vector2 rCenter = rectBody->GetPosition();
+        const Vector2 cCenter = a->GetPosition();
+        const Vector2 rCenter = b->GetPosition();
 
         // Transform circle center into rectangle's local space
-        Matrix2x2 R = Matrix2x2::rotation(rectBody->GetOrientation());
+        Matrix2x2 R = Matrix2x2::rotation(b->GetOrientation());
         Matrix2x2 Rinv = R.inverse();
         Vector2 localC = Rinv * (cCenter - rCenter);
 
@@ -120,6 +103,7 @@ namespace PhysicsEngine
         manifold.penetration = penetration;
         manifold.contactPoint = contactWorld;
 
+        // Ensure normal points from A to B
         Vector2 toB = manifold.B->GetPosition() - manifold.A->GetPosition();
         if (toB.dot(manifold.normal) < 0.0f) {
             manifold.normal = manifold.normal * -1.0f;

@@ -8,7 +8,8 @@ namespace PhysicsEngine {
     enum class ShapeType {
         CIRCLE,
         RECTANGLE,
-        TRIANGLE
+        TRIANGLE,
+        COUNT
     };
 
     class Shape {
