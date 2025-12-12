@@ -6,6 +6,21 @@
 using namespace Catch;
 using namespace PhysicsEngine;
 
+TEST_CASE("Polygon Shape", "[shape]") {
+    // A 2x2 square centered at 0,0
+    std::vector<Vector2> vertices = {
+        {1.0f, 1.0f}, {-1.0f, 1.0f}, {-1.0f, -1.0f}, {1.0f, -1.0f}
+    };
+    Polygon poly(vertices);
+
+    // Area should be 2 * 2 = 4
+    REQUIRE(poly.GetArea() == Approx(4.0f));
+    
+    // Inertia for a box is m(w^2 + h^2)/12
+    // Mass = 1, w=2, h=2 -> 1(4+4)/12 = 8/12 = 0.666...
+    REQUIRE(poly.GetInertia(1.0f) == Approx(0.6666f).epsilon(0.001f));
+}
+
 TEST_CASE("Shape operations are correct", "[Shape]") {
     Circle circle(5.0f);
     Rectangle rectangle(10.0f, 2.0f);
