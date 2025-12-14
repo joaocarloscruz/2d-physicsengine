@@ -2,6 +2,7 @@
 #include "physics/core/collisions/narrow_phase/collision_circle_circle.h"
 #include "physics/core/collisions/narrow_phase/collision_rectangle_rectangle.h"
 #include "physics/core/collisions/narrow_phase/collision_circle_rectangle.h"
+#include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h" 
 #include "physics/core/shape.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/collisions/collision_manifold.h"
@@ -53,6 +54,13 @@ namespace PhysicsEngine {
             nullptr,                  // Col 0: Triangle vs Circle (swap)
             nullptr,                  // Col 1: Triangle vs Rectangle (swap)
             CollisionTriangleTriangle
+        },
+        // POLYGON (Row 3)
+        {
+            nullptr,                  // Col 0: Polygon vs Circle (swap)
+            nullptr,                  // Col 1: Polygon vs Rectangle (swap)
+            nullptr,                   // Col 2: Polygon vs Triangle (swap)
+            CollisionPolygonPolygon
         }
     };
 

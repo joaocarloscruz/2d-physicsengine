@@ -3,10 +3,57 @@
 #include "../include/physics/core/rigidbody.h"
 #include "../include/physics/core/shape.h"
 #include "../include/physics/math/vector2.h"
+#include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
 #include <memory>
 
 using namespace Catch;
 using namespace PhysicsEngine;
+
+TEST_CASE("Polygon-Polygon SAT Intersection", "[collision]") {
+    // Create two 2x2 squares (Vertices must be CCW)
+    // Square A centered at (0,0) -> corners at (-1,-1) to (1,1) if local
+    // Let's define them in local space relative to (0,0)
+    std::vector<Vector2> verts = {
+        Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)
+    };
+    
+    Polygon polyShape(verts); 
+    Material mat = {1.0f, 0.5f}; // Density 1, Restitution 0.5
+
+    SECTION("Detects overlap correctly") {
+        RigidBody a(&polyShape, mat, Vector2(0, 0));
+        RigidBody b(&polyShape, mat, Vector2(1.5f, 0)); // Overlapping by 0.5
+
+        CollisionManifold manifold = PhysicsEngine::CollisionPolygonPolygon(&a, &b);
+
+        REQUIRE(manifold.hasCollision == true);
+        REQUIRE(manifold.penetration == Catch::Approx(0.5f));
+        
+        // Normal should point from A to B (so approx (1, 0))
+        REQUIRE(manifold.normal.x == Catch::Approx(1.0f));
+        REQUIRE(manifold.normal.y == Catch::Approx(0.0f));
+    }
+
+    SECTION("Detects separation correctly") {
+        RigidBody a(&polyShape, mat, Vector2(0, 0));
+        RigidBody b(&polyShape, mat, Vector2(2.1f, 0)); // Gap of 0.1
+
+        CollisionManifold manifold = PhysicsEngine::CollisionPolygonPolygon(&a, &b);
+
+        REQUIRE(manifold.hasCollision == false);
+    }
+
+    SECTION("Normal flips correctly based on relative position") {
+        RigidBody a(&polyShape, mat, Vector2(0, 0));
+        RigidBody b(&polyShape, mat, Vector2(-1.5f, 0)); // B is to the LEFT now
+
+        CollisionManifold manifold = PhysicsEngine::CollisionPolygonPolygon(&a, &b);
+
+        REQUIRE(manifold.hasCollision == true);
+        // Normal should point from A to B (so approx (-1, 0))
+        REQUIRE(manifold.normal.x == Catch::Approx(-1.0f));
+    }
+}
 
 TEST_CASE("Circle-Circle Collision", "[collision]") {
     SECTION("Two circles colliding head-on") {

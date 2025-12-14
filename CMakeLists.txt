@@ -29,6 +29,7 @@ add_library(Engine SHARED
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_rectangle_rectangle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_rectangle.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_resolver.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/sweep_and_prune.cpp
 )
