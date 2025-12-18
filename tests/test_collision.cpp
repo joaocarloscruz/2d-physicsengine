@@ -34,6 +34,18 @@ TEST_CASE("Polygon-Polygon SAT Intersection", "[collision]") {
         REQUIRE(manifold.normal.y == Catch::Approx(0.0f));
     }
 
+    SECTION("Calculates valid contact point") {
+        RigidBody a(&polyShape, mat, Vector2(0, 0));
+        RigidBody b(&polyShape, mat, Vector2(1.5f, 0));
+        CollisionManifold manifold = PhysicsEngine::CollisionPolygonPolygon(&a, &b);
+    
+        // The contact point should be the deepest point of the incident body.
+        // Incident is B (left edge). Deepest point is (-1, 0) relative to B, which is x=0.5 in World.
+    
+        // Just check if the point is reasonable (between the shapes)
+        REQUIRE(manifold.contactPoint.x == Catch::Approx(0.5f).margin(0.1f));
+    }
+
     SECTION("Detects separation correctly") {
         RigidBody a(&polyShape, mat, Vector2(0, 0));
         RigidBody b(&polyShape, mat, Vector2(2.1f, 0)); // Gap of 0.1
