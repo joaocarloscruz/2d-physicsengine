@@ -1,4 +1,3 @@
-/*
 #include "catch_amalgamated.hpp"
 #include "../include/physics/core/forces/gravity.h"
 #include "../include/physics/core/rigidbody.h"
@@ -28,4 +27,3 @@ TEST_CASE("Gravity Force", "[forces]") {
         REQUIRE(body.GetForce().y == -16.2f);
     }
 }
-*/

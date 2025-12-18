@@ -61,7 +61,7 @@ TEST_CASE("Polygon-Polygon SAT Intersection", "[collision]") {
     }
 }
 
-/*
+
 TEST_CASE("Circle-Circle Collision", "[collision]") {
     SECTION("Two circles colliding head-on") {
         World world;
@@ -90,8 +90,8 @@ TEST_CASE("Circle-Circle Collision", "[collision]") {
     }
 }
 
-TEST_CASE("Rectangle-Rectangle Collision", "[collision]") {
-    SECTION("Two rectangles colliding head-on") {
+TEST_CASE("Polygon-Polygon Collision", "[collision]") {
+    SECTION("Two polygons colliding head-on") {
         World world;
         auto rectangleShape = Polygon::MakeBox(1.0f, 1.0f);
         Material material = {1.0f, 0.5f};
@@ -117,4 +117,3 @@ TEST_CASE("Rectangle-Rectangle Collision", "[collision]") {
         REQUIRE(bodyB->GetPosition().x > bodyA->GetPosition().x);
     }
 }
-*/

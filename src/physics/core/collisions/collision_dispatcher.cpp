@@ -1,6 +1,6 @@
 #include "physics/core/collisions/collision_dispatcher.h"
 #include "physics/core/collisions/narrow_phase/collision_circle_circle.h"
-// #include "physics/core/collisions/narrow_phase/collision_circle_polygon.h" // TODO: Next Step!
+#include "physics/core/collisions/narrow_phase/collision_circle_polygon.h"
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
 #include "physics/core/shape.h"
 #include "physics/core/rigidbody.h"
@@ -17,7 +17,7 @@ namespace PhysicsEngine {
         // CIRCLE
         {
             CollisionCircleCircle,    // Circle vs Circle
-            nullptr                   // Circle vs Polygon (TODO: Implement this next!)
+            CollisionCirclePolygon    // Circle vs Polygon
         },
         // POLYGON
         {

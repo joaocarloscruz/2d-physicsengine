@@ -1,4 +1,3 @@
-/*
 #include "catch_amalgamated.hpp"
 #include "../include/engine.h"
 #include "../include/physics/core/forces/gravity.h"
@@ -26,10 +25,8 @@ TEST_CASE("Engine Simulation", "[Engine]") {
         const auto& bodies = engine.getBodies();
         const auto& final_pos = bodies[0]->GetPosition();
 
-        // This value is the expected result after 500 frames of simulation
-        // with dt=0.016 and g=-9.8, as observed from a previous run.
+        // This value is the expected result after 500 frames of simulation with dt=0.016 and g=-9.8 
         // the final result should be approximately -303.6
         REQUIRE(final_pos.y == Catch::Approx(-303.6));
     }
 }
-*/
