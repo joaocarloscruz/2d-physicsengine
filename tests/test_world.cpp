@@ -99,8 +99,8 @@ TEST_CASE("World operations are correct", "[World]") {
 
     SECTION("Two rectangles overlapping in AABB") {
         World world;
-        Rectangle rect1(2.0f, 2.0f);
-        Rectangle rect2(2.0f, 2.0f);
+        auto rect1 = Polygon::MakeBox(2.0f, 2.0f);
+        auto rect2 = Polygon::MakeBox(2.0f, 2.0f);
 
         // Create two bodies that should definitely overlap
         auto bodyA = std::make_shared<RigidBody>(&rect1, material, Vector2(0.0f, 0.0f));

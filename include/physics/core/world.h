@@ -7,7 +7,7 @@
 #include "force_generator.h"
 #include "collisions/broad_phase/aabb.h"
 #include "collisions/collision_manifold.h"
-#include "collisions/collisions_dispatcher.h"
+#include "collisions/collision_dispatcher.h"
 #include "collisions/collision_resolver.h"
 #include "types.h"
 

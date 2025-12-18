@@ -4,6 +4,7 @@
 #include "physics/math/matrix2x2.h"
 #include <stdexcept>
 #include <cmath>
+#include <limits> // Required for std::numeric_limits
 
 namespace PhysicsEngine {
 
@@ -99,28 +100,20 @@ namespace PhysicsEngine {
             Vector2 min = position - Vector2(circle->GetRadius(), circle->GetRadius());
             Vector2 max = position + Vector2(circle->GetRadius(), circle->GetRadius());
             return { min, max };
-        } else if (shape->type == ShapeType::RECTANGLE) {
-            Rectangle* rect = static_cast<Rectangle*>(shape);
-            float halfWidth = rect->GetWidth() / 2.0f;
-            float halfHeight = rect->GetHeight() / 2.0f;
+        } else if (shape->type == ShapeType::POLYGON) {
+            Polygon* poly = static_cast<Polygon*>(shape);
 
             Matrix2x2 rot = Matrix2x2::rotation(orientation);
-            Vector2 vertices[4];
-            vertices[0] = position + rot * Vector2(-halfWidth, -halfHeight);
-            vertices[1] = position + rot * Vector2( halfWidth, -halfHeight);
-            vertices[2] = position + rot * Vector2( halfWidth,  halfHeight);
-            vertices[3] = position + rot * Vector2(-halfWidth,  halfHeight);
+            Vector2 min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+            Vector2 max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
 
-            Vector2 min = vertices[0];
-            Vector2 max = vertices[0];
-
-            for (int i = 1; i < 4; ++i) {
-                if (vertices[i].x < min.x) min.x = vertices[i].x;
-                if (vertices[i].y < min.y) min.y = vertices[i].y;
-                if (vertices[i].x > max.x) max.x = vertices[i].x;
-                if (vertices[i].y > max.y) max.y = vertices[i].y;
+            for (const auto& v : poly->getVertices()) {
+                Vector2 worldVertex = position + rot * v;
+                min.x = std::min(min.x, worldVertex.x);
+                min.y = std::min(min.y, worldVertex.y);
+                max.x = std::max(max.x, worldVertex.x);
+                max.y = std::max(max.y, worldVertex.y);
             }
-
             return { min, max };
         }
         return { PhysicsEngine::Vector2(0, 0), PhysicsEngine::Vector2(0, 0) };
