@@ -32,6 +32,7 @@ namespace PhysicsEngine {
 
         void ApplyForce(const Vector2& f);
         void ApplyTorque(float t);
+        void ApplyImpulse(const Vector2& impulse, const Vector2& contactVector);
         void Integrate(float deltaTime);
 
         // getters
@@ -44,6 +45,7 @@ namespace PhysicsEngine {
         float GetOrientation() const;
         Vector2 GetVelocity() const;
         float GetAngularVelocity() const;
+        Vector2 GetVelocityAtPoint(const Vector2& worldPoint) const;
         Vector2 GetForce() const;
         float GetTorque() const;
         Vector2 GetAcceleration() const;
@@ -54,6 +56,7 @@ namespace PhysicsEngine {
         // setters
 
         void SetVelocity(const Vector2& v);
+        void SetAngularVelocity(float w);
         void SetPosition(const Vector2& p);
         void SetMass(float m);
         void SetOrientation(float o);

@@ -20,6 +20,9 @@ namespace PhysicsEngine {
         float magnitudeSquared() const;
         Vector2 normalized() const;
         float dot(const Vector2& other) const;
+        float cross(const Vector2& other) const;
+        static Vector2 cross(const Vector2& v, float scalar);
+        static Vector2 cross(float scalar, const Vector2& v);
     };
 }
 

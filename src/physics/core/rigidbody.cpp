@@ -39,6 +39,13 @@ namespace PhysicsEngine {
         torque += t; 
     }
 
+    void RigidBody::ApplyImpulse(const Vector2& impulse, const Vector2& contactVector) {
+        if (isStatic) return;
+
+        velocity = velocity + impulse * inverseMass;
+        angularVelocity = angularVelocity + inverseInertia * contactVector.cross(impulse);
+    }
+
     void RigidBody::Integrate(float deltaTime) {
         if (isStatic) return;
 
@@ -71,6 +78,10 @@ namespace PhysicsEngine {
 
     void RigidBody::SetVelocity(const Vector2& v) {
         velocity = v;
+    }
+
+    void RigidBody::SetAngularVelocity(float w) {
+        angularVelocity = w;
     }
 
     void RigidBody::SetPosition(const Vector2& p) {
@@ -149,6 +160,11 @@ namespace PhysicsEngine {
 
     float RigidBody::GetAngularVelocity() const {
         return angularVelocity;
+    }
+
+    Vector2 RigidBody::GetVelocityAtPoint(const Vector2& worldPoint) const {
+        Vector2 r = worldPoint - position;
+        return velocity + Vector2::cross(angularVelocity, r);
     }
 
     Vector2 RigidBody::GetForce() const {

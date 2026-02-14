@@ -44,4 +44,16 @@ namespace PhysicsEngine {
         return x * other.x + y * other.y;
     }
 
+    float Vector2::cross(const Vector2& other) const {
+        return x * other.y - y * other.x;
+    }
+
+    Vector2 Vector2::cross(const Vector2& v, float scalar) {
+        return Vector2(scalar * v.y, -scalar * v.x);
+    }
+
+    Vector2 Vector2::cross(float scalar, const Vector2& v) {
+        return Vector2(-scalar * v.y, scalar * v.x);
+    }
+
 }

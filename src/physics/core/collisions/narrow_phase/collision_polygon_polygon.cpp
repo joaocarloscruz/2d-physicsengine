@@ -39,16 +39,27 @@ namespace PhysicsEngine {
     // Find the vertex on 'poly' that is furthest along 'dir'
     static Vector2 GetSupportPoint(const std::vector<Vector2>& vertices, Vector2 dir) {
         float maxDist = -std::numeric_limits<float>::max();
-        Vector2 bestVertex = vertices[0];
+        std::vector<Vector2> bestVertices;
 
         for (const auto& v : vertices) {
             float dist = v.dot(dir);
-            if (dist > maxDist) {
+            if (dist > maxDist + 0.001f) {
                 maxDist = dist;
-                bestVertex = v;
+                bestVertices.clear();
+                bestVertices.push_back(v);
+            } else if (std::abs(dist - maxDist) < 0.001f) {
+                bestVertices.push_back(v);
             }
         }
-        return bestVertex;
+        
+        if (bestVertices.empty()) return Vector2(0, 0);
+        if (bestVertices.size() == 1) return bestVertices[0];
+
+        Vector2 sum(0, 0);
+        for (const auto& v : bestVertices) {
+            sum = sum + v;
+        }
+        return sum / static_cast<float>(bestVertices.size());
     }
 
     // Determine which vertex is colliding

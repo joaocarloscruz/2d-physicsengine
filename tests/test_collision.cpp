@@ -116,4 +116,27 @@ TEST_CASE("Polygon-Polygon Collision", "[collision]") {
         // They should also have moved apart
         REQUIRE(bodyB->GetPosition().x > bodyA->GetPosition().x);
     }
+
+    SECTION("Off-center collision causes rotation") {
+        World world;
+        auto rectangleShape = Polygon::MakeBox(1.0f, 1.0f);
+        Material material = {1.0f, 0.5f};
+
+        auto bodyA = std::make_shared<RigidBody>(&rectangleShape, material, Vector2(0.0f, 0.0f));
+        auto bodyB = std::make_shared<RigidBody>(&rectangleShape, material, Vector2(0.5f, 0.4f));
+        bodyB->SetVelocity(Vector2(-1.0f, 0.0f));
+
+        // Manually check narrow phase first to be sure
+        CollisionManifold manifold = PhysicsEngine::CollisionPolygonPolygon(bodyA.get(), bodyB.get());
+        REQUIRE(manifold.hasCollision == true);
+        REQUIRE(std::abs(manifold.normal.x) > 0.9f); // Should be horizontal-ish
+
+        world.addBody(bodyA);
+        world.addBody(bodyB);
+
+        world.step(0.01f);
+
+        // At least one body should have rotating (the one hit off-center)
+        REQUIRE(std::abs(bodyA->GetAngularVelocity()) + std::abs(bodyB->GetAngularVelocity()) > 0.01f);
+    }
 }
