@@ -31,6 +31,14 @@ namespace PhysicsEngine {
         return world.getBodies();
     }
 
+    void Engine::addCollisionListener(ICollisionListener* listener) {
+        world.addCollisionListener(listener);
+    }
+
+    void Engine::removeCollisionListener(ICollisionListener* listener) {
+        world.removeCollisionListener(listener);
+    }
+
     void Engine::addMaterial(const std::string& name, const Material& material) {
         materials[name] = material;
     }

@@ -40,6 +40,19 @@ void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
     this->universalForceRegistry.push_back(std::move(generator));
 }
 
+void World::addCollisionListener(ICollisionListener* listener) {
+    if (listener) {
+        collisionListeners.push_back(listener);
+    }
+}
+
+void World::removeCollisionListener(ICollisionListener* listener) {
+    collisionListeners.erase(
+        std::remove(collisionListeners.begin(), collisionListeners.end(), listener),
+        collisionListeners.end()
+    );
+}
+
 void World::step(float deltaTime) {
     potentialCollisions.clear();
 
@@ -68,7 +81,7 @@ void World::step(float deltaTime) {
     }
 
     // Narrow phase + resolve with multiple iterations for stability
-    // Re-run broad phase each iteration to catch new overlaps from corrections
+    // Listeners fire only on the first iteration to avoid duplicate callbacks
     const int iterations = 10;
     for (int iter = 0; iter < iterations; ++iter) {
         potentialCollisions = SweepAndPrune::FindPotentialCollisions(bodies);
@@ -76,6 +89,11 @@ void World::step(float deltaTime) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {
                 CollisionResolver::Resolve(manifold);
+                if (iter == 0) {
+                    for (ICollisionListener* listener : collisionListeners) {
+                        listener->onCollision(manifold);
+                    }
+                }
             }
         }
     }

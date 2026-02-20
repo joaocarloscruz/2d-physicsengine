@@ -9,6 +9,7 @@
 #include "collisions/collision_manifold.h"
 #include "collisions/collision_dispatcher.h"
 #include "collisions/collision_resolver.h"
+#include "collisions/collision_listener.h"
 #include "types.h"
 
 namespace PhysicsEngine {
@@ -30,6 +31,9 @@ public:
     void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
     void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
 
+    void addCollisionListener(ICollisionListener* listener);
+    void removeCollisionListener(ICollisionListener* listener);
+
     void step(float deltaTime);
     
     const std::vector<RigidBodyPtr>& getBodies() const;
@@ -42,6 +46,7 @@ private:
     std::vector<ForceRegistration> forceRegistry;
     std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;
     std::vector<CollisionPair> potentialCollisions;
+    std::vector<ICollisionListener*> collisionListeners;
 };
 
 }

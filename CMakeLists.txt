@@ -47,6 +47,7 @@ add_executable(run_tests
     ${TESTS_SRC_DIR}/test_engine.cpp
     ${TESTS_SRC_DIR}/test_collision.cpp
     ${TESTS_SRC_DIR}/test_simulation.cpp
+    ${TESTS_SRC_DIR}/test_collision_listener.cpp
     ${TESTS_SRC_DIR}/catch_amalgamated.cpp
 )
 

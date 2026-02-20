@@ -10,6 +10,7 @@
 #include "physics/core/force_generator.h"
 #include "physics/core/material.h"
 #include "physics/core/types.h"
+#include "physics/core/collisions/collision_listener.h"
 
 namespace PhysicsEngine {
     class Engine {
@@ -21,6 +22,9 @@ namespace PhysicsEngine {
         void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
         void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
         const std::vector<RigidBodyPtr>& getBodies() const;
+
+        void addCollisionListener(ICollisionListener* listener);
+        void removeCollisionListener(ICollisionListener* listener);
 
         void addMaterial(const std::string& name, const Material& material);
         const Material& getMaterial(const std::string& name) const;
