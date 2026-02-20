@@ -4,11 +4,13 @@ namespace PhysicsEngine {
 
     Engine::Engine() {
         // The world is empty by default. The sandbox is responsible for adding objects.
-        addMaterial("default", {1.0f, 0.5f});
-        addMaterial("rock", {1.2f, 0.1f});
-        addMaterial("wood", {0.7f, 0.3f});
-        addMaterial("metal", {2.0f, 0.05f});
-        addMaterial("bouncy", {0.5f, 1.0f});
+        // Material = {density, restitution, staticFriction, dynamicFriction}
+        addMaterial("default", {1.0f, 0.5f, 0.6f, 0.4f});
+        addMaterial("rock", {1.2f, 0.1f, 0.8f, 0.6f});
+        addMaterial("wood", {0.7f, 0.3f, 0.5f, 0.3f});
+        addMaterial("metal", {2.0f, 0.05f, 0.3f, 0.2f});
+        addMaterial("bouncy", {0.5f, 1.0f, 0.4f, 0.3f});
+        addMaterial("ice", {0.9f, 0.1f, 0.05f, 0.02f});
     }
 
     void Engine::step(float deltaTime) {

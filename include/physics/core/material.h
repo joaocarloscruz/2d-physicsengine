@@ -7,6 +7,8 @@ namespace PhysicsEngine
     {
         float density;
         float restitution;
+        float staticFriction = 0.6f;
+        float dynamicFriction = 0.4f;
     };
 }
 

@@ -56,5 +56,43 @@ namespace PhysicsEngine {
         Vector2 impulse = manifold.normal * impulseScalar;
         bodyA->ApplyImpulse(impulse * -1.0f, ra);
         bodyB->ApplyImpulse(impulse, rb);
+
+        // --- Friction ---
+        // Re-calculate relative velocity after normal impulse
+        relativeVelocity = bodyB->GetVelocityAtPoint(manifold.contactPoint) - bodyA->GetVelocityAtPoint(manifold.contactPoint);
+        
+        Vector2 tangent = relativeVelocity - manifold.normal * relativeVelocity.dot(manifold.normal);
+        
+        if (tangent.magnitudeSquared() > 0.0001f) {
+            tangent = tangent.normalized();
+            
+            float jt = -relativeVelocity.dot(tangent);
+            
+            float raCrossT = ra.cross(tangent);
+            float rbCrossT = rb.cross(tangent);
+            
+            float denomT = totalInverseMass +
+                           (raCrossT * raCrossT) * bodyA->GetInverseInertia() +
+                           (rbCrossT * rbCrossT) * bodyB->GetInverseInertia();
+            
+            jt /= denomT;
+            
+            // Coulomb's law combine metric (using Pythagoras mean or SQRT)
+            float muStatic = std::sqrt(bodyA->material.staticFriction * bodyB->material.staticFriction);
+            float muDynamic = std::sqrt(bodyA->material.dynamicFriction * bodyB->material.dynamicFriction);
+            
+            Vector2 frictionImpulse;
+            if (std::abs(jt) <= impulseScalar * muStatic) {
+                // Static friction: apply the exact impulse needed to stop sliding
+                frictionImpulse = tangent * jt;
+            } else {
+                // Dynamic friction: apply bounded impulse in direction of jt
+                float dynamicImpulse = impulseScalar * muDynamic;
+                frictionImpulse = tangent * (jt > 0 ? dynamicImpulse : -dynamicImpulse);
+            }
+            
+            bodyA->ApplyImpulse(frictionImpulse * -1.0f, ra);
+            bodyB->ApplyImpulse(frictionImpulse, rb);
+        }
     }
 }

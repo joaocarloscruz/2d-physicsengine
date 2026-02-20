@@ -217,3 +217,54 @@ TEST_CASE("Circle resting on floor under gravity stays at floor surface", "[simu
     // And it should not have sunk through the floor
     REQUIRE(circle->GetPosition().y - 0.5f >= groundCenterY + 0.5f - 0.3f);
 }
+
+TEST_CASE("Box sliding on frictionless floor maintains velocity", "[simulation][friction]") {
+    World world;
+    auto boxShape = Polygon::MakeBox(1.0f, 1.0f);
+    auto groundShape = Polygon::MakeBox(20.0f, 1.0f);
+    
+    // Frictionless material
+    Material zeroFriction = {1.0f, 0.0f, 0.0f, 0.0f};
+
+    auto ground = std::make_shared<RigidBody>(&groundShape, zeroFriction, Vector2(0.0f, -0.5f), true);
+    auto box = std::make_shared<RigidBody>(&boxShape, zeroFriction, Vector2(0.0f, 0.51f));
+
+    box->SetVelocity(Vector2(5.0f, 0.0f));
+    
+    world.addBody(ground);
+    world.addBody(box);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.81f)));
+
+    for (int i = 0; i < 60; ++i) { // 1 second
+        world.step(1.0f / 60.0f);
+    }
+
+    REQUIRE(box->GetVelocity().x == Catch::Approx(5.0f).margin(0.01f));
+}
+
+TEST_CASE("Box sliding on floor with friction slows down", "[simulation][friction]") {
+    World world;
+    auto boxShape = Polygon::MakeBox(1.0f, 1.0f);
+    auto groundShape = Polygon::MakeBox(20.0f, 1.0f);
+    
+    // High friction material
+    Material highFriction = {1.0f, 0.0f, 0.8f, 0.6f};
+
+    auto ground = std::make_shared<RigidBody>(&groundShape, highFriction, Vector2(0.0f, -0.5f), true);
+    auto box = std::make_shared<RigidBody>(&boxShape, highFriction, Vector2(0.0f, 0.51f));
+
+    box->SetVelocity(Vector2(5.0f, 0.0f));
+    
+    world.addBody(ground);
+    world.addBody(box);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.81f)));
+
+    for (int i = 0; i < 60; ++i) { // 1 second
+        world.step(1.0f / 60.0f);
+    }
+
+    // Since friction is applied, velocity should be strictly less than 5.0
+    // With dynamic friction 0.6 and gravity 9.81, deceleration is ~5.88 m/s^2.
+    // Over 1s, it should come to a complete stop (x velocity approaches 0).
+    REQUIRE(box->GetVelocity().x < 1.0f);
+}
