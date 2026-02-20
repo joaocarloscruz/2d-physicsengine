@@ -30,3 +30,8 @@
 # Logs and temporary files
 *.log
 *.tmp
+
+# Visualization build artifacts
+/visualization/build/
+/visualization/*.exe
+/visualization/*.dll

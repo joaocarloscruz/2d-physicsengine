@@ -4,7 +4,11 @@
 #include "../include/physics/core/shape.h"
 #include "../include/physics/math/vector2.h"
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
+#include "physics/core/collisions/narrow_phase/collision_circle_polygon.h"
+#include "physics/core/collisions/collision_dispatcher.h"
+#include "physics/core/forces/gravity.h"
 #include <memory>
+#include <iostream>
 
 using namespace Catch;
 using namespace PhysicsEngine;
@@ -138,5 +142,106 @@ TEST_CASE("Polygon-Polygon Collision", "[collision]") {
 
         // At least one body should have rotating (the one hit off-center)
         REQUIRE(std::abs(bodyA->GetAngularVelocity()) + std::abs(bodyB->GetAngularVelocity()) > 0.01f);
+    }
+}
+
+TEST_CASE("Circle-Polygon Collision Detection", "[collision]") {
+    SECTION("Circle directly above polygon detects collision") {
+        auto groundShape = Polygon::MakeBox(10.0f, 1.0f);
+        Circle circleShape(0.5f);
+        Material mat = {1.0f, 0.5f};
+
+        // Ground centered at (0, 0), top face at y=0.5
+        // Circle at (0, 0.8), bottom at y=0.3 - overlapping by 0.2
+        RigidBody ground(&groundShape, mat, Vector2(0.0f, 0.0f), true);
+        RigidBody circle(&circleShape, mat, Vector2(0.0f, 0.8f));
+
+        CollisionManifold manifold = CollisionCirclePolygon(&circle, &ground);
+        
+        INFO("hasCollision: " << manifold.hasCollision);
+        INFO("penetration: " << manifold.penetration);
+        INFO("normal: (" << manifold.normal.x << ", " << manifold.normal.y << ")");
+        INFO("contactPoint: (" << manifold.contactPoint.x << ", " << manifold.contactPoint.y << ")");
+        
+        REQUIRE(manifold.hasCollision == true);
+        REQUIRE(manifold.penetration == Catch::Approx(0.2f).margin(0.05f));
+    }
+
+    SECTION("Circle-Polygon normal direction is correct") {
+        auto groundShape = Polygon::MakeBox(10.0f, 1.0f);
+        Circle circleShape(0.5f);
+        Material mat = {1.0f, 0.5f};
+
+        // Circle above polygon
+        RigidBody ground(&groundShape, mat, Vector2(0.0f, 0.0f), true);
+        RigidBody circle(&circleShape, mat, Vector2(0.0f, 0.8f));
+
+        CollisionManifold manifold = CollisionCirclePolygon(&circle, &ground);
+        
+        INFO("normal: (" << manifold.normal.x << ", " << manifold.normal.y << ")");
+        REQUIRE(manifold.hasCollision == true);
+        
+        // Normal should point from circle (A) toward polygon (B), i.e., downward
+        REQUIRE(manifold.normal.y < -0.9f);
+    }
+
+    SECTION("Circle does not fall through ground with gravity") {
+        World world;
+        auto groundShape = Polygon::MakeBox(20.0f, 1.0f);
+        Circle circleShape(0.5f);
+        Material mat = {1.0f, 0.3f};
+
+        auto ground = std::make_shared<RigidBody>(&groundShape, mat, Vector2(0.0f, -8.0f), true);
+        auto circle = std::make_shared<RigidBody>(&circleShape, mat, Vector2(0.0f, -6.0f));
+
+        world.addBody(ground);
+        world.addBody(circle);
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.81f)));
+
+        float initialY = circle->GetPosition().y;
+        float groundTopY = -8.0f + 0.5f; // ground center + half-height
+
+        // Run simulation for 5 seconds (300 frames at 1/60)
+        for (int i = 0; i < 300; ++i) {
+            world.step(1.0f / 60.0f);
+        }
+
+        float finalY = circle->GetPosition().y;
+        float circleBottomY = finalY - 0.5f; // center - radius
+
+        INFO("Initial Y: " << initialY);
+        INFO("Final Y: " << finalY);
+        INFO("Circle bottom Y: " << circleBottomY);
+        INFO("Ground top Y: " << groundTopY);
+        
+        // Circle bottom should be AT or ABOVE the ground surface, not below it
+        REQUIRE(circleBottomY >= groundTopY - 0.5f); // Allow some penetration tolerance
+    }
+
+    SECTION("Circle-Polygon via dispatcher") {
+        auto groundShape = Polygon::MakeBox(10.0f, 1.0f);
+        Circle circleShape(0.5f);
+        Material mat = {1.0f, 0.5f};
+
+        RigidBody ground(&groundShape, mat, Vector2(0.0f, 0.0f), true);
+        RigidBody circle(&circleShape, mat, Vector2(0.0f, 0.8f));
+
+        // Test via the dispatcher (which handles type ordering)
+        CollisionManifold manifold = CheckCollision(&circle, &ground);
+        
+        INFO("Via dispatcher - hasCollision: " << manifold.hasCollision);
+        INFO("Via dispatcher - penetration: " << manifold.penetration);
+        INFO("Via dispatcher - normal: (" << manifold.normal.x << ", " << manifold.normal.y << ")");
+        
+        REQUIRE(manifold.hasCollision == true);
+
+        // Also test with reversed order
+        CollisionManifold manifold2 = CheckCollision(&ground, &circle);
+        
+        INFO("Reversed - hasCollision: " << manifold2.hasCollision);
+        INFO("Reversed - penetration: " << manifold2.penetration);
+        INFO("Reversed - normal: (" << manifold2.normal.x << ", " << manifold2.normal.y << ")");
+        
+        REQUIRE(manifold2.hasCollision == true);
     }
 }
