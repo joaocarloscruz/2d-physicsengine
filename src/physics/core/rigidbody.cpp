@@ -70,7 +70,17 @@ namespace PhysicsEngine {
         velocity = velocity + (linearAcceleration + nextLinearAcceleration) * (0.5f * deltaTime);
         angularVelocity = angularVelocity + (angularAcceleration + nextAngularAcceleration) * (0.5f * deltaTime);
 
-        // 5. Reset forces and torque for the next frame
+        // 5. Clamp velocity to prevent tunneling
+        const float maxSpeed = 200.0f;
+        float speedSq = velocity.magnitudeSquared();
+        if (speedSq > maxSpeed * maxSpeed) {
+            velocity = velocity.normalized() * maxSpeed;
+        }
+        const float maxAngularSpeed = 30.0f;
+        if (angularVelocity > maxAngularSpeed) angularVelocity = maxAngularSpeed;
+        if (angularVelocity < -maxAngularSpeed) angularVelocity = -maxAngularSpeed;
+
+        // 6. Reset forces and torque for the next frame
         force = Vector2(0.0f, 0.0f);
         torque = 0.0f;
     }

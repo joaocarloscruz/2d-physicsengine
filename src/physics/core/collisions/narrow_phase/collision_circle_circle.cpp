@@ -24,9 +24,12 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
     if (distance == 0.0f) {
         manifold.penetration = circleA->GetRadius();
         manifold.normal = Vector2(1.0f, 0.0f);
+        manifold.contactPoint = a->position;
     } else {
         manifold.penetration = sumRadii - distance;
         manifold.normal = normal * (1.0f / distance);
+        // Contact point is on the surface of A, towards B
+        manifold.contactPoint = a->position + manifold.normal * circleA->GetRadius();
     }
 
     manifold.hasCollision = true;

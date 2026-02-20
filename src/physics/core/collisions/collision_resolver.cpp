@@ -8,8 +8,8 @@ namespace PhysicsEngine {
         RigidBody* bodyB = manifold.B;
 
 
-        const float percent = 0.4f; // How much of the penetration to correct.
-        const float slop = 0.01f;   // A small allowance for penetration to prevent jittering at rest.
+        const float percent = 0.8f; // How much of the penetration to correct.
+        const float slop = 0.005f;   // A small allowance for penetration to prevent jittering at rest.
 
         // Calculate the correction vector based on penetration depth and inverse masses.
         float totalInverseMass = bodyA->GetInverseMass() + bodyB->GetInverseMass();

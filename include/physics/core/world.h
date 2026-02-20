@@ -25,6 +25,7 @@ public:
 
     void addBody(RigidBodyPtr body);
     void removeBody(RigidBodyPtr body);
+    void clearBodies();
 
     void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
     void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
