@@ -31,6 +31,7 @@ add_library(Engine SHARED
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_polygon.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_resolver.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/sweep_and_prune.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/uniform_grid.cpp
 )
 
 set_target_properties(Engine PROPERTIES
@@ -46,6 +47,7 @@ add_executable(run_tests
     ${TESTS_SRC_DIR}/test_forces.cpp
     ${TESTS_SRC_DIR}/test_engine.cpp
     ${TESTS_SRC_DIR}/test_collision.cpp
+    ${TESTS_SRC_DIR}/test_broad_phase.cpp
     ${TESTS_SRC_DIR}/test_simulation.cpp
     ${TESTS_SRC_DIR}/test_collision_listener.cpp
     ${TESTS_SRC_DIR}/catch_amalgamated.cpp

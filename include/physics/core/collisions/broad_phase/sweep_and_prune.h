@@ -1,6 +1,7 @@
 #ifndef SWEEP_AND_PRUNE_H
 #define SWEEP_AND_PRUNE_H
 
+#include "ibroad_phase.h"
 #include "../../rigidbody.h"
 #include "../../types.h"
 #include <vector>
@@ -8,9 +9,12 @@
 
 namespace PhysicsEngine {
 
-    class SweepAndPrune {
+    class SweepAndPrune : public IBroadPhase {
     public:
-        static std::vector<CollisionPair> FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies);
+        SweepAndPrune() = default;
+        ~SweepAndPrune() override = default;
+
+        std::vector<CollisionPair> FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) override;
     };
 
 }

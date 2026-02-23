@@ -6,7 +6,9 @@
 
 namespace PhysicsEngine {
 
-World::World() {}
+World::World() {
+    broadPhase = std::make_unique<SweepAndPrune>();
+}
 
 World::~World() {}
 
@@ -53,6 +55,12 @@ void World::removeCollisionListener(ICollisionListener* listener) {
     );
 }
 
+void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
+    if (bp) {
+        broadPhase = std::move(bp);
+    }
+}
+
 void World::step(float deltaTime) {
     potentialCollisions.clear();
 
@@ -84,7 +92,7 @@ void World::step(float deltaTime) {
     // Listeners fire only on the first iteration to avoid duplicate callbacks
     const int iterations = 10;
     for (int iter = 0; iter < iterations; ++iter) {
-        potentialCollisions = SweepAndPrune::FindPotentialCollisions(bodies);
+        potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
         for (const auto& pair : potentialCollisions) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {

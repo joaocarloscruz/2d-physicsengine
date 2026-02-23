@@ -10,6 +10,7 @@
 #include "collisions/collision_dispatcher.h"
 #include "collisions/collision_resolver.h"
 #include "collisions/collision_listener.h"
+#include "collisions/broad_phase/ibroad_phase.h"
 #include "types.h"
 
 namespace PhysicsEngine {
@@ -34,6 +35,8 @@ public:
     void addCollisionListener(ICollisionListener* listener);
     void removeCollisionListener(ICollisionListener* listener);
 
+    void setBroadPhase(std::unique_ptr<IBroadPhase> bp);
+
     void step(float deltaTime);
     
     const std::vector<RigidBodyPtr>& getBodies() const;
@@ -47,6 +50,7 @@ private:
     std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;
     std::vector<CollisionPair> potentialCollisions;
     std::vector<ICollisionListener*> collisionListeners;
+    std::unique_ptr<IBroadPhase> broadPhase;
 };
 
 }
