@@ -54,8 +54,10 @@ namespace PhysicsEngine {
 
         // To avoid duplicate pairs across multiple cells
         auto pairHash = [](const CollisionPair& p) {
-            auto h1 = std::hash<void*>{}(p.first.get());
-            auto h2 = std::hash<void*>{}(p.second.get());
+            const std::uint64_t firstId = std::min(p.first->GetId(), p.second->GetId());
+            const std::uint64_t secondId = std::max(p.first->GetId(), p.second->GetId());
+            auto h1 = std::hash<std::uint64_t>{}(firstId);
+            auto h2 = std::hash<std::uint64_t>{}(secondId);
             return h1 ^ (h2 << 1);
         };
 
