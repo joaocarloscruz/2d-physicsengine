@@ -6,11 +6,11 @@
 
 namespace PhysicsEngine {
     struct CollisionManifold {
-        RigidBody* A;
-        RigidBody* B;
+        RigidBody* A = nullptr;
+        RigidBody* B = nullptr;
         bool hasCollision = false;
         Vector2 normal;
-        float penetration;
+        float penetration = 0.0f;
         Vector2 contactPoint;
     };
 }

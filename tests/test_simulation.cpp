@@ -67,6 +67,37 @@ TEST_CASE("Linear momentum is conserved in isolated circle-circle collision", "[
     REQUIRE(pAfter.y == Catch::Approx(pBefore.y).margin(0.01f));
 }
 
+TEST_CASE("Kinetic energy is conserved in an elastic circle collision", "[simulation]") {
+    World world;
+    Circle circleShape(1.0f);
+    Material material = {1.0f, 1.0f, 0.0f, 0.0f};
+
+    auto moving = std::make_shared<RigidBody>(
+        &circleShape,
+        material,
+        Vector2(-2.0f, 0.0f)
+    );
+    auto stationary = std::make_shared<RigidBody>(
+        &circleShape,
+        material,
+        Vector2(0.5f, 0.0f)
+    );
+    moving->SetMass(1.0f);
+    stationary->SetMass(1.0f);
+    moving->SetVelocity(Vector2(4.0f, 0.0f));
+
+    world.addBody(moving);
+    world.addBody(stationary);
+    const float energyBefore = totalKineticEnergy(world.getBodies());
+
+    for (int i = 0; i < 30; ++i) {
+        world.step(1.0f / 60.0f);
+    }
+
+    const float energyAfter = totalKineticEnergy(world.getBodies());
+    REQUIRE(energyAfter == Catch::Approx(energyBefore).margin(0.05f));
+}
+
 TEST_CASE("Elastic collision: moving circle hits stationary circle of equal mass", "[simulation]") {
     // With restitution = 1, the moving body stops and the stationary one moves forward
     World world;

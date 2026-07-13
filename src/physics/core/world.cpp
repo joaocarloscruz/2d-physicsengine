@@ -36,9 +36,7 @@ namespace {
     }
 }
 
-World::World() {
-    broadPhase = std::make_unique<SweepAndPrune>();
-}
+World::World() : broadPhase(std::make_unique<SweepAndPrune>()) {}
 
 World::~World() {}
 
