@@ -16,8 +16,16 @@ include_directories(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Emscripten links the engine into the generated WebAssembly module. Native
+# consumers continue to receive the shared library used by the visualizer.
+if(EMSCRIPTEN)
+    set(ENGINE_LIBRARY_TYPE STATIC)
+else()
+    set(ENGINE_LIBRARY_TYPE SHARED)
+endif()
+
 # --- Engine Library
-add_library(Engine SHARED
+add_library(Engine ${ENGINE_LIBRARY_TYPE}
     src/engine.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
@@ -34,26 +42,65 @@ add_library(Engine SHARED
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/uniform_grid.cpp
 )
 
-set_target_properties(Engine PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-)
+if(WIN32)
+    set_target_properties(Engine PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+endif()
 
-# --- Test Executable
-add_executable(run_tests
-    ${TESTS_SRC_DIR}/main_tests.cpp
-    ${TESTS_SRC_DIR}/test_math.cpp
-    ${TESTS_SRC_DIR}/test_rigidbody.cpp
-    ${TESTS_SRC_DIR}/test_world.cpp
-    ${TESTS_SRC_DIR}/test_forces.cpp
-    ${TESTS_SRC_DIR}/test_engine.cpp
-    ${TESTS_SRC_DIR}/test_collision.cpp
-    ${TESTS_SRC_DIR}/test_broad_phase.cpp
-    ${TESTS_SRC_DIR}/test_simulation.cpp
-    ${TESTS_SRC_DIR}/test_collision_listener.cpp
-    ${TESTS_SRC_DIR}/catch_amalgamated.cpp
-)
+if(EMSCRIPTEN)
+    # --- WebAssembly module
+    add_executable(physics_engine_wasm
+        src/wasm/bindings.cpp
+    )
 
-# Link the test executable with the physics library
-target_link_libraries(run_tests
-    Engine
-)
+    target_link_libraries(physics_engine_wasm PRIVATE Engine embind)
+    target_compile_options(physics_engine_wasm PRIVATE -fexceptions)
+    target_link_options(physics_engine_wasm PRIVATE
+        -fexceptions
+        "-sMODULARIZE=1"
+        "-sEXPORT_NAME=createPhysicsEngineModule"
+        "-sENVIRONMENT=web,node"
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sDISABLE_EXCEPTION_CATCHING=0"
+    )
+
+    set(WASM_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/wasm")
+    set_target_properties(physics_engine_wasm PROPERTIES
+        OUTPUT_NAME "physics_engine"
+        SUFFIX ".js"
+        RUNTIME_OUTPUT_DIRECTORY "${WASM_OUTPUT_DIRECTORY}"
+    )
+
+    add_custom_command(TARGET physics_engine_wasm POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/index.html"
+            "${WASM_OUTPUT_DIRECTORY}/index.html"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/smoke.js"
+            "${WASM_OUTPUT_DIRECTORY}/smoke.js"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/smoke-test.cjs"
+            "${WASM_OUTPUT_DIRECTORY}/smoke-test.cjs"
+        COMMENT "Copying WebAssembly smoke tests"
+    )
+else()
+    # --- Native Test Executable
+    add_executable(run_tests
+        ${TESTS_SRC_DIR}/main_tests.cpp
+        ${TESTS_SRC_DIR}/test_math.cpp
+        ${TESTS_SRC_DIR}/test_rigidbody.cpp
+        ${TESTS_SRC_DIR}/test_world.cpp
+        ${TESTS_SRC_DIR}/test_forces.cpp
+        ${TESTS_SRC_DIR}/test_engine.cpp
+        ${TESTS_SRC_DIR}/test_collision.cpp
+        ${TESTS_SRC_DIR}/test_broad_phase.cpp
+        ${TESTS_SRC_DIR}/test_simulation.cpp
+        ${TESTS_SRC_DIR}/test_collision_listener.cpp
+        ${TESTS_SRC_DIR}/catch_amalgamated.cpp
+    )
+
+    target_link_libraries(run_tests PRIVATE Engine)
+    enable_testing()
+    add_test(NAME engine_tests COMMAND run_tests)
+endif()
