@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include "rigidbody.h"
 #include "force_generator.h"
+#include "particles/particle_system.h"
 #include "collisions/broad_phase/aabb.h"
 #include "collisions/collision_manifold.h"
 #include "collisions/collision_dispatcher.h"
@@ -47,6 +48,10 @@ public:
     void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
     void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
 
+    void addParticleSystem(ParticleSystemPtr system);
+    void removeParticleSystem(const ParticleSystemPtr& system);
+    void clearParticleSystems();
+
     void addCollisionListener(ICollisionListener* listener);
     void removeCollisionListener(ICollisionListener* listener);
 
@@ -58,12 +63,14 @@ public:
     const std::vector<ForceRegistration>& getForceRegistry() const;
     const std::vector<std::unique_ptr<IForceGenerator>>& getUniversalForceRegistry() const;
     const std::vector<CollisionPair>& getPotentialCollisions() const;
+    const std::vector<ParticleSystemPtr>& getParticleSystems() const;
     std::size_t getPersistentContactCount() const;
 
 private:
     std::vector<RigidBodyPtr> bodies;
     std::vector<ForceRegistration> forceRegistry;
     std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;
+    std::vector<ParticleSystemPtr> particleSystems;
     std::vector<CollisionPair> potentialCollisions;
     std::vector<ICollisionListener*> collisionListeners;
     std::unique_ptr<IBroadPhase> broadPhase;

@@ -4,6 +4,7 @@
 
 #include "engine.h"
 #include "physics/core/material.h"
+#include "physics/core/particles/particle_system.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
 #include "physics/math/vector2.h"
@@ -22,6 +23,10 @@ RigidBodyPtr CreateRigidBody(
 
 Polygon* CreateBox(float width, float height) {
     return new Polygon(Polygon::MakeBox(width, height));
+}
+
+ParticleSystemPtr CreateParticleSystem() {
+    return std::make_shared<ParticleSystem>();
 }
 
 } // namespace
@@ -71,9 +76,38 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
 
     function("createRigidBody", &CreateRigidBody, allow_raw_pointers());
 
+    class_<ParticleSystem>("ParticleSystem")
+        .smart_ptr<ParticleSystemPtr>("ParticleSystemPtr")
+        .function("reserve", &ParticleSystem::reserve)
+        .function("addParticle", &ParticleSystem::addParticle)
+        .function("removeParticle", &ParticleSystem::removeParticle)
+        .function("applyForce", &ParticleSystem::applyForce)
+        .function("clear", &ParticleSystem::clear)
+        .function("step", &ParticleSystem::step)
+        .function("setUniformAcceleration", &ParticleSystem::setUniformAcceleration)
+        .function("getUniformAcceleration", &ParticleSystem::getUniformAcceleration)
+        .function("size", &ParticleSystem::size)
+        .function("empty", &ParticleSystem::empty)
+        .function("getParticlePosition", optional_override([](
+            const ParticleSystem& system,
+            std::size_t index
+        ) {
+            return system.getParticles().at(index).position;
+        }))
+        .function("getParticleVelocity", optional_override([](
+            const ParticleSystem& system,
+            std::size_t index
+        ) {
+            return system.getParticles().at(index).velocity;
+        }));
+
+    function("createParticleSystem", &CreateParticleSystem);
+
     class_<Engine>("Engine")
         .constructor<>()
         .function("step", &Engine::step)
         .function("addBody", &Engine::addBody)
+        .function("addParticleSystem", &Engine::addParticleSystem)
+        .function("removeParticleSystem", &Engine::removeParticleSystem)
         .function("getMaterial", &Engine::getMaterial);
 }

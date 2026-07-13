@@ -84,6 +84,23 @@ void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
     this->universalForceRegistry.push_back(std::move(generator));
 }
 
+void World::addParticleSystem(ParticleSystemPtr system) {
+    if (system) {
+        particleSystems.push_back(std::move(system));
+    }
+}
+
+void World::removeParticleSystem(const ParticleSystemPtr& system) {
+    particleSystems.erase(
+        std::remove(particleSystems.begin(), particleSystems.end(), system),
+        particleSystems.end()
+    );
+}
+
+void World::clearParticleSystems() {
+    particleSystems.clear();
+}
+
 void World::addCollisionListener(ICollisionListener* listener) {
     if (listener) {
         collisionListeners.push_back(listener);
@@ -106,6 +123,10 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
 void World::step(float deltaTime) {
     potentialCollisions.clear();
     std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
+
+    for (const ParticleSystemPtr& system : particleSystems) {
+        system->step(deltaTime);
+    }
 
     for (auto& registration : forceRegistry) {
         registration.generator->applyForce(registration.body.get());
@@ -188,6 +209,10 @@ const std::vector<ForceRegistration>& World::getForceRegistry() const {
 
 const std::vector<std::unique_ptr<IForceGenerator>>& World::getUniversalForceRegistry() const {
     return universalForceRegistry;
+}
+
+const std::vector<ParticleSystemPtr>& World::getParticleSystems() const {
+    return particleSystems;
 }
 
 std::size_t World::getPersistentContactCount() const {

@@ -29,8 +29,20 @@ namespace PhysicsEngine {
         world.addUniversalForce(std::move(generator));
     }
 
+    void Engine::addParticleSystem(ParticleSystemPtr system) {
+        world.addParticleSystem(std::move(system));
+    }
+
+    void Engine::removeParticleSystem(const ParticleSystemPtr& system) {
+        world.removeParticleSystem(system);
+    }
+
     const std::vector<RigidBodyPtr>& Engine::getBodies() const {
         return world.getBodies();
+    }
+
+    const std::vector<ParticleSystemPtr>& Engine::getParticleSystems() const {
+        return world.getParticleSystems();
     }
 
     void Engine::addCollisionListener(ICollisionListener* listener) {

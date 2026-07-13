@@ -8,10 +8,12 @@
 namespace PhysicsEngine {
 
 class RigidBody;
+class ParticleSystem;
 
 using RigidBodyPtr = std::shared_ptr<RigidBody>;
 using RigidBodyWeakPtr = std::weak_ptr<RigidBody>;
 using CollisionPair = std::pair<RigidBodyPtr, RigidBodyPtr>;
+using ParticleSystemPtr = std::shared_ptr<ParticleSystem>;
 
 }
 

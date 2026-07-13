@@ -21,7 +21,10 @@ namespace PhysicsEngine {
         void addBody(RigidBodyPtr body);
         void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
         void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
+        void addParticleSystem(ParticleSystemPtr system);
+        void removeParticleSystem(const ParticleSystemPtr& system);
         const std::vector<RigidBodyPtr>& getBodies() const;
+        const std::vector<ParticleSystemPtr>& getParticleSystems() const;
 
         void addCollisionListener(ICollisionListener* listener);
         void removeCollisionListener(ICollisionListener* listener);

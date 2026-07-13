@@ -25,9 +25,9 @@ emrun .\build-wasm\wasm\index.html
 
 ## JavaScript API
 
-The module exposes `Engine`, `Circle`, `Polygon`, `RigidBody`, `Material`, and
-`Vector2`. Use `createRigidBody` to create the shared body handle expected by
-`Engine.addBody`.
+The module exposes `Engine`, `Circle`, `Polygon`, `RigidBody`, `ParticleSystem`,
+`Material`, and `Vector2`. Use `createRigidBody` and `createParticleSystem` to
+create the shared handles expected by the corresponding `Engine` methods.
 
 ```javascript
 const physics = await createPhysicsEngineModule();

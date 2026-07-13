@@ -22,13 +22,22 @@ async function runSmokeTest() {
         engine.step(0.5);
 
         const position = body.getPosition();
-        const passed = Math.abs(position.x - 1.5) < 0.0001 && position.y === 0;
+        const particles = physics.createParticleSystem();
+        particles.addParticle({ x: 0.0, y: 0.0 }, { x: 4.0, y: 0.0 }, 1.0);
+        engine.addParticleSystem(particles);
+        engine.step(0.25);
+        const particlePosition = particles.getParticlePosition(0);
+
+        const passed = Math.abs(position.x - 2.25) < 0.0001
+            && position.y === 0
+            && Math.abs(particlePosition.x - 1.0) < 0.0001;
         output.textContent = passed
-            ? `PASS: body moved to (${position.x}, ${position.y})`
-            : `FAIL: unexpected position (${position.x}, ${position.y})`;
+            ? "PASS: rigid body and particle system stepped"
+            : `FAIL: body=(${position.x}, ${position.y}), particle=(${particlePosition.x}, ${particlePosition.y})`;
         output.dataset.result = passed ? "pass" : "fail";
 
         engine.delete();
+        particles.delete();
         body.delete();
         shape.delete();
     } catch (error) {
