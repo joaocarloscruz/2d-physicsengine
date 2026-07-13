@@ -127,3 +127,32 @@ TEST_CASE("World operations are correct", "[World]") {
         REQUIRE(correctPairFound);
     }
 }
+
+TEST_CASE("World persists active contact impulses", "[World][warm_start]") {
+    World world;
+    auto floorShape = Polygon::MakeBox(10.0f, 1.0f);
+    Circle circleShape(0.5f);
+    Material material = {1.0f, 0.0f, 0.6f, 0.4f};
+
+    auto floor = std::make_shared<RigidBody>(
+        &floorShape,
+        material,
+        Vector2(0.0f, -0.5f),
+        true
+    );
+    auto circle = std::make_shared<RigidBody>(
+        &circleShape,
+        material,
+        Vector2(0.0f, 0.49f)
+    );
+    circle->SetVelocity(Vector2(0.0f, -1.0f));
+
+    world.addBody(floor);
+    world.addBody(circle);
+    world.step(1.0f / 60.0f);
+
+    REQUIRE(world.getPersistentContactCount() == 1);
+
+    world.removeBody(circle);
+    REQUIRE(world.getPersistentContactCount() == 0);
+}

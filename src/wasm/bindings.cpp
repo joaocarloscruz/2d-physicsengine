@@ -61,6 +61,7 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getVelocity", &RigidBody::GetVelocity)
         .function("getAngularVelocity", &RigidBody::GetAngularVelocity)
         .function("getMass", &RigidBody::GetMass)
+        .function("getId", &RigidBody::GetId)
         .function("isStatic", &RigidBody::IsStatic)
         .function("setPosition", &RigidBody::SetPosition)
         .function("setOrientation", &RigidBody::SetOrientation)

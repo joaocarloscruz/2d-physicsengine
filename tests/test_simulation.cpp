@@ -268,3 +268,37 @@ TEST_CASE("Box sliding on floor with friction slows down", "[simulation][frictio
     // Over 1s, it should come to a complete stop (x velocity approaches 0).
     REQUIRE(box->GetVelocity().x < 1.0f);
 }
+
+TEST_CASE("A resting box stack remains stable", "[simulation][warm_start]") {
+    World world;
+    auto floorShape = Polygon::MakeBox(20.0f, 1.0f);
+    auto boxShape = Polygon::MakeBox(1.0f, 1.0f);
+    Material material = {1.0f, 0.0f, 0.7f, 0.5f};
+
+    auto floor = std::make_shared<RigidBody>(
+        &floorShape,
+        material,
+        Vector2(0.0f, -0.5f),
+        true
+    );
+    auto bottom = std::make_shared<RigidBody>(&boxShape, material, Vector2(0.0f, 0.5f));
+    auto middle = std::make_shared<RigidBody>(&boxShape, material, Vector2(0.0f, 1.5f));
+    auto top = std::make_shared<RigidBody>(&boxShape, material, Vector2(0.0f, 2.5f));
+
+    world.addBody(floor);
+    world.addBody(bottom);
+    world.addBody(middle);
+    world.addBody(top);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2(0.0f, -9.81f)));
+
+    for (int i = 0; i < 600; ++i) {
+        world.step(1.0f / 60.0f);
+    }
+
+    REQUIRE(bottom->GetPosition().y == Catch::Approx(0.5f).margin(0.15f));
+    REQUIRE(middle->GetPosition().y == Catch::Approx(1.5f).margin(0.2f));
+    REQUIRE(top->GetPosition().y == Catch::Approx(2.5f).margin(0.25f));
+    REQUIRE(std::abs(bottom->GetVelocity().y) < 0.2f);
+    REQUIRE(std::abs(middle->GetVelocity().y) < 0.2f);
+    REQUIRE(std::abs(top->GetVelocity().y) < 0.2f);
+}

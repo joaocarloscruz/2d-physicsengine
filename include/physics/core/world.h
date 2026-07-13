@@ -3,6 +3,8 @@
 
 #include <vector>
 #include <memory>
+#include <cstdint>
+#include <unordered_map>
 #include "rigidbody.h"
 #include "force_generator.h"
 #include "collisions/broad_phase/aabb.h"
@@ -18,6 +20,19 @@ namespace PhysicsEngine {
 struct ForceRegistration {
     RigidBodyPtr body;
     std::unique_ptr<IForceGenerator> generator;
+};
+
+struct ContactKey {
+    std::uint64_t first;
+    std::uint64_t second;
+
+    static ContactKey From(const RigidBody* bodyA, const RigidBody* bodyB);
+    bool contains(std::uint64_t bodyId) const;
+    bool operator==(const ContactKey& other) const;
+};
+
+struct ContactKeyHash {
+    std::size_t operator()(const ContactKey& key) const;
 };
 
 class World {
@@ -43,6 +58,7 @@ public:
     const std::vector<ForceRegistration>& getForceRegistry() const;
     const std::vector<std::unique_ptr<IForceGenerator>>& getUniversalForceRegistry() const;
     const std::vector<CollisionPair>& getPotentialCollisions() const;
+    std::size_t getPersistentContactCount() const;
 
 private:
     std::vector<RigidBodyPtr> bodies;
@@ -51,6 +67,7 @@ private:
     std::vector<CollisionPair> potentialCollisions;
     std::vector<ICollisionListener*> collisionListeners;
     std::unique_ptr<IBroadPhase> broadPhase;
+    std::unordered_map<ContactKey, ContactImpulse, ContactKeyHash> contactCache;
 };
 
 }

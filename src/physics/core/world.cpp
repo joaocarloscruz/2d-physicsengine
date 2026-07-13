@@ -3,8 +3,38 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include <utility>
 #include <algorithm>
+#include <unordered_set>
 
 namespace PhysicsEngine {
+
+ContactKey ContactKey::From(const RigidBody* bodyA, const RigidBody* bodyB) {
+    const std::uint64_t idA = bodyA->GetId();
+    const std::uint64_t idB = bodyB->GetId();
+    return idA < idB ? ContactKey{idA, idB} : ContactKey{idB, idA};
+}
+
+bool ContactKey::contains(std::uint64_t bodyId) const {
+    return first == bodyId || second == bodyId;
+}
+
+bool ContactKey::operator==(const ContactKey& other) const {
+    return first == other.first && second == other.second;
+}
+
+std::size_t ContactKeyHash::operator()(const ContactKey& key) const {
+    const std::size_t firstHash = std::hash<std::uint64_t>{}(key.first);
+    const std::size_t secondHash = std::hash<std::uint64_t>{}(key.second);
+    return firstHash ^ (secondHash << 1);
+}
+
+namespace {
+    void CanonicalizeManifold(CollisionManifold& manifold) {
+        if (manifold.A->GetId() > manifold.B->GetId()) {
+            std::swap(manifold.A, manifold.B);
+            manifold.normal = manifold.normal * -1.0f;
+        }
+    }
+}
 
 World::World() {
     broadPhase = std::make_unique<SweepAndPrune>();
@@ -25,6 +55,17 @@ void World::removeBody(RigidBodyPtr body) {
         [body](const ForceRegistration& reg) {
             return reg.body == body;
         }), forceRegistry.end());
+
+    if (body) {
+        const std::uint64_t bodyId = body->GetId();
+        for (auto it = contactCache.begin(); it != contactCache.end();) {
+            if (it->first.contains(bodyId)) {
+                it = contactCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 }
 
 void World::clearBodies() {
@@ -32,6 +73,7 @@ void World::clearBodies() {
     forceRegistry.clear();
     universalForceRegistry.clear();
     potentialCollisions.clear();
+    contactCache.clear();
 }
 
 void World::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
@@ -63,6 +105,7 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
 
 void World::step(float deltaTime) {
     potentialCollisions.clear();
+    std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
 
     for (auto& registration : forceRegistry) {
         registration.generator->applyForce(registration.body.get());
@@ -96,13 +139,37 @@ void World::step(float deltaTime) {
         for (const auto& pair : potentialCollisions) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {
-                CollisionResolver::Resolve(manifold);
+                CanonicalizeManifold(manifold);
+                const ContactKey key = ContactKey::From(manifold.A, manifold.B);
+                auto [contact, inserted] = contactCache.try_emplace(key);
+                activeContacts.insert(key);
+
+                if (iter == 0 && !inserted) {
+                    constexpr float warmStartFactor = 0.8f;
+                    contact->second.normal *= warmStartFactor;
+                    contact->second.tangent *= warmStartFactor;
+                    CollisionResolver::WarmStart(manifold, contact->second);
+                }
+
+                CollisionResolver::Resolve(
+                    manifold,
+                    contact->second,
+                    iter == 0 && !inserted
+                );
                 if (iter == 0) {
                     for (ICollisionListener* listener : collisionListeners) {
                         listener->onCollision(manifold);
                     }
                 }
             }
+        }
+    }
+
+    for (auto it = contactCache.begin(); it != contactCache.end();) {
+        if (activeContacts.find(it->first) == activeContacts.end()) {
+            it = contactCache.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -121,6 +188,10 @@ const std::vector<ForceRegistration>& World::getForceRegistry() const {
 
 const std::vector<std::unique_ptr<IForceGenerator>>& World::getUniversalForceRegistry() const {
     return universalForceRegistry;
+}
+
+std::size_t World::getPersistentContactCount() const {
+    return contactCache.size();
 }
 
 }

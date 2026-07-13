@@ -3,7 +3,48 @@
 #include <algorithm> // Required for std::max
 
 namespace PhysicsEngine {
+    namespace {
+        Vector2 ContactTangent(const Vector2& normal) {
+            return Vector2(-normal.y, normal.x);
+        }
+
+        void ApplyContactImpulse(
+            RigidBody* bodyA,
+            RigidBody* bodyB,
+            const Vector2& contactPoint,
+            const Vector2& impulse
+        ) {
+            const Vector2 ra = contactPoint - bodyA->GetPosition();
+            const Vector2 rb = contactPoint - bodyB->GetPosition();
+            bodyA->ApplyImpulse(impulse * -1.0f, ra);
+            bodyB->ApplyImpulse(impulse, rb);
+        }
+    }
+
+    void CollisionResolver::WarmStart(
+        const CollisionManifold& manifold,
+        const ContactImpulse& accumulatedImpulse
+    ) {
+        if (!manifold.hasCollision || !manifold.A || !manifold.B) {
+            return;
+        }
+
+        const Vector2 tangent = ContactTangent(manifold.normal);
+        const Vector2 impulse = manifold.normal * accumulatedImpulse.normal
+            + tangent * accumulatedImpulse.tangent;
+        ApplyContactImpulse(manifold.A, manifold.B, manifold.contactPoint, impulse);
+    }
+
     void CollisionResolver::Resolve(const CollisionManifold& manifold) {
+        ContactImpulse accumulatedImpulse;
+        Resolve(manifold, accumulatedImpulse);
+    }
+
+    void CollisionResolver::Resolve(
+        const CollisionManifold& manifold,
+        ContactImpulse& accumulatedImpulse,
+        bool reduceWarmStart
+    ) {
         RigidBody* bodyA = manifold.A;
         RigidBody* bodyB = manifold.B;
 
@@ -34,12 +75,17 @@ namespace PhysicsEngine {
         Vector2 relativeVelocity = bodyB->GetVelocityAtPoint(manifold.contactPoint) - bodyA->GetVelocityAtPoint(manifold.contactPoint);
         float relativeVelocityAlongNormal = relativeVelocity.dot(manifold.normal);
 
-        // Do nothing if velocities are already separating.
+        // A fresh separating contact needs no impulse. A warm-started contact
+        // may need a negative delta to reduce its previously accumulated value.
         if (relativeVelocityAlongNormal > 0) {
-            return;
+            if (!reduceWarmStart || accumulatedImpulse.normal <= 0.0f) {
+                return;
+            }
         }
 
-        float restitution = std::max(bodyA->material.restitution, bodyB->material.restitution);
+        const float restitution = relativeVelocityAlongNormal < 0.0f
+            ? std::max(bodyA->material.restitution, bodyB->material.restitution)
+            : 0.0f;
 
         // Calculate the impulse magnitude (scalar).
         float raCrossN = ra.cross(manifold.normal);
@@ -49,23 +95,25 @@ namespace PhysicsEngine {
                       (raCrossN * raCrossN) * bodyA->GetInverseInertia() + 
                       (rbCrossN * rbCrossN) * bodyB->GetInverseInertia();
 
-        float impulseScalar = -(1 + restitution) * relativeVelocityAlongNormal;
-        impulseScalar /= denom;
+        if (denom <= 0.0f) {
+            return;
+        }
+
+        float impulseScalar = -(1 + restitution) * relativeVelocityAlongNormal / denom;
+        const float previousNormalImpulse = accumulatedImpulse.normal;
+        accumulatedImpulse.normal = std::max(previousNormalImpulse + impulseScalar, 0.0f);
+        impulseScalar = accumulatedImpulse.normal - previousNormalImpulse;
 
         // Apply the impulse.
         Vector2 impulse = manifold.normal * impulseScalar;
-        bodyA->ApplyImpulse(impulse * -1.0f, ra);
-        bodyB->ApplyImpulse(impulse, rb);
+        ApplyContactImpulse(bodyA, bodyB, manifold.contactPoint, impulse);
 
         // --- Friction ---
         // Re-calculate relative velocity after normal impulse
         relativeVelocity = bodyB->GetVelocityAtPoint(manifold.contactPoint) - bodyA->GetVelocityAtPoint(manifold.contactPoint);
         
-        Vector2 tangent = relativeVelocity - manifold.normal * relativeVelocity.dot(manifold.normal);
-        
-        if (tangent.magnitudeSquared() > 0.0001f) {
-            tangent = tangent.normalized();
-            
+        Vector2 tangent = ContactTangent(manifold.normal);
+        if (std::abs(relativeVelocity.dot(tangent)) > 0.0001f) {
             float jt = -relativeVelocity.dot(tangent);
             
             float raCrossT = ra.cross(tangent);
@@ -75,24 +123,38 @@ namespace PhysicsEngine {
                            (raCrossT * raCrossT) * bodyA->GetInverseInertia() +
                            (rbCrossT * rbCrossT) * bodyB->GetInverseInertia();
             
+            if (denomT <= 0.0f) {
+                return;
+            }
+
             jt /= denomT;
             
             // Coulomb's law combine metric (using Pythagoras mean or SQRT)
             float muStatic = std::sqrt(bodyA->material.staticFriction * bodyB->material.staticFriction);
             float muDynamic = std::sqrt(bodyA->material.dynamicFriction * bodyB->material.dynamicFriction);
             
-            Vector2 frictionImpulse;
-            if (std::abs(jt) <= impulseScalar * muStatic) {
-                // Static friction: apply the exact impulse needed to stop sliding
-                frictionImpulse = tangent * jt;
+            const float previousTangentImpulse = accumulatedImpulse.tangent;
+            const float candidateTangentImpulse = previousTangentImpulse + jt;
+            const float maxStaticImpulse = accumulatedImpulse.normal * muStatic;
+
+            if (std::abs(candidateTangentImpulse) <= maxStaticImpulse) {
+                accumulatedImpulse.tangent = candidateTangentImpulse;
             } else {
-                // Dynamic friction: apply bounded impulse in direction of jt
-                float dynamicImpulse = impulseScalar * muDynamic;
-                frictionImpulse = tangent * (jt > 0 ? dynamicImpulse : -dynamicImpulse);
+                const float maxDynamicImpulse = accumulatedImpulse.normal * muDynamic;
+                accumulatedImpulse.tangent = std::clamp(
+                    candidateTangentImpulse,
+                    -maxDynamicImpulse,
+                    maxDynamicImpulse
+                );
             }
-            
-            bodyA->ApplyImpulse(frictionImpulse * -1.0f, ra);
-            bodyB->ApplyImpulse(frictionImpulse, rb);
+
+            const float tangentImpulseDelta = accumulatedImpulse.tangent - previousTangentImpulse;
+            ApplyContactImpulse(
+                bodyA,
+                bodyB,
+                manifold.contactPoint,
+                tangent * tangentImpulseDelta
+            );
         }
     }
 }

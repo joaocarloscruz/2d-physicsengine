@@ -1,6 +1,9 @@
 #ifndef RIGIDBODY_H
 #define RIGIDBODY_H
 
+#include <atomic>
+#include <cstdint>
+
 #include "shape.h"
 #include "material.h"
 #include "../math/vector2.h"
@@ -50,6 +53,7 @@ namespace PhysicsEngine {
         float GetTorque() const;
         Vector2 GetAcceleration() const;
         AABB GetAABB() const;
+        std::uint64_t GetId() const;
 
         bool IsStatic() const;
 
@@ -63,6 +67,8 @@ namespace PhysicsEngine {
         
 
     private:
+        static std::atomic<std::uint64_t> nextId;
+        const std::uint64_t id;
         bool isStatic;
     };
 }

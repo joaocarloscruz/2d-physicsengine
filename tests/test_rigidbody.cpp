@@ -153,6 +153,16 @@ TEST_CASE("Static RigidBody", "[RigidBody]") {
     }
 }
 
+TEST_CASE("RigidBody instances have stable unique IDs", "[RigidBody][identity]") {
+    Circle shape(1.0f);
+    Material material = {1.0f, 0.5f};
+    RigidBody first(&shape, material);
+    RigidBody second(&shape, material);
+
+    REQUIRE(first.GetId() != second.GetId());
+    REQUIRE(first.GetId() == first.GetId());
+}
+
 TEST_CASE("RigidBody AABB", "[RigidBody][AABB]") {
     Material material = {1.0f, 0.5f};
 

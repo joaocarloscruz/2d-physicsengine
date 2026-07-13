@@ -8,7 +8,9 @@
 
 namespace PhysicsEngine {
 
-    RigidBody::RigidBody(Shape* s, const Material& mat, const Vector2& pos, bool isStatic) : shape(s), material(mat), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), isStatic(isStatic) {
+    std::atomic<std::uint64_t> RigidBody::nextId{1};
+
+    RigidBody::RigidBody(Shape* s, const Material& mat, const Vector2& pos, bool isStatic) : shape(s), material(mat), velocity(0.0f, 0.0f), angularVelocity(0.0f), force(0.0f, 0.0f), torque(0.0f), mass(0.0f), inverseMass(0.0f), inertia(0.0f), inverseInertia(0.0f), id(nextId.fetch_add(1, std::memory_order_relaxed)), isStatic(isStatic) {
         SetPosition(pos);
         SetOrientation(0.0f);
         // Initialize mass and inertia based on the shape and density
@@ -187,6 +189,10 @@ namespace PhysicsEngine {
 
     bool RigidBody::IsStatic() const {
         return isStatic;
+    }
+
+    std::uint64_t RigidBody::GetId() const {
+        return id;
     }
 
 }

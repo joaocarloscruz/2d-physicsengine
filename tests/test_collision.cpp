@@ -6,6 +6,7 @@
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
 #include "physics/core/collisions/narrow_phase/collision_circle_polygon.h"
 #include "physics/core/collisions/collision_dispatcher.h"
+#include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/forces/gravity.h"
 #include <memory>
 #include <iostream>
@@ -91,6 +92,42 @@ TEST_CASE("Circle-Circle Collision", "[collision]") {
 
         // They should also have moved apart
         REQUIRE(bodyB->GetPosition().x > bodyA->GetPosition().x);
+    }
+}
+
+TEST_CASE("Collision impulses can be accumulated and warm-started", "[collision][warm_start]") {
+    Circle circleShape(1.0f);
+    Material material = {1.0f, 0.0f, 0.0f, 0.0f};
+    RigidBody bodyA(&circleShape, material, Vector2(0.0f, 0.0f));
+    RigidBody bodyB(&circleShape, material, Vector2(1.5f, 0.0f));
+
+    CollisionManifold manifold{
+        &bodyA,
+        &bodyB,
+        true,
+        Vector2(1.0f, 0.0f),
+        0.5f,
+        Vector2(0.75f, 0.0f),
+    };
+
+    SECTION("Resolve records the accumulated normal impulse") {
+        bodyA.SetVelocity(Vector2(1.0f, 0.0f));
+        bodyB.SetVelocity(Vector2(-1.0f, 0.0f));
+        ContactImpulse impulse;
+
+        CollisionResolver::Resolve(manifold, impulse);
+
+        REQUIRE(impulse.normal > 0.0f);
+    }
+
+    SECTION("WarmStart reapplies a cached impulse") {
+        ContactImpulse impulse;
+        impulse.normal = 2.0f;
+
+        CollisionResolver::WarmStart(manifold, impulse);
+
+        REQUIRE(bodyA.GetVelocity().x < 0.0f);
+        REQUIRE(bodyB.GetVelocity().x > 0.0f);
     }
 }
 
