@@ -123,6 +123,8 @@ namespace PhysicsEngine {
 
         float minOverlap = std::numeric_limits<float>::max();
         Vector2 smallestAxis;
+        Vector2 containmentNormal;
+        bool smallestAxisUsesContainment = false;
 
         // Loop through edges of A and B
         const std::vector<Vector2>* polygons[] = { &verticesA, &verticesB };
@@ -138,26 +140,55 @@ namespace PhysicsEngine {
                 ProjectVertices(verticesA, axis, minA, maxA);
                 ProjectVertices(verticesB, axis, minB, maxB);
 
-                if (maxA < minB || maxB < minA) {
+                if (maxA <= minB || maxB <= minA) {
                     return manifold; // No collision
                 }
 
-                float overlap = std::min(maxA, maxB) - std::max(minA, minB);
+                const bool contains =
+                    (minA <= minB && maxA >= maxB) ||
+                    (minB <= minA && maxB >= maxA);
+
+                float overlap;
+                Vector2 normal;
+                if (contains) {
+                    // Measure how far A must move in either direction to fully
+                    // escape B. The solver moves A along -normal.
+                    const float moveANegative = maxA - minB;
+                    const float moveAPositive = maxB - minA;
+                    if (moveANegative < moveAPositive) {
+                        overlap = moveANegative;
+                        normal = axis;
+                    } else {
+                        overlap = moveAPositive;
+                        normal = axis * -1.0f;
+                    }
+                } else {
+                    overlap = std::min(maxA, maxB) - std::max(minA, minB);
+                }
+
                 if (overlap < minOverlap) {
                     minOverlap = overlap;
                     smallestAxis = axis;
+                    smallestAxisUsesContainment = contains;
+                    if (contains) {
+                        containmentNormal = normal;
+                    }
                 }
             }
         }
 
         manifold.hasCollision = true;
         manifold.penetration = minOverlap;
-        manifold.normal = smallestAxis;
+        if (smallestAxisUsesContainment) {
+            manifold.normal = containmentNormal;
+        } else {
+            manifold.normal = smallestAxis;
 
-        // Ensure normal points from A to B
-        Vector2 direction = b->GetPosition() - a->GetPosition();
-        if (direction.dot(manifold.normal) < 0.0f) {
-            manifold.normal = manifold.normal * -1.0f;
+            // Ensure normal points from A to B
+            Vector2 direction = b->GetPosition() - a->GetPosition();
+            if (direction.dot(manifold.normal) < 0.0f) {
+                manifold.normal = manifold.normal * -1.0f;
+            }
         }
 
         manifold.contactPoint = FindContactPoint(verticesA, verticesB, manifold.normal);

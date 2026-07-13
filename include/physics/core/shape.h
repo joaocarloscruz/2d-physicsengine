@@ -5,6 +5,7 @@
 #include <vector>
 #include <numeric>
 #include <algorithm> // For std::reverse if needed
+#include <stdexcept>
 #include "../math/vector2.h"
 
 namespace PhysicsEngine {
@@ -30,7 +31,11 @@ namespace PhysicsEngine {
         float radius;
 
     public:
-        Circle(float radius) : Shape(ShapeType::CIRCLE), radius(radius) {}
+        Circle(float radius) : Shape(ShapeType::CIRCLE), radius(radius) {
+            if (!std::isfinite(radius) || radius <= 0.0f) {
+                throw std::invalid_argument("Circle radius must be positive and finite.");
+            }
+        }
 
         float GetArea() const override { return M_PI * radius * radius; }
         float GetInertia(float mass) const override { return 0.5f * mass * radius * radius; }
@@ -42,11 +47,39 @@ namespace PhysicsEngine {
         std::vector<Vector2> vertices;
 
     public:
-        Polygon(const std::vector<Vector2>& vertices) : Shape(ShapeType::POLYGON), vertices(vertices) {}
+        Polygon(const std::vector<Vector2>& vertices) : Shape(ShapeType::POLYGON), vertices(vertices) {
+            if (vertices.size() < 3) {
+                throw std::invalid_argument("Polygon requires at least three vertices.");
+            }
+
+            float winding = 0.0f;
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                const Vector2& current = vertices[i];
+                const Vector2& next = vertices[(i + 1) % vertices.size()];
+                const Vector2& afterNext = vertices[(i + 2) % vertices.size()];
+                if (!std::isfinite(current.x) || !std::isfinite(current.y)) {
+                    throw std::invalid_argument("Polygon vertices must be finite.");
+                }
+
+                const float cross = (next - current).cross(afterNext - next);
+                if (std::abs(cross) <= 1e-6f) {
+                    throw std::invalid_argument("Polygon edges must form a non-degenerate convex shape.");
+                }
+                if (winding == 0.0f) {
+                    winding = cross;
+                } else if ((cross > 0.0f) != (winding > 0.0f)) {
+                    throw std::invalid_argument("Polygon must be convex with consistent winding.");
+                }
+            }
+        }
 
         // --- NEW: Static Factories to replace old Classes ---
         
         static Polygon MakeBox(float width, float height) {
+            if (!std::isfinite(width) || !std::isfinite(height)
+                || width <= 0.0f || height <= 0.0f) {
+                throw std::invalid_argument("Box dimensions must be positive and finite.");
+            }
             // Create a centered box (CCW order)
             float hw = width / 2.0f;
             float hh = height / 2.0f;

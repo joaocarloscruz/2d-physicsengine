@@ -101,6 +101,11 @@ else()
         ${TESTS_SRC_DIR}/test_simulation.cpp
         ${TESTS_SRC_DIR}/test_collision_listener.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp
+        ${TESTS_SRC_DIR}/test_physics_invariants.cpp
+        ${TESTS_SRC_DIR}/test_collision_properties.cpp
+        ${TESTS_SRC_DIR}/test_broad_phase_differential.cpp
+        ${TESTS_SRC_DIR}/test_stress.cpp
+        ${TESTS_SRC_DIR}/test_validation.cpp
         ${TESTS_SRC_DIR}/catch_amalgamated.cpp
     )
 

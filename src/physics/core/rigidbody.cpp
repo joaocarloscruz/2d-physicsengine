@@ -8,6 +8,25 @@
 
 namespace PhysicsEngine {
 
+    namespace {
+        void ValidateMaterial(const Material& material) {
+            if (!std::isfinite(material.density) || material.density <= 0.0f) {
+                throw std::invalid_argument("Material density must be positive and finite.");
+            }
+            if (!std::isfinite(material.restitution)
+                || material.restitution < 0.0f
+                || material.restitution > 1.0f) {
+                throw std::invalid_argument("Material restitution must be finite and between zero and one.");
+            }
+            if (!std::isfinite(material.staticFriction)
+                || !std::isfinite(material.dynamicFriction)
+                || material.staticFriction < 0.0f
+                || material.dynamicFriction < 0.0f) {
+                throw std::invalid_argument("Material friction coefficients must be finite and non-negative.");
+            }
+        }
+    }
+
     std::atomic<std::uint64_t> RigidBody::nextId{1};
 
     RigidBody::RigidBody(Shape* s, const Material& mat, const Vector2& pos, bool isStatic)
@@ -31,6 +50,7 @@ namespace PhysicsEngine {
         if (!shape) {
             throw std::invalid_argument("RigidBody requires a valid Shape.");
         }
+        ValidateMaterial(material);
         if (isStatic) {
             mass = 0.0f;
             inverseMass = 0.0f;
@@ -63,6 +83,9 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::Integrate(float deltaTime) {
+        if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
+            throw std::invalid_argument("RigidBody delta time must be finite and non-negative.");
+        }
         if (isStatic) return;
 
         // --- Velocity Verlet Integration ---
@@ -119,6 +142,12 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::SetMass(float m) {
+        if (isStatic) {
+            return;
+        }
+        if (!std::isfinite(m) || m <= 0.0f) {
+            throw std::invalid_argument("RigidBody mass must be positive and finite.");
+        }
         mass = m;
         inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
         inertia = shape->GetInertia(mass);

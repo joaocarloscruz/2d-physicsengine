@@ -31,7 +31,8 @@ namespace PhysicsEngine {
             return {};
         }
 
-        if (a->shape->type > b->shape->type) {
+        const bool swapped = a->shape->type > b->shape->type;
+        if (swapped) {
             std::swap(a, b);
         }
 
@@ -44,7 +45,12 @@ namespace PhysicsEngine {
 
         CollisionFunc func = collisionLookup[typeA][typeB];
         if (func) {
-            return func(a, b);
+            CollisionManifold manifold = func(a, b);
+            if (swapped) {
+                std::swap(manifold.A, manifold.B);
+                manifold.normal = manifold.normal * -1.0f;
+            }
+            return manifold;
         }
 
         return {};

@@ -22,7 +22,7 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
     float distance = sqrt(distSq);
     
     if (distance == 0.0f) {
-        manifold.penetration = circleA->GetRadius();
+        manifold.penetration = sumRadii;
         manifold.normal = Vector2(1.0f, 0.0f);
         manifold.contactPoint = a->position;
     } else {

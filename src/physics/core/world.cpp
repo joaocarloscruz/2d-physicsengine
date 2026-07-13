@@ -3,6 +3,8 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include <utility>
 #include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace PhysicsEngine {
@@ -119,6 +121,9 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
 }
 
 void World::step(float deltaTime) {
+    if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
+        throw std::invalid_argument("World delta time must be finite and non-negative.");
+    }
     potentialCollisions.clear();
     std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
 

@@ -69,6 +69,54 @@ namespace PhysicsEngine {
 
         float minOverlap = std::numeric_limits<float>::max();
         Vector2 smallestAxis;
+        Vector2 containmentEscapeDirection;
+        bool smallestAxisUsesContainment = false;
+
+        // Returns false when the projections are separated or only touching.
+        // For containment, the ordinary intersection width is not the distance
+        // needed to separate the shapes, so measure both escape directions.
+        auto testAxis = [&](const Vector2& axis) {
+            float minP, maxP;
+            ProjectVertices(polyVertices, axis, minP, maxP);
+
+            const float projC = circleCenter.dot(axis);
+            const float minC = projC - radius;
+            const float maxC = projC + radius;
+
+            if (maxP <= minC || maxC <= minP) {
+                return false;
+            }
+
+            const bool contains =
+                (minP <= minC && maxP >= maxC) ||
+                (minC <= minP && maxC >= maxP);
+
+            float overlap;
+            Vector2 escapeDirection;
+            if (contains) {
+                const float moveNegative = maxC - minP;
+                const float movePositive = maxP - minC;
+                if (moveNegative < movePositive) {
+                    overlap = moveNegative;
+                    escapeDirection = axis * -1.0f;
+                } else {
+                    overlap = movePositive;
+                    escapeDirection = axis;
+                }
+            } else {
+                overlap = std::min(maxP, maxC) - std::max(minP, minC);
+            }
+
+            if (overlap < minOverlap) {
+                minOverlap = overlap;
+                smallestAxis = axis;
+                smallestAxisUsesContainment = contains;
+                if (contains) {
+                    containmentEscapeDirection = escapeDirection;
+                }
+            }
+            return true;
+        };
 
         // 2. Test Polygon Axes (Face Normals)
         for (size_t i = 0; i < polyVertices.size(); ++i) {
@@ -77,22 +125,7 @@ namespace PhysicsEngine {
             Vector2 edge = p2 - p1;
             Vector2 axis = Vector2(-edge.y, edge.x).normalized(); // Normal
 
-            // Project Polygon
-            float minP, maxP;
-            ProjectVertices(polyVertices, axis, minP, maxP);
-
-            // Project Circle (Center projection +/- radius)
-            float projC = circleCenter.dot(axis);
-            float minC = projC - radius;
-            float maxC = projC + radius;
-
-            if (maxP < minC || maxC < minP) return manifold; // Gap found
-
-            float overlap = std::min(maxP, maxC) - std::max(minP, minC);
-            if (overlap < minOverlap) {
-                minOverlap = overlap;
-                smallestAxis = axis;
-            }
+            if (!testAxis(axis)) return manifold;
         }
 
         // 3. Test Circle Axis (Closest Vertex to Center)
@@ -103,31 +136,25 @@ namespace PhysicsEngine {
         if (axis.magnitudeSquared() > 0.0001f) {
              axis = axis.normalized();
              
-             float minP, maxP;
-             ProjectVertices(polyVertices, axis, minP, maxP);
-             
-             float projC = circleCenter.dot(axis);
-             float minC = projC - radius;
-             float maxC = projC + radius;
-
-             if (maxP < minC || maxC < minP) return manifold;
-
-             float overlap = std::min(maxP, maxC) - std::max(minP, minC);
-             if (overlap < minOverlap) {
-                 minOverlap = overlap;
-                 smallestAxis = axis;
-             }
+             if (!testAxis(axis)) return manifold;
         }
 
         // 4. Resolve Collision
         manifold.hasCollision = true;
         manifold.penetration = minOverlap;
-        manifold.normal = smallestAxis;
+        if (smallestAxisUsesContainment) {
+            // The solver moves A along -normal and B along +normal.
+            manifold.normal = (a == circleBody)
+                ? containmentEscapeDirection * -1.0f
+                : containmentEscapeDirection;
+        } else {
+            manifold.normal = smallestAxis;
 
-        // Ensure normal points from A to B
-        Vector2 direction = b->GetPosition() - a->GetPosition();
-        if (direction.dot(manifold.normal) < 0.0f) {
-            manifold.normal = manifold.normal * -1.0f;
+            // Ensure normal points from A to B
+            Vector2 direction = b->GetPosition() - a->GetPosition();
+            if (direction.dot(manifold.normal) < 0.0f) {
+                manifold.normal = manifold.normal * -1.0f;
+            }
         }
 
         // Contact point is the point on the circle surface along the collision normal (towards the other body)
