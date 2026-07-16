@@ -160,6 +160,18 @@ void World::step(float deltaTime) {
     const int iterations = 10;
     for (int iter = 0; iter < iterations; ++iter) {
         potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
+        potentialCollisions.erase(
+            std::remove_if(
+                potentialCollisions.begin(),
+                potentialCollisions.end(),
+                [](const CollisionPair& pair) {
+                    return !pair.first
+                        || !pair.second
+                        || !pair.first->CanCollideWith(*pair.second);
+                }
+            ),
+            potentialCollisions.end()
+        );
         for (const auto& pair : potentialCollisions) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {

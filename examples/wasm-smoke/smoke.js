@@ -17,6 +17,8 @@ async function runSmokeTest() {
             false,
         );
 
+        body.setCollisionCategoryBits(0x00000002);
+        body.setCollisionMaskBits(0x00000004);
         body.setVelocity({ x: 3.0, y: 0.0 });
         engine.addBody(body);
         engine.step(0.5);
@@ -30,9 +32,11 @@ async function runSmokeTest() {
 
         const passed = Math.abs(position.x - 2.25) < 0.0001
             && position.y === 0
-            && Math.abs(particlePosition.x - 1.0) < 0.0001;
+            && Math.abs(particlePosition.x - 1.0) < 0.0001
+            && body.getCollisionCategoryBits() === 0x00000002
+            && body.getCollisionMaskBits() === 0x00000004;
         output.textContent = passed
-            ? "PASS: rigid body and particle system stepped"
+            ? "PASS: rigid body, collision filtering, and particle system stepped"
             : `FAIL: body=(${position.x}, ${position.y}), particle=(${particlePosition.x}, ${particlePosition.y})`;
         output.dataset.result = passed ? "pass" : "fail";
 

@@ -54,6 +54,9 @@ namespace PhysicsEngine {
         Vector2 GetAcceleration() const;
         AABB GetAABB() const;
         std::uint64_t GetId() const;
+        std::uint32_t GetCollisionCategoryBits() const;
+        std::uint32_t GetCollisionMaskBits() const;
+        bool CanCollideWith(const RigidBody& other) const;
 
         bool IsStatic() const;
 
@@ -64,12 +67,16 @@ namespace PhysicsEngine {
         void SetPosition(const Vector2& p);
         void SetMass(float m);
         void SetOrientation(float o);
+        void SetCollisionCategoryBits(std::uint32_t bits);
+        void SetCollisionMaskBits(std::uint32_t bits);
         
 
     private:
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;
+        std::uint32_t collisionCategoryBits = 0x00000001u;
+        std::uint32_t collisionMaskBits = 0xFFFFFFFFu;
     };
 }
 

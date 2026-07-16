@@ -154,6 +154,14 @@ namespace PhysicsEngine {
         inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
     }
 
+    void RigidBody::SetCollisionCategoryBits(std::uint32_t bits) {
+        collisionCategoryBits = bits;
+    }
+
+    void RigidBody::SetCollisionMaskBits(std::uint32_t bits) {
+        collisionMaskBits = bits;
+    }
+
     Vector2 RigidBody::GetAcceleration() const {
         return force * inverseMass;
     }
@@ -236,6 +244,19 @@ namespace PhysicsEngine {
 
     std::uint64_t RigidBody::GetId() const {
         return id;
+    }
+
+    std::uint32_t RigidBody::GetCollisionCategoryBits() const {
+        return collisionCategoryBits;
+    }
+
+    std::uint32_t RigidBody::GetCollisionMaskBits() const {
+        return collisionMaskBits;
+    }
+
+    bool RigidBody::CanCollideWith(const RigidBody& other) const {
+        return (collisionCategoryBits & other.collisionMaskBits) != 0u
+            && (other.collisionCategoryBits & collisionMaskBits) != 0u;
     }
 
 }

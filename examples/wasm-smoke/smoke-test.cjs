@@ -17,6 +17,11 @@ async function main() {
         false,
     );
 
+    body.setCollisionCategoryBits(0x00000002);
+    body.setCollisionMaskBits(0x00000004);
+    assert.equal(body.getCollisionCategoryBits(), 0x00000002);
+    assert.equal(body.getCollisionMaskBits(), 0x00000004);
+
     body.setVelocity({ x: 3.0, y: 0.0 });
     engine.addBody(body);
     engine.step(0.5);
@@ -39,7 +44,7 @@ async function main() {
     particles.delete();
     body.delete();
     shape.delete();
-    console.log("PASS: rigid body and particle system stepped");
+    console.log("PASS: rigid body, collision filtering, and particle system stepped");
 }
 
 main().catch((error) => {

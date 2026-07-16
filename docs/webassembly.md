@@ -46,6 +46,8 @@ const body = physics.createRigidBody(
 );
 
 body.setVelocity({ x: 3, y: 0 });
+body.setCollisionCategoryBits(0x00000001);
+body.setCollisionMaskBits(0x00000006);
 engine.addBody(body);
 engine.step(0.5);
 console.log(body.getPosition());
@@ -54,6 +56,11 @@ engine.delete();
 body.delete();
 shape.delete();
 ```
+
+Collision filtering uses 32-bit category and mask fields. Two bodies collide
+only when each body's category is included in the other body's mask. New bodies
+default to category `0x00000001` and mask `0xFFFFFFFF`, preserving the original
+collide-with-everything behavior.
 
 `RigidBody` currently refers to its `Shape` through a non-owning pointer. Keep
 the JavaScript shape object alive for as long as its body exists, and delete the

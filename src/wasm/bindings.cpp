@@ -67,12 +67,16 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getAngularVelocity", &RigidBody::GetAngularVelocity)
         .function("getMass", &RigidBody::GetMass)
         .function("getId", &RigidBody::GetId)
+        .function("getCollisionCategoryBits", &RigidBody::GetCollisionCategoryBits)
+        .function("getCollisionMaskBits", &RigidBody::GetCollisionMaskBits)
         .function("isStatic", &RigidBody::IsStatic)
         .function("setPosition", &RigidBody::SetPosition)
         .function("setOrientation", &RigidBody::SetOrientation)
         .function("setVelocity", &RigidBody::SetVelocity)
         .function("setAngularVelocity", &RigidBody::SetAngularVelocity)
-        .function("setMass", &RigidBody::SetMass);
+        .function("setMass", &RigidBody::SetMass)
+        .function("setCollisionCategoryBits", &RigidBody::SetCollisionCategoryBits)
+        .function("setCollisionMaskBits", &RigidBody::SetCollisionMaskBits);
 
     function("createRigidBody", &CreateRigidBody, allow_raw_pointers());
 
