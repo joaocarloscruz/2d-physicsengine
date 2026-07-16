@@ -3,23 +3,67 @@ name: Build and Test
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-and-test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  native:
+    name: Native build and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-    - uses: actions/checkout@v2
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-    - name: Create Build Directory
-      run: mkdir -p build
+      - name: Configure native build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-    - name: Configure CMake
-      run: cd build && cmake ..
+      - name: Build native targets
+        run: cmake --build build --parallel
 
-    - name: Build
-      run: cd build && make
+      - name: Run native tests
+        run: ctest --test-dir build --output-on-failure
 
-    - name: Run Tests
-      run: cd build && ./run_tests
+  webassembly:
+    name: WebAssembly build and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EMSCRIPTEN_VERSION: 6.0.3
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pinned Emscripten SDK
+        shell: bash
+        run: |
+          git clone --filter=blob:none --branch "$EMSCRIPTEN_VERSION" --depth 1 \
+            https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSCRIPTEN_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSCRIPTEN_VERSION"
+
+      - name: Configure WebAssembly build
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build WebAssembly target
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          cmake --build build-wasm --target physics_engine_wasm --parallel
+
+      - name: Run WebAssembly smoke test
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          node build-wasm/wasm/smoke-test.cjs
