@@ -33,5 +33,11 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
     }
 
     manifold.hasCollision = true;
+    manifold.contactCount = 1;
+    manifold.contacts[0] = ContactPoint{
+        manifold.contactPoint,
+        manifold.penetration,
+        0x20000001u
+    };
     return manifold;
 }

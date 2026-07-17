@@ -83,7 +83,7 @@ private:
     SimulationConfig simulationConfig;
     SimulationStatistics lastStepStatistics;
     std::unique_ptr<IBroadPhase> broadPhase;
-    std::unordered_map<ContactKey, ContactImpulse, ContactKeyHash> contactCache;
+    std::unordered_map<ContactKey, ContactImpulseCache, ContactKeyHash> contactCache;
 };
 
 }

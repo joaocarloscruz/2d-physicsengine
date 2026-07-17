@@ -1,198 +1,237 @@
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
+
 #include "physics/core/shape.h"
 #include "physics/math/matrix2x2.h"
-#include <limits>
+
 #include <algorithm>
-#include <cmath>
+#include <array>
+#include <cstdint>
+#include <limits>
+#include <vector>
 
 namespace PhysicsEngine {
+namespace {
 
-    // --- Helpers from before ---
+struct FaceSeparation {
+    float separation = -std::numeric_limits<float>::max();
+    std::size_t faceIndex = 0;
+};
 
-    static std::vector<Vector2> GetWorldVertices(RigidBody* body) {
-        Polygon* poly = static_cast<Polygon*>(body->shape);
-        const std::vector<Vector2>& localVerts = poly->getVertices();
-        
-        std::vector<Vector2> worldVerts;
-        worldVerts.reserve(localVerts.size());
-
-        Matrix2x2 rot = Matrix2x2::rotation(body->GetOrientation());
-        Vector2 pos = body->GetPosition();
-
-        for (const auto& v : localVerts) {
-            worldVerts.push_back(pos + (rot * v));
-        }
-        return worldVerts;
+std::vector<Vector2> GetWorldVertices(const RigidBody* body) {
+    const auto* polygon = static_cast<const Polygon*>(body->shape);
+    const Matrix2x2 rotation = Matrix2x2::rotation(body->GetOrientation());
+    std::vector<Vector2> result;
+    result.reserve(polygon->getVertices().size());
+    for (const Vector2& vertex : polygon->getVertices()) {
+        result.push_back(body->GetPosition() + rotation * vertex);
     }
+    return result;
+}
 
-    static void ProjectVertices(const std::vector<Vector2>& vertices, const Vector2& axis, float& min, float& max) {
-        min = std::numeric_limits<float>::max();
-        max = -std::numeric_limits<float>::max();
-
-        for (const auto& v : vertices) {
-            float projection = v.dot(axis);
-            if (projection < min) min = projection;
-            if (projection > max) max = projection;
-        }
+Vector2 OutwardNormal(
+    const std::vector<Vector2>& vertices,
+    std::size_t faceIndex
+) {
+    const Vector2 edge = vertices[(faceIndex + 1) % vertices.size()]
+        - vertices[faceIndex];
+    float signedDoubleArea = 0.0f;
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        signedDoubleArea += vertices[i].cross(
+            vertices[(i + 1) % vertices.size()]
+        );
     }
+    return signedDoubleArea >= 0.0f
+        ? Vector2(edge.y, -edge.x).normalized()
+        : Vector2(-edge.y, edge.x).normalized();
+}
 
-    // Find the vertex on 'poly' that is furthest along 'dir'
-    static Vector2 GetSupportPoint(const std::vector<Vector2>& vertices, Vector2 dir) {
-        float maxDist = -std::numeric_limits<float>::max();
-        std::vector<Vector2> bestVertices;
-
-        for (const auto& v : vertices) {
-            float dist = v.dot(dir);
-            if (dist > maxDist + 0.001f) {
-                maxDist = dist;
-                bestVertices.clear();
-                bestVertices.push_back(v);
-            } else if (std::abs(dist - maxDist) < 0.001f) {
-                bestVertices.push_back(v);
-            }
+FaceSeparation FindMaximumSeparation(
+    const std::vector<Vector2>& reference,
+    const std::vector<Vector2>& incident
+) {
+    FaceSeparation best;
+    for (std::size_t face = 0; face < reference.size(); ++face) {
+        const Vector2 normal = OutwardNormal(reference, face);
+        float minimum = std::numeric_limits<float>::max();
+        for (const Vector2& vertex : incident) {
+            minimum = std::min(
+                minimum,
+                normal.dot(vertex - reference[face])
+            );
         }
-        
-        if (bestVertices.empty()) return Vector2(0, 0);
-        if (bestVertices.size() == 1) return bestVertices[0];
-
-        Vector2 sum(0, 0);
-        for (const auto& v : bestVertices) {
-            sum = sum + v;
-        }
-        return sum / static_cast<float>(bestVertices.size());
-    }
-
-    // Determine which vertex is colliding
-    static Vector2 FindContactPoint(const std::vector<Vector2>& vertsA, const std::vector<Vector2>& vertsB, Vector2 normal) {
-        // 1. Determine which polygon is the "Reference" (provides the face) and which is the "Incident"
-        // 2. The Reference polygon is the one whose edge normal is most parallel to the collision normal
-
-        float bestDotA = -std::numeric_limits<float>::max();
-        
-        // Check alignment of A's edges with the normal
-        for (size_t i = 0; i < vertsA.size(); ++i) {
-            Vector2 p1 = vertsA[i];
-            Vector2 p2 = vertsA[(i + 1) % vertsA.size()];
-            Vector2 edge = p2 - p1;
-            Vector2 edgeNormal = Vector2(-edge.y, edge.x).normalized(); // CCW
-            
-            // get the edge that is pointing in the direction of the normal
-            float dot = edgeNormal.dot(normal);
-            if (dot > bestDotA) {
-                bestDotA = dot;
-            }
-        }
-
-        float bestDotB = -std::numeric_limits<float>::max();
-        // Check alignment of B's edges with the normal 
-        // Note: Normal points A->B. So B's normals should point opposite to collision normal to be the reference face.
-        for (size_t i = 0; i < vertsB.size(); ++i) {
-            Vector2 p1 = vertsB[i];
-            Vector2 p2 = vertsB[(i + 1) % vertsB.size()];
-            Vector2 edge = p2 - p1;
-            Vector2 edgeNormal = Vector2(-edge.y, edge.x).normalized(); 
-
-            float dot = edgeNormal.dot(normal * -1.0f); // Check against negative normal
-            if (dot > bestDotB) {
-                bestDotB = dot;
-            }
-        }
-
-        // If A is the reference face, B provides the incident vertex (deepest point).
-        // If B is the reference face, A provides the incident vertex.
-        
-        if (bestDotA >= bestDotB) {
-            // A is Reference, B is Incident.
-            // Find vertex on B that is furthest in direction -Normal (towards A)
-            return GetSupportPoint(vertsB, normal * -1.0f);
-        } else {
-            // B is Reference, A is Incident.
-            // Find vertex on A that is furthest in direction Normal (towards B)
-            return GetSupportPoint(vertsA, normal);
+        if (minimum > best.separation) {
+            best = FaceSeparation{minimum, face};
         }
     }
+    return best;
+}
 
-    CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b) {
-        CollisionManifold manifold;
-        manifold.A = a;
-        manifold.B = b;
-        manifold.hasCollision = false;
-
-        std::vector<Vector2> verticesA = GetWorldVertices(a);
-        std::vector<Vector2> verticesB = GetWorldVertices(b);
-
-        float minOverlap = std::numeric_limits<float>::max();
-        Vector2 smallestAxis;
-        Vector2 containmentNormal;
-        bool smallestAxisUsesContainment = false;
-
-        // Loop through edges of A and B
-        const std::vector<Vector2>* polygons[] = { &verticesA, &verticesB };
-        
-        for (const auto* poly : polygons) {
-            for (size_t i = 0; i < poly->size(); ++i) {
-                Vector2 p1 = (*poly)[i];
-                Vector2 p2 = (*poly)[(i + 1) % poly->size()];
-                Vector2 edge = p2 - p1;
-                Vector2 axis = Vector2(-edge.y, edge.x).normalized();
-
-                float minA, maxA, minB, maxB;
-                ProjectVertices(verticesA, axis, minA, maxA);
-                ProjectVertices(verticesB, axis, minB, maxB);
-
-                if (maxA <= minB || maxB <= minA) {
-                    return manifold; // No collision
-                }
-
-                const bool contains =
-                    (minA <= minB && maxA >= maxB) ||
-                    (minB <= minA && maxB >= maxA);
-
-                float overlap;
-                Vector2 normal;
-                if (contains) {
-                    // Measure how far A must move in either direction to fully
-                    // escape B. The solver moves A along -normal.
-                    const float moveANegative = maxA - minB;
-                    const float moveAPositive = maxB - minA;
-                    if (moveANegative < moveAPositive) {
-                        overlap = moveANegative;
-                        normal = axis;
-                    } else {
-                        overlap = moveAPositive;
-                        normal = axis * -1.0f;
-                    }
-                } else {
-                    overlap = std::min(maxA, maxB) - std::max(minA, minB);
-                }
-
-                if (overlap < minOverlap) {
-                    minOverlap = overlap;
-                    smallestAxis = axis;
-                    smallestAxisUsesContainment = contains;
-                    if (contains) {
-                        containmentNormal = normal;
-                    }
-                }
-            }
+std::size_t FindIncidentFace(
+    const std::vector<Vector2>& vertices,
+    const Vector2& referenceNormal
+) {
+    float minimumDot = std::numeric_limits<float>::max();
+    std::size_t result = 0;
+    for (std::size_t face = 0; face < vertices.size(); ++face) {
+        const float alignment = OutwardNormal(vertices, face).dot(referenceNormal);
+        if (alignment < minimumDot) {
+            minimumDot = alignment;
+            result = face;
         }
+    }
+    return result;
+}
 
-        manifold.hasCollision = true;
-        manifold.penetration = minOverlap;
-        if (smallestAxisUsesContainment) {
-            manifold.normal = containmentNormal;
-        } else {
-            manifold.normal = smallestAxis;
+std::uint8_t ClipToPlane(
+    const std::array<Vector2, 2>& input,
+    std::uint8_t inputCount,
+    const Vector2& normal,
+    float offset,
+    std::array<Vector2, 2>& output
+) {
+    if (inputCount == 0) {
+        return 0;
+    }
 
-            // Ensure normal points from A to B
-            Vector2 direction = b->GetPosition() - a->GetPosition();
-            if (direction.dot(manifold.normal) < 0.0f) {
-                manifold.normal = manifold.normal * -1.0f;
-            }
-        }
+    const float firstDistance = normal.dot(input[0]) - offset;
+    const float secondDistance = inputCount > 1
+        ? normal.dot(input[1]) - offset
+        : firstDistance;
+    std::uint8_t outputCount = 0;
 
-        manifold.contactPoint = FindContactPoint(verticesA, verticesB, manifold.normal);
+    if (firstDistance <= 0.0f) {
+        output[outputCount++] = input[0];
+    }
+    if (inputCount > 1 && secondDistance <= 0.0f) {
+        output[outputCount++] = input[1];
+    }
+    if (inputCount > 1 && firstDistance * secondDistance < 0.0f) {
+        const float fraction = firstDistance / (firstDistance - secondDistance);
+        output[outputCount++] = input[0] + (input[1] - input[0]) * fraction;
+    }
+    return std::min<std::uint8_t>(outputCount, 2);
+}
 
+std::uint32_t MakeFeatureId(
+    bool referenceIsCanonicalB,
+    std::size_t referenceFace,
+    std::size_t incidentFace,
+    std::uint8_t ordinal
+) {
+    return 0x80000000u
+        | (static_cast<std::uint32_t>(referenceIsCanonicalB) << 30)
+        | (static_cast<std::uint32_t>(referenceFace & 0x3fffu) << 16)
+        | (static_cast<std::uint32_t>(incidentFace & 0x3fffu) << 2)
+        | static_cast<std::uint32_t>(ordinal + 1);
+}
+
+CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b) {
+    CollisionManifold manifold;
+    manifold.A = a;
+    manifold.B = b;
+
+    const std::vector<Vector2> verticesA = GetWorldVertices(a);
+    const std::vector<Vector2> verticesB = GetWorldVertices(b);
+    const FaceSeparation separationA = FindMaximumSeparation(verticesA, verticesB);
+    if (separationA.separation >= 0.0f) {
         return manifold;
     }
+    const FaceSeparation separationB = FindMaximumSeparation(verticesB, verticesA);
+    if (separationB.separation >= 0.0f) {
+        return manifold;
+    }
+
+    // Canonical body order makes tie-breaking and feature IDs independent of
+    // the order supplied by a caller.
+    constexpr float referenceBias = 1e-5f;
+    const bool referenceIsB = separationB.separation
+        > separationA.separation + referenceBias;
+    const std::vector<Vector2>& reference = referenceIsB ? verticesB : verticesA;
+    const std::vector<Vector2>& incident = referenceIsB ? verticesA : verticesB;
+    const std::size_t referenceFace = referenceIsB
+        ? separationB.faceIndex
+        : separationA.faceIndex;
+    const Vector2 referenceNormal = OutwardNormal(reference, referenceFace);
+    const std::size_t incidentFace = FindIncidentFace(incident, referenceNormal);
+
+    const Vector2 referenceFirst = reference[referenceFace];
+    const Vector2 referenceSecond = reference[(referenceFace + 1) % reference.size()];
+    const Vector2 sideNormal = (referenceSecond - referenceFirst).normalized();
+    std::array<Vector2, 2> incidentEdge{
+        incident[incidentFace],
+        incident[(incidentFace + 1) % incident.size()]
+    };
+    std::array<Vector2, 2> firstClip{};
+    std::array<Vector2, 2> secondClip{};
+    const std::uint8_t firstCount = ClipToPlane(
+        incidentEdge,
+        2,
+        sideNormal * -1.0f,
+        (sideNormal * -1.0f).dot(referenceFirst),
+        firstClip
+    );
+    if (firstCount < 1) {
+        return manifold;
+    }
+    const std::uint8_t secondCount = ClipToPlane(
+        firstClip,
+        firstCount,
+        sideNormal,
+        sideNormal.dot(referenceSecond),
+        secondClip
+    );
+    if (secondCount < 1) {
+        return manifold;
+    }
+
+    std::sort(
+        secondClip.begin(),
+        secondClip.begin() + secondCount,
+        [&](const Vector2& left, const Vector2& right) {
+            return sideNormal.dot(left) < sideNormal.dot(right);
+        }
+    );
+
+    const float referenceOffset = referenceNormal.dot(referenceFirst);
+    for (std::uint8_t i = 0; i < secondCount && manifold.contactCount < 2; ++i) {
+        const float separation = referenceNormal.dot(secondClip[i]) - referenceOffset;
+        if (separation <= 1e-5f) {
+            const std::uint8_t contactIndex = manifold.contactCount++;
+            manifold.contacts[contactIndex] = ContactPoint{
+                secondClip[i],
+                std::max(-separation, 0.0f),
+                MakeFeatureId(referenceIsB, referenceFace, incidentFace, contactIndex)
+            };
+        }
+    }
+    if (manifold.contactCount == 0) {
+        return manifold;
+    }
+
+    manifold.hasCollision = true;
+    manifold.normal = referenceIsB ? referenceNormal * -1.0f : referenceNormal;
+    manifold.penetration = 0.0f;
+    for (std::uint8_t i = 0; i < manifold.contactCount; ++i) {
+        manifold.penetration = std::max(
+            manifold.penetration,
+            manifold.contacts[i].penetration
+        );
+    }
+    manifold.contactPoint = manifold.contacts[0].position;
+    return manifold;
 }
+
+} // namespace
+
+CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b) {
+    if (a->GetId() <= b->GetId()) {
+        return ComputeCanonicalManifold(a, b);
+    }
+
+    CollisionManifold manifold = ComputeCanonicalManifold(b, a);
+    std::swap(manifold.A, manifold.B);
+    manifold.normal = manifold.normal * -1.0f;
+    return manifold;
+}
+
+} // namespace PhysicsEngine

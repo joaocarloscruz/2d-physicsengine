@@ -199,15 +199,22 @@ void World::step(float deltaTime) {
         for (const auto& pair : potentialCollisions) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {
-                ++statistics.resolvedContactCount;
+                statistics.resolvedContactCount += std::max<std::uint32_t>(
+                    manifold.contactCount,
+                    1
+                );
                 CanonicalizeManifold(manifold);
                 const ContactKey key = ContactKey::From(manifold.A, manifold.B);
                 auto [contact, inserted] = contactCache.try_emplace(key);
                 activeContacts.insert(key);
 
                 if (iter == 0 && !inserted) {
-                    contact->second.normal *= simulationConfig.warmStartFactor;
-                    contact->second.tangent *= simulationConfig.warmStartFactor;
+                    for (std::uint8_t i = 0; i < contact->second.contactCount; ++i) {
+                        contact->second.contacts[i].impulse.normal *=
+                            simulationConfig.warmStartFactor;
+                        contact->second.contacts[i].impulse.tangent *=
+                            simulationConfig.warmStartFactor;
+                    }
                     CollisionResolver::WarmStart(manifold, contact->second);
                 }
 

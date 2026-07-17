@@ -169,6 +169,12 @@ namespace PhysicsEngine {
         }
         
         manifold.contactPoint = pointOnCircle;
+        manifold.contactCount = 1;
+        manifold.contacts[0] = ContactPoint{
+            manifold.contactPoint,
+            manifold.penetration,
+            0x40000001u
+        };
 
         return manifold;
     }

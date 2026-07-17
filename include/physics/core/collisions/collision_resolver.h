@@ -3,11 +3,23 @@
 
 #include "collision_manifold.h"
 #include "../simulation_config.h"
+#include <array>
+#include <cstdint>
 
 namespace PhysicsEngine {
     struct ContactImpulse {
         float normal = 0.0f;
         float tangent = 0.0f;
+    };
+
+    struct CachedContactImpulse {
+        std::uint32_t featureId = 0;
+        ContactImpulse impulse;
+    };
+
+    struct ContactImpulseCache {
+        std::array<CachedContactImpulse, 2> contacts{};
+        std::uint8_t contactCount = 0;
     };
 
     class CollisionResolver {
@@ -23,9 +35,14 @@ namespace PhysicsEngine {
     private:
         friend class World;
 
+        static void WarmStart(
+            const CollisionManifold& manifold,
+            ContactImpulseCache& cache
+        );
+
         static void Resolve(
             const CollisionManifold& manifold,
-            ContactImpulse& accumulatedImpulse,
+            ContactImpulseCache& cache,
             const SimulationConfig& config,
             bool reduceWarmStart = false
         );
