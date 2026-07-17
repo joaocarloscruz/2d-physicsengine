@@ -30,6 +30,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
+    ${PHYSICS_SRC_DIR}/core/simulation_config.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
     ${PHYSICS_SRC_DIR}/core/forces/drag.cpp
@@ -104,6 +105,7 @@ else()
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
+        ${TESTS_SRC_DIR}/test_simulation_config.cpp
         ${TESTS_SRC_DIR}/test_broad_phase_differential.cpp
         ${TESTS_SRC_DIR}/test_stress.cpp
         ${TESTS_SRC_DIR}/test_validation.cpp

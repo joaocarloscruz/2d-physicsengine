@@ -17,6 +17,8 @@ namespace PhysicsEngine {
     public:
         Engine();
         void step(float deltaTime);
+        void setSimulationConfig(const SimulationConfig& config);
+        SimulationConfig getSimulationConfig() const;
 
         void addBody(RigidBodyPtr body);
         void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);

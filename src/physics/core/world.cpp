@@ -38,7 +38,13 @@ namespace {
     }
 }
 
-World::World() : broadPhase(std::make_unique<SweepAndPrune>()) {}
+World::World() : World(SimulationConfig{}) {}
+
+World::World(const SimulationConfig& config)
+    : simulationConfig(config),
+      broadPhase(std::make_unique<SweepAndPrune>()) {
+    simulationConfig.Validate();
+}
 
 World::~World() {}
 
@@ -120,6 +126,11 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
     }
 }
 
+void World::setSimulationConfig(const SimulationConfig& config) {
+    config.Validate();
+    simulationConfig = config;
+}
+
 void World::step(float deltaTime) {
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument("World delta time must be finite and non-negative.");
@@ -144,7 +155,7 @@ void World::step(float deltaTime) {
     // Integrate velocities and positions
     for (RigidBodyPtr& body : bodies) {
         if (!body->IsStatic()) {
-            body->Integrate(deltaTime);
+            body->Integrate(deltaTime, simulationConfig);
 
             while (body->GetOrientation() > M_PI) {
                 body->SetOrientation(body->GetOrientation() - 2.0f * M_PI);
@@ -157,8 +168,7 @@ void World::step(float deltaTime) {
 
     // Narrow phase + resolve with multiple iterations for stability
     // Listeners fire only on the first iteration to avoid duplicate callbacks
-    const int iterations = 10;
-    for (int iter = 0; iter < iterations; ++iter) {
+    for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
         potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
         potentialCollisions.erase(
             std::remove_if(
@@ -181,15 +191,15 @@ void World::step(float deltaTime) {
                 activeContacts.insert(key);
 
                 if (iter == 0 && !inserted) {
-                    constexpr float warmStartFactor = 0.8f;
-                    contact->second.normal *= warmStartFactor;
-                    contact->second.tangent *= warmStartFactor;
+                    contact->second.normal *= simulationConfig.warmStartFactor;
+                    contact->second.tangent *= simulationConfig.warmStartFactor;
                     CollisionResolver::WarmStart(manifold, contact->second);
                 }
 
                 CollisionResolver::Resolve(
                     manifold,
                     contact->second,
+                    simulationConfig,
                     iter == 0 && !inserted
                 );
                 if (iter == 0) {
@@ -232,6 +242,10 @@ const std::vector<ParticleSystemPtr>& World::getParticleSystems() const {
 
 std::size_t World::getPersistentContactCount() const {
     return contactCache.size();
+}
+
+const SimulationConfig& World::getSimulationConfig() const {
+    return simulationConfig;
 }
 
 }

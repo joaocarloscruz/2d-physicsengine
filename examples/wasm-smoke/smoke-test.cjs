@@ -4,6 +4,17 @@ const createPhysicsEngineModule = require("./physics_engine.js");
 async function main() {
     const physics = await createPhysicsEngineModule();
     const engine = new physics.Engine();
+    const simulationConfig = engine.getSimulationConfig();
+    assert.equal(simulationConfig.solverIterations, 10);
+    assert.equal(simulationConfig.enableLinearVelocityLimit, true);
+    simulationConfig.solverIterations = 4;
+    simulationConfig.enableLinearVelocityLimit = false;
+    simulationConfig.enableAngularVelocityLimit = false;
+    engine.setSimulationConfig(simulationConfig);
+    const configuredSimulation = engine.getSimulationConfig();
+    assert.equal(configuredSimulation.solverIterations, 4);
+    assert.equal(configuredSimulation.enableLinearVelocityLimit, false);
+    assert.equal(configuredSimulation.enableAngularVelocityLimit, false);
     const shape = new physics.Circle(1.0);
     const body = physics.createRigidBody(
         shape,
@@ -44,7 +55,7 @@ async function main() {
     particles.delete();
     body.delete();
     shape.delete();
-    console.log("PASS: rigid body, collision filtering, and particle system stepped");
+    console.log("PASS: configured rigid body, collision filtering, and particle system stepped");
 }
 
 main().catch((error) => {

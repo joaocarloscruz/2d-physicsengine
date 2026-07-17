@@ -15,6 +15,7 @@
 #include "collisions/collision_listener.h"
 #include "collisions/broad_phase/ibroad_phase.h"
 #include "types.h"
+#include "simulation_config.h"
 
 namespace PhysicsEngine {
 
@@ -39,6 +40,7 @@ struct ContactKeyHash {
 class World {
 public:
     World();
+    explicit World(const SimulationConfig& config);
     ~World();
 
     void addBody(RigidBodyPtr body);
@@ -56,6 +58,7 @@ public:
     void removeCollisionListener(ICollisionListener* listener);
 
     void setBroadPhase(std::unique_ptr<IBroadPhase> bp);
+    void setSimulationConfig(const SimulationConfig& config);
 
     void step(float deltaTime);
     
@@ -65,6 +68,7 @@ public:
     const std::vector<CollisionPair>& getPotentialCollisions() const;
     const std::vector<ParticleSystemPtr>& getParticleSystems() const;
     std::size_t getPersistentContactCount() const;
+    const SimulationConfig& getSimulationConfig() const;
 
 private:
     std::vector<RigidBodyPtr> bodies;
@@ -73,6 +77,7 @@ private:
     std::vector<ParticleSystemPtr> particleSystems;
     std::vector<CollisionPair> potentialCollisions;
     std::vector<ICollisionListener*> collisionListeners;
+    SimulationConfig simulationConfig;
     std::unique_ptr<IBroadPhase> broadPhase;
     std::unordered_map<ContactKey, ContactImpulse, ContactKeyHash> contactCache;
 };

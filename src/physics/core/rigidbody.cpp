@@ -83,6 +83,10 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::Integrate(float deltaTime) {
+        Integrate(deltaTime, SimulationConfig{});
+    }
+
+    void RigidBody::Integrate(float deltaTime, const SimulationConfig& config) {
         if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
             throw std::invalid_argument("RigidBody delta time must be finite and non-negative.");
         }
@@ -109,15 +113,22 @@ namespace PhysicsEngine {
         velocity = velocity + (linearAcceleration + nextLinearAcceleration) * (0.5f * deltaTime);
         angularVelocity = angularVelocity + (angularAcceleration + nextAngularAcceleration) * (0.5f * deltaTime);
 
-        // 5. Clamp velocity to prevent tunneling
-        const float maxSpeed = 200.0f;
-        float speedSq = velocity.magnitudeSquared();
-        if (speedSq > maxSpeed * maxSpeed) {
-            velocity = velocity.normalized() * maxSpeed;
+        // 5. Apply optional safety limits. Continuous collision detection is
+        // responsible for tunneling prevention when it is implemented.
+        if (config.enableLinearVelocityLimit) {
+            const float speedSq = velocity.magnitudeSquared();
+            if (speedSq > config.maxLinearSpeed * config.maxLinearSpeed) {
+                velocity = velocity.normalized() * config.maxLinearSpeed;
+            }
         }
-        const float maxAngularSpeed = 30.0f;
-        if (angularVelocity > maxAngularSpeed) angularVelocity = maxAngularSpeed;
-        if (angularVelocity < -maxAngularSpeed) angularVelocity = -maxAngularSpeed;
+        if (config.enableAngularVelocityLimit) {
+            if (angularVelocity > config.maxAngularSpeed) {
+                angularVelocity = config.maxAngularSpeed;
+            }
+            if (angularVelocity < -config.maxAngularSpeed) {
+                angularVelocity = -config.maxAngularSpeed;
+            }
+        }
 
         // 6. Reset forces and torque for the next frame
         force = Vector2(0.0f, 0.0f);

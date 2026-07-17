@@ -2,6 +2,7 @@
 #define COLLISION_RESOLVER_H
 
 #include "collision_manifold.h"
+#include "../simulation_config.h"
 
 namespace PhysicsEngine {
     struct ContactImpulse {
@@ -18,6 +19,16 @@ namespace PhysicsEngine {
             bool reduceWarmStart = false
         );
         static void WarmStart(const CollisionManifold& manifold, const ContactImpulse& accumulatedImpulse);
+
+    private:
+        friend class World;
+
+        static void Resolve(
+            const CollisionManifold& manifold,
+            ContactImpulse& accumulatedImpulse,
+            const SimulationConfig& config,
+            bool reduceWarmStart = false
+        );
     };
 }
 

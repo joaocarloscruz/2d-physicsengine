@@ -37,7 +37,7 @@ namespace PhysicsEngine {
 
     void CollisionResolver::Resolve(const CollisionManifold& manifold) {
         ContactImpulse accumulatedImpulse;
-        Resolve(manifold, accumulatedImpulse);
+        Resolve(manifold, accumulatedImpulse, SimulationConfig{});
     }
 
     void CollisionResolver::Resolve(
@@ -45,18 +45,32 @@ namespace PhysicsEngine {
         ContactImpulse& accumulatedImpulse,
         bool reduceWarmStart
     ) {
+        Resolve(
+            manifold,
+            accumulatedImpulse,
+            SimulationConfig{},
+            reduceWarmStart
+        );
+    }
+
+    void CollisionResolver::Resolve(
+        const CollisionManifold& manifold,
+        ContactImpulse& accumulatedImpulse,
+        const SimulationConfig& config,
+        bool reduceWarmStart
+    ) {
         RigidBody* bodyA = manifold.A;
         RigidBody* bodyB = manifold.B;
 
-
-        const float percent = 0.8f; // How much of the penetration to correct.
-        const float slop = 0.005f;   // A small allowance for penetration to prevent jittering at rest.
 
         // Calculate the correction vector based on penetration depth and inverse masses.
         float totalInverseMass = bodyA->GetInverseMass() + bodyB->GetInverseMass();
         if (totalInverseMass == 0) return;
 
-        float scalarPart = std::max(manifold.penetration - slop, 0.0f) / totalInverseMass * percent;
+        float scalarPart = std::max(
+            manifold.penetration - config.penetrationSlop,
+            0.0f
+        ) / totalInverseMass * config.positionCorrectionFactor;
         Vector2 correction = manifold.normal * scalarPart;
 
         // Apply the positional correction to the dynamic bodies.

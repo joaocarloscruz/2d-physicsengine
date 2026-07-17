@@ -6,6 +6,7 @@
 
 #include "shape.h"
 #include "material.h"
+#include "simulation_config.h"
 #include "../math/vector2.h"
 #include "../core/collisions/broad_phase/aabb.h"
 
@@ -72,6 +73,10 @@ namespace PhysicsEngine {
         
 
     private:
+        friend class World;
+
+        void Integrate(float deltaTime, const SimulationConfig& config);
+
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;

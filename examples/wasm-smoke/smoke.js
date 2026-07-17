@@ -4,6 +4,11 @@ async function runSmokeTest() {
     try {
         const physics = await createPhysicsEngineModule();
         const engine = new physics.Engine();
+        const simulationConfig = engine.getSimulationConfig();
+        simulationConfig.solverIterations = 4;
+        simulationConfig.enableLinearVelocityLimit = false;
+        simulationConfig.enableAngularVelocityLimit = false;
+        engine.setSimulationConfig(simulationConfig);
         const shape = new physics.Circle(1.0);
         const body = physics.createRigidBody(
             shape,
@@ -34,9 +39,10 @@ async function runSmokeTest() {
             && position.y === 0
             && Math.abs(particlePosition.x - 1.0) < 0.0001
             && body.getCollisionCategoryBits() === 0x00000002
-            && body.getCollisionMaskBits() === 0x00000004;
+            && body.getCollisionMaskBits() === 0x00000004
+            && engine.getSimulationConfig().solverIterations === 4;
         output.textContent = passed
-            ? "PASS: rigid body, collision filtering, and particle system stepped"
+            ? "PASS: configured rigid body, collision filtering, and particle system stepped"
             : `FAIL: body=(${position.x}, ${position.y}), particle=(${particlePosition.x}, ${particlePosition.y})`;
         output.dataset.result = passed ? "pass" : "fail";
 

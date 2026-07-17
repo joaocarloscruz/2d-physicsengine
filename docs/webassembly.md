@@ -32,6 +32,10 @@ create the shared handles expected by the corresponding `Engine` methods.
 ```javascript
 const physics = await createPhysicsEngineModule();
 const engine = new physics.Engine();
+const simulationConfig = engine.getSimulationConfig();
+simulationConfig.solverIterations = 16;
+simulationConfig.enableLinearVelocityLimit = false;
+engine.setSimulationConfig(simulationConfig);
 const shape = new physics.Circle(1);
 const body = physics.createRigidBody(
     shape,

@@ -17,6 +17,14 @@ namespace PhysicsEngine {
         world.step(deltaTime);
     }
 
+    void Engine::setSimulationConfig(const SimulationConfig& config) {
+        world.setSimulationConfig(config);
+    }
+
+    SimulationConfig Engine::getSimulationConfig() const {
+        return world.getSimulationConfig();
+    }
+
     void Engine::addBody(RigidBodyPtr body) {
         world.addBody(body);
     }

@@ -7,6 +7,7 @@
 #include "physics/core/particles/particle_system.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
+#include "physics/core/simulation_config.h"
 #include "physics/math/vector2.h"
 
 namespace PhysicsEngine {
@@ -45,6 +46,16 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("restitution", &Material::restitution)
         .field("staticFriction", &Material::staticFriction)
         .field("dynamicFriction", &Material::dynamicFriction);
+
+    value_object<SimulationConfig>("SimulationConfig")
+        .field("solverIterations", &SimulationConfig::solverIterations)
+        .field("positionCorrectionFactor", &SimulationConfig::positionCorrectionFactor)
+        .field("penetrationSlop", &SimulationConfig::penetrationSlop)
+        .field("warmStartFactor", &SimulationConfig::warmStartFactor)
+        .field("enableLinearVelocityLimit", &SimulationConfig::enableLinearVelocityLimit)
+        .field("maxLinearSpeed", &SimulationConfig::maxLinearSpeed)
+        .field("enableAngularVelocityLimit", &SimulationConfig::enableAngularVelocityLimit)
+        .field("maxAngularSpeed", &SimulationConfig::maxAngularSpeed);
 
     class_<Shape>("Shape");
 
@@ -110,6 +121,8 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
     class_<Engine>("Engine")
         .constructor<>()
         .function("step", &Engine::step)
+        .function("setSimulationConfig", &Engine::setSimulationConfig)
+        .function("getSimulationConfig", &Engine::getSimulationConfig)
         .function("addBody", &Engine::addBody)
         .function("addParticleSystem", &Engine::addParticleSystem)
         .function("removeParticleSystem", &Engine::removeParticleSystem)
