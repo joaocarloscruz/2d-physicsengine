@@ -115,6 +115,21 @@ else()
     )
 
     target_link_libraries(run_tests PRIVATE Engine)
+
+    add_executable(numerical_validation
+        ${TESTS_SRC_DIR}/numerical_validation.cpp
+    )
+    target_link_libraries(numerical_validation PRIVATE Engine)
+
     enable_testing()
     add_test(NAME engine_tests COMMAND run_tests)
+    add_test(
+        NAME numerical_validation_fast
+        COMMAND numerical_validation
+            --mode fast
+            --output ${CMAKE_BINARY_DIR}/numerical-validation-fast.json
+    )
+    set_tests_properties(numerical_validation_fast PROPERTIES
+        LABELS "fast;numerical"
+    )
 endif()

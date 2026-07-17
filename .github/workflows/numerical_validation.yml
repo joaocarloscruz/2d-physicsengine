@@ -1,0 +1,38 @@
+name: Extended Numerical Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extended-validation:
+    name: Extended convergence and precision benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Configure release build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build numerical validation target
+        run: cmake --build build --target numerical_validation --parallel
+
+      - name: Run extended numerical validation
+        run: >-
+          build/numerical_validation
+          --mode extended
+          --output build/numerical-validation-extended.json
+
+      - name: Publish benchmark results
+        if: always()
+        shell: bash
+        run: |
+          echo '## Extended numerical validation' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat build/numerical-validation-extended.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -31,6 +31,17 @@ jobs:
       - name: Run native tests
         run: ctest --test-dir build --output-on-failure
 
+      - name: Publish fast numerical validation
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f build/numerical-validation-fast.json ]]; then
+            echo '## Fast numerical validation' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat build/numerical-validation-fast.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   webassembly:
     name: WebAssembly build and smoke test
     runs-on: ubuntu-latest
