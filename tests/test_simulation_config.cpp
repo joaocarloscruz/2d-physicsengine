@@ -27,6 +27,8 @@ public:
 TEST_CASE("SimulationConfig preserves the current numerical defaults", "[simulation_config]") {
     SimulationConfig config;
 
+    REQUIRE(config.fixedTimeStep == Catch::Approx(1.0f / 60.0f));
+    REQUIRE(config.maxSubstepsPerAdvance == 8);
     REQUIRE(config.solverIterations == 10);
     REQUIRE(config.positionCorrectionFactor == Catch::Approx(0.8f));
     REQUIRE(config.penetrationSlop == Catch::Approx(0.005f));

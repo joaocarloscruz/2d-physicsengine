@@ -131,6 +131,10 @@ void World::setSimulationConfig(const SimulationConfig& config) {
     simulationConfig = config;
 }
 
+void World::step() {
+    step(simulationConfig.fixedTimeStep);
+}
+
 void World::step(float deltaTime) {
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument("World delta time must be finite and non-negative.");

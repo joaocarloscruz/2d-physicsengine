@@ -4,6 +4,8 @@
 namespace PhysicsEngine {
 
 struct SimulationConfig {
+    float fixedTimeStep = 1.0f / 60.0f;
+    int maxSubstepsPerAdvance = 8;
     int solverIterations = 10;
     float positionCorrectionFactor = 0.8f;
     float penetrationSlop = 0.005f;

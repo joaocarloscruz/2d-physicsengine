@@ -60,6 +60,7 @@ public:
     void setBroadPhase(std::unique_ptr<IBroadPhase> bp);
     void setSimulationConfig(const SimulationConfig& config);
 
+    void step();
     void step(float deltaTime);
     
     const std::vector<RigidBodyPtr>& getBodies() const;

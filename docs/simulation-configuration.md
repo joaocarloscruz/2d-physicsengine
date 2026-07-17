@@ -9,6 +9,8 @@ PhysicsEngine::World world;
 PhysicsEngine::SimulationConfig config = world.getSimulationConfig();
 
 config.solverIterations = 16;
+config.fixedTimeStep = 1.0f / 120.0f;
+config.maxSubstepsPerAdvance = 12;
 config.positionCorrectionFactor = 0.6f;
 config.penetrationSlop = 0.002f;
 config.warmStartFactor = 0.9f;
@@ -22,6 +24,8 @@ The defaults preserve the behavior that predates this configuration API:
 
 | Setting | Default |
 | --- | ---: |
+| Fixed timestep | `1 / 60` seconds |
+| Maximum substeps per advance | `8` |
 | Solver iterations | `10` |
 | Position correction factor | `0.8` |
 | Penetration slop | `0.005` |
@@ -29,7 +33,8 @@ The defaults preserve the behavior that predates this configuration API:
 | Linear velocity limit | enabled at `200` |
 | Angular velocity limit | enabled at `30` |
 
-Correction and warm-start factors must be finite values between zero and one.
+The fixed timestep must be positive and finite, and the maximum substep count
+must be positive. Correction and warm-start factors must be finite values between zero and one.
 Penetration slop must be finite and non-negative. Enabled velocity limits must
 be positive and finite. Set either enable flag to `false` when the simulation
 must not silently clamp that velocity.

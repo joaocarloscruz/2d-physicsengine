@@ -2,7 +2,7 @@
 
 namespace PhysicsEngine {
 
-    Engine::Engine() {
+    Engine::Engine() : fixedStepRunner(world) {
         // The world is empty by default. The sandbox is responsible for adding objects.
         // Material = {density, restitution, staticFriction, dynamicFriction}
         addMaterial("default", {1.0f, 0.5f, 0.6f, 0.4f});
@@ -15,6 +15,26 @@ namespace PhysicsEngine {
 
     void Engine::step(float deltaTime) {
         world.step(deltaTime);
+    }
+
+    void Engine::stepFixed() {
+        world.step();
+    }
+
+    FixedStepResult Engine::advance(double elapsedTime) {
+        return fixedStepRunner.advance(elapsedTime);
+    }
+
+    void Engine::resetTiming() {
+        fixedStepRunner.reset();
+    }
+
+    double Engine::getAccumulatedTime() const {
+        return fixedStepRunner.getAccumulatedTime();
+    }
+
+    std::uint64_t Engine::getTotalStepCount() const {
+        return fixedStepRunner.getTotalStepCount();
     }
 
     void Engine::setSimulationConfig(const SimulationConfig& config) {

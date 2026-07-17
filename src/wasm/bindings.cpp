@@ -4,6 +4,7 @@
 
 #include "engine.h"
 #include "physics/core/material.h"
+#include "physics/core/fixed_step_runner.h"
 #include "physics/core/particles/particle_system.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
@@ -48,6 +49,8 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("dynamicFriction", &Material::dynamicFriction);
 
     value_object<SimulationConfig>("SimulationConfig")
+        .field("fixedTimeStep", &SimulationConfig::fixedTimeStep)
+        .field("maxSubstepsPerAdvance", &SimulationConfig::maxSubstepsPerAdvance)
         .field("solverIterations", &SimulationConfig::solverIterations)
         .field("positionCorrectionFactor", &SimulationConfig::positionCorrectionFactor)
         .field("penetrationSlop", &SimulationConfig::penetrationSlop)
@@ -56,6 +59,12 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("maxLinearSpeed", &SimulationConfig::maxLinearSpeed)
         .field("enableAngularVelocityLimit", &SimulationConfig::enableAngularVelocityLimit)
         .field("maxAngularSpeed", &SimulationConfig::maxAngularSpeed);
+
+    value_object<FixedStepResult>("FixedStepResult")
+        .field("stepsPerformed", &FixedStepResult::stepsPerformed)
+        .field("simulatedTime", &FixedStepResult::simulatedTime)
+        .field("remainingTime", &FixedStepResult::remainingTime)
+        .field("interpolationAlpha", &FixedStepResult::interpolationAlpha);
 
     class_<Shape>("Shape");
 
@@ -121,6 +130,11 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
     class_<Engine>("Engine")
         .constructor<>()
         .function("step", &Engine::step)
+        .function("stepFixed", &Engine::stepFixed)
+        .function("advance", &Engine::advance)
+        .function("resetTiming", &Engine::resetTiming)
+        .function("getAccumulatedTime", &Engine::getAccumulatedTime)
+        .function("getTotalStepCount", &Engine::getTotalStepCount)
         .function("setSimulationConfig", &Engine::setSimulationConfig)
         .function("getSimulationConfig", &Engine::getSimulationConfig)
         .function("addBody", &Engine::addBody)

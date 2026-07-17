@@ -6,6 +6,8 @@ async function main() {
     const engine = new physics.Engine();
     const simulationConfig = engine.getSimulationConfig();
     assert.equal(simulationConfig.solverIterations, 10);
+    assert.ok(Math.abs(simulationConfig.fixedTimeStep - 1 / 60) < 0.000001);
+    assert.equal(simulationConfig.maxSubstepsPerAdvance, 8);
     assert.equal(simulationConfig.enableLinearVelocityLimit, true);
     simulationConfig.solverIterations = 4;
     simulationConfig.enableLinearVelocityLimit = false;
@@ -51,11 +53,25 @@ async function main() {
         `unexpected particle x position: ${particlePosition.x}`,
     );
 
+    simulationConfig.fixedTimeStep = 0.1;
+    simulationConfig.maxSubstepsPerAdvance = 2;
+    engine.setSimulationConfig(simulationConfig);
+    engine.resetTiming();
+    const fixedProgress = engine.advance(0.25);
+    assert.equal(fixedProgress.stepsPerformed, 2);
+    assert.ok(Math.abs(fixedProgress.simulatedTime - 0.2) < 0.000001);
+    assert.ok(Math.abs(fixedProgress.remainingTime - 0.05) < 0.000001);
+    assert.equal(engine.getTotalStepCount(), 2n);
+
+    const caughtUp = engine.advance(0.05);
+    assert.equal(caughtUp.stepsPerformed, 1);
+    assert.ok(engine.getAccumulatedTime() < 0.000001);
+
     engine.delete();
     particles.delete();
     body.delete();
     shape.delete();
-    console.log("PASS: configured rigid body, collision filtering, and particle system stepped");
+    console.log("PASS: configuration, fixed stepping, filtering, bodies, and particles");
 }
 
 main().catch((error) => {

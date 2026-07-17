@@ -6,6 +6,12 @@
 namespace PhysicsEngine {
 
 void SimulationConfig::Validate() const {
+    if (!std::isfinite(fixedTimeStep) || fixedTimeStep <= 0.0f) {
+        throw std::invalid_argument("Fixed timestep must be positive and finite.");
+    }
+    if (maxSubstepsPerAdvance <= 0) {
+        throw std::invalid_argument("Maximum substeps per advance must be positive.");
+    }
     if (solverIterations <= 0) {
         throw std::invalid_argument("Solver iterations must be positive.");
     }
