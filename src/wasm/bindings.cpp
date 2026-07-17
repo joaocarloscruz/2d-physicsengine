@@ -9,6 +9,7 @@
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
 #include "physics/core/simulation_config.h"
+#include "physics/core/simulation_statistics.h"
 #include "physics/math/vector2.h"
 
 namespace PhysicsEngine {
@@ -65,6 +66,16 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("simulatedTime", &FixedStepResult::simulatedTime)
         .field("remainingTime", &FixedStepResult::remainingTime)
         .field("interpolationAlpha", &FixedStepResult::interpolationAlpha);
+
+    value_object<SimulationStatistics>("SimulationStatistics")
+        .field("integratedBodyCount", &SimulationStatistics::integratedBodyCount)
+        .field("integratedParticleCount", &SimulationStatistics::integratedParticleCount)
+        .field("broadPhaseCandidateCount", &SimulationStatistics::broadPhaseCandidateCount)
+        .field("narrowPhaseCandidateCount", &SimulationStatistics::narrowPhaseCandidateCount)
+        .field("resolvedContactCount", &SimulationStatistics::resolvedContactCount)
+        .field("solverIterationCount", &SimulationStatistics::solverIterationCount)
+        .field("activeContactCount", &SimulationStatistics::activeContactCount)
+        .field("fluidIterationCount", &SimulationStatistics::fluidIterationCount);
 
     class_<Shape>("Shape");
 
@@ -137,6 +148,7 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getTotalStepCount", &Engine::getTotalStepCount)
         .function("setSimulationConfig", &Engine::setSimulationConfig)
         .function("getSimulationConfig", &Engine::getSimulationConfig)
+        .function("getLastStepStatistics", &Engine::getLastStepStatistics)
         .function("addBody", &Engine::addBody)
         .function("addParticleSystem", &Engine::addParticleSystem)
         .function("removeParticleSystem", &Engine::removeParticleSystem)

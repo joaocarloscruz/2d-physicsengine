@@ -139,10 +139,12 @@ void World::step(float deltaTime) {
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument("World delta time must be finite and non-negative.");
     }
+    SimulationStatistics statistics;
     potentialCollisions.clear();
     std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
 
     for (const ParticleSystemPtr& system : particleSystems) {
+        statistics.integratedParticleCount += static_cast<std::uint32_t>(system->size());
         system->step(deltaTime);
     }
 
@@ -159,6 +161,7 @@ void World::step(float deltaTime) {
     // Integrate velocities and positions
     for (RigidBodyPtr& body : bodies) {
         if (!body->IsStatic()) {
+            ++statistics.integratedBodyCount;
             body->Integrate(deltaTime, simulationConfig);
 
             while (body->GetOrientation() > M_PI) {
@@ -173,7 +176,11 @@ void World::step(float deltaTime) {
     // Narrow phase + resolve with multiple iterations for stability
     // Listeners fire only on the first iteration to avoid duplicate callbacks
     for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
+        ++statistics.solverIterationCount;
         potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
+        statistics.broadPhaseCandidateCount += static_cast<std::uint32_t>(
+            potentialCollisions.size()
+        );
         potentialCollisions.erase(
             std::remove_if(
                 potentialCollisions.begin(),
@@ -186,9 +193,13 @@ void World::step(float deltaTime) {
             ),
             potentialCollisions.end()
         );
+        statistics.narrowPhaseCandidateCount += static_cast<std::uint32_t>(
+            potentialCollisions.size()
+        );
         for (const auto& pair : potentialCollisions) {
             CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
             if (manifold.hasCollision) {
+                ++statistics.resolvedContactCount;
                 CanonicalizeManifold(manifold);
                 const ContactKey key = ContactKey::From(manifold.A, manifold.B);
                 auto [contact, inserted] = contactCache.try_emplace(key);
@@ -222,6 +233,8 @@ void World::step(float deltaTime) {
             ++it;
         }
     }
+    statistics.activeContactCount = static_cast<std::uint32_t>(contactCache.size());
+    lastStepStatistics = statistics;
 }
 
 const std::vector<RigidBodyPtr>& World::getBodies() const {
@@ -250,6 +263,10 @@ std::size_t World::getPersistentContactCount() const {
 
 const SimulationConfig& World::getSimulationConfig() const {
     return simulationConfig;
+}
+
+const SimulationStatistics& World::getLastStepStatistics() const {
+    return lastStepStatistics;
 }
 
 }

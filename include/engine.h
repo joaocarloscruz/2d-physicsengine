@@ -25,6 +25,7 @@ namespace PhysicsEngine {
         std::uint64_t getTotalStepCount() const;
         void setSimulationConfig(const SimulationConfig& config);
         SimulationConfig getSimulationConfig() const;
+        SimulationStatistics getLastStepStatistics() const;
 
         void addBody(RigidBodyPtr body);
         void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);

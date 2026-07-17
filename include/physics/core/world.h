@@ -16,6 +16,7 @@
 #include "collisions/broad_phase/ibroad_phase.h"
 #include "types.h"
 #include "simulation_config.h"
+#include "simulation_statistics.h"
 
 namespace PhysicsEngine {
 
@@ -70,6 +71,7 @@ public:
     const std::vector<ParticleSystemPtr>& getParticleSystems() const;
     std::size_t getPersistentContactCount() const;
     const SimulationConfig& getSimulationConfig() const;
+    const SimulationStatistics& getLastStepStatistics() const;
 
 private:
     std::vector<RigidBodyPtr> bodies;
@@ -79,6 +81,7 @@ private:
     std::vector<CollisionPair> potentialCollisions;
     std::vector<ICollisionListener*> collisionListeners;
     SimulationConfig simulationConfig;
+    SimulationStatistics lastStepStatistics;
     std::unique_ptr<IBroadPhase> broadPhase;
     std::unordered_map<ContactKey, ContactImpulse, ContactKeyHash> contactCache;
 };

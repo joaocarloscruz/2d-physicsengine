@@ -81,6 +81,11 @@ Because the cumulative counter is 64-bit, `engine.getTotalStepCount()` returns
 a JavaScript `BigInt` (for example, `120n`). Per-call `stepsPerformed` remains a
 regular number.
 
+After `step`, `stepFixed`, or `advance`,
+`engine.getLastStepStatistics()` returns per-step integration, broad-phase,
+contact, solver, and fluid counters. See `docs/simulation-statistics.md` for the
+counting and reset semantics.
+
 `RigidBody` currently refers to its `Shape` through a non-owning pointer. Keep
 the JavaScript shape object alive for as long as its body exists, and delete the
 engine and body before deleting the shape.

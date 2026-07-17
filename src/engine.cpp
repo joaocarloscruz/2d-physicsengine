@@ -45,6 +45,10 @@ namespace PhysicsEngine {
         return world.getSimulationConfig();
     }
 
+    SimulationStatistics Engine::getLastStepStatistics() const {
+        return world.getLastStepStatistics();
+    }
+
     void Engine::addBody(RigidBodyPtr body) {
         world.addBody(body);
     }

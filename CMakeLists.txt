@@ -108,6 +108,7 @@ else()
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
         ${TESTS_SRC_DIR}/test_simulation_config.cpp
         ${TESTS_SRC_DIR}/test_fixed_step.cpp
+        ${TESTS_SRC_DIR}/test_simulation_statistics.cpp
         ${TESTS_SRC_DIR}/test_broad_phase_differential.cpp
         ${TESTS_SRC_DIR}/test_stress.cpp
         ${TESTS_SRC_DIR}/test_validation.cpp

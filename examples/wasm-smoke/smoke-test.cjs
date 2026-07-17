@@ -66,6 +66,13 @@ async function main() {
     const caughtUp = engine.advance(0.05);
     assert.equal(caughtUp.stepsPerformed, 1);
     assert.ok(engine.getAccumulatedTime() < 0.000001);
+    const statistics = engine.getLastStepStatistics();
+    assert.equal(statistics.integratedBodyCount, 1);
+    assert.equal(statistics.integratedParticleCount, 1);
+    assert.equal(statistics.broadPhaseCandidateCount, 0);
+    assert.equal(statistics.resolvedContactCount, 0);
+    assert.equal(statistics.solverIterationCount, 4);
+    assert.equal(statistics.fluidIterationCount, 0);
 
     engine.delete();
     particles.delete();

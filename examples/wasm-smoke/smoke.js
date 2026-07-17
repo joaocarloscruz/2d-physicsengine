@@ -39,6 +39,7 @@ async function runSmokeTest() {
 
         engine.resetTiming();
         const fixedProgress = engine.advance(0.25);
+        const statistics = engine.getLastStepStatistics();
 
         const passed = Math.abs(position.x - 2.25) < 0.0001
             && position.y === 0
@@ -48,7 +49,11 @@ async function runSmokeTest() {
             && engine.getSimulationConfig().solverIterations === 4
             && fixedProgress.stepsPerformed === 2
             && Math.abs(fixedProgress.remainingTime - 0.05) < 0.000001
-            && engine.getTotalStepCount() === 2n;
+            && engine.getTotalStepCount() === 2n
+            && statistics.integratedBodyCount === 1
+            && statistics.integratedParticleCount === 1
+            && statistics.solverIterationCount === 4
+            && statistics.fluidIterationCount === 0;
         output.textContent = passed
             ? "PASS: configuration, fixed stepping, filtering, bodies, and particles"
             : `FAIL: body=(${position.x}, ${position.y}), particle=(${particlePosition.x}, ${particlePosition.y})`;
