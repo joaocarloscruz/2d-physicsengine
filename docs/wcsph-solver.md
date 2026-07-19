@@ -12,8 +12,9 @@ state and timestep approach documented by
 
 ## State preparation
 
-For each particle `i`, density is estimated from the particle itself and every
-neighbor inside its smoothing length:
+For each particle `i`, density is estimated from the particle itself, every
+fluid neighbor, and optional sampled boundary support inside its smoothing
+length:
 
 ```text
 rho_i = sum_j m_j W_density(x_i - x_j, h_i)
@@ -65,7 +66,9 @@ const auto& statistics = solver.getLastStatistics();
 ```
 
 Statistics include density range, maximum speed, the current stable timestep,
-substeps, and the deterministic neighborhood metrics from the spatial grid.
+substeps, deterministic neighborhood metrics, and boundary sample/candidate
+counts. Substep callbacks allow a higher-level coupled simulation to advance
+rigid bodies at exactly the same cadence without exposing solver internals.
 
 The regression suite includes fixed hydrostatic-column and dam-break particle
 layouts. A simple test-only box clamp keeps those scenarios bounded until the
@@ -75,3 +78,5 @@ not presented as a physical boundary treatment.
 
 Production static containment is provided separately by the circle and convex
 polygon models documented in [fluid-boundaries.md](fluid-boundaries.md).
+For measured scaling and reproduction commands, see
+[fluid-performance.md](fluid-performance.md).

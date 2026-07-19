@@ -45,6 +45,7 @@ private:
     float cellSize;
     std::unordered_map<CellKey, std::vector<std::size_t>, CellKeyHash> cells;
     FluidNeighborStatistics lastStatistics;
+    std::size_t pairCapacityHint = 0;
 };
 
 }

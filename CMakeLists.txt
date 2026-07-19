@@ -44,6 +44,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/wcsph_solver.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_boundary.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_rigid_coupler.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/coupled_fluid_simulation.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
@@ -114,6 +115,7 @@ else()
         ${TESTS_SRC_DIR}/test_wcsph_solver.cpp
         ${TESTS_SRC_DIR}/test_fluid_boundaries.cpp
         ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
+        ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
@@ -134,6 +136,11 @@ else()
     )
     target_link_libraries(numerical_validation PRIVATE Engine)
 
+    add_executable(fluid_benchmark
+        benchmarks/fluid_benchmark.cpp
+    )
+    target_link_libraries(fluid_benchmark PRIVATE Engine)
+
     enable_testing()
     add_test(NAME engine_tests COMMAND run_tests)
     add_test(
@@ -144,5 +151,16 @@ else()
     )
     set_tests_properties(numerical_validation_fast PROPERTIES
         LABELS "fast;numerical"
+    )
+    add_test(
+        NAME fluid_benchmark_smoke
+        COMMAND fluid_benchmark
+            --particles 1000
+            --warmup 0
+            --samples 1
+            --output ${CMAKE_BINARY_DIR}/fluid-benchmark-smoke.json
+    )
+    set_tests_properties(fluid_benchmark_smoke PROPERTIES
+        LABELS "fast;performance"
     )
 endif()

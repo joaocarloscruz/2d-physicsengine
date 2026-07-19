@@ -39,9 +39,27 @@ particleRadius`. Both boundary types expose `contains()` for validation and
 return correction depth statistics. `WcsphStatistics` accumulates corrected
 particle count and maximum penetration across the substeps of the latest call.
 
-This model guarantees geometric impermeability but does not synthesize SPH
-dummy particles to repair kernel support near walls. Pressure-extrapolated
-dummy-particle methods such as the generalized wall condition of
-[Adami, Hu, and Adams](https://doi.org/10.1016/j.jcp.2012.05.005) are a more
-elaborate alternative when near-wall pressure accuracy is more important than
-the small, deterministic reference implementation provided here.
+## Sampled density support
+
+The geometric response is complemented by deterministic SPH boundary samples.
+`SampleFluidContainerBoundary` places layers outside a container, while
+`SampleRigidBodyBoundaries` places layers inside circles and convex polygons.
+The default coupled simulation uses spacing `h / 2` and enough layers to cover
+one smoothing length. Moving rigid samples carry the body's surface velocity.
+
+Each sample represents area `spacing^2` and contributes rest-density-equivalent
+mass to nearby fluid density estimates:
+
+```text
+rho_i += rho0_i V_b W_density(x_i - x_b, h_i)
+```
+
+The solver hashes samples into the same-sized spatial cells used by the fluid
+grid, so it only visits local candidates. Statistics expose boundary sample and
+candidate counts. Geometric projection remains the final impermeability guard;
+the samples repair truncated kernel support and prevent the artificial pressure
+loss that otherwise occurs next to walls and immersed bodies.
+
+This is a deterministic reference boundary treatment. It does not extrapolate
+wall pressure as in the more elaborate generalized condition of
+[Adami, Hu, and Adams](https://doi.org/10.1016/j.jcp.2012.05.005).

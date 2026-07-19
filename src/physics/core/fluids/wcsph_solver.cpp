@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace PhysicsEngine {
 namespace {
@@ -32,6 +33,23 @@ void ValidateParticleState(const FluidParticle& particle) {
             "WCSPH particles must contain valid finite state."
         );
     }
+}
+
+using BoundaryCell = std::pair<int, int>;
+
+struct BoundaryCellHash {
+    std::size_t operator()(const BoundaryCell& key) const {
+        const std::size_t xHash = std::hash<int>{}(key.first);
+        const std::size_t yHash = std::hash<int>{}(key.second);
+        return xHash ^ (yHash + 0x9e3779b9u + (xHash << 6) + (xHash >> 2));
+    }
+};
+
+BoundaryCell GetBoundaryCell(const Vector2& position, float cellSize) {
+    return {
+        static_cast<int>(std::floor(position.x / cellSize)),
+        static_cast<int>(std::floor(position.y / cellSize))
+    };
 }
 
 } // namespace
@@ -83,10 +101,27 @@ void WcsphSolver::prepare(std::vector<FluidParticle>& particles) {
     lastStatistics.substepCount = 0;
     lastStatistics.boundaryCorrectionCount = 0;
     lastStatistics.maximumBoundaryPenetration = 0.0f;
-    prepareState(particles);
+    prepareState(particles, nullptr);
 }
 
-void WcsphSolver::prepareState(std::vector<FluidParticle>& particles) {
+void WcsphSolver::prepare(
+    std::vector<FluidParticle>& particles,
+    const std::vector<FluidBoundaryParticle>& boundaryParticles
+) {
+    lastStatistics.substepCount = 0;
+    lastStatistics.boundaryCorrectionCount = 0;
+    lastStatistics.maximumBoundaryPenetration = 0.0f;
+    prepareState(particles, &boundaryParticles);
+}
+
+void WcsphSolver::prepareState(
+    std::vector<FluidParticle>& particles,
+    const std::vector<FluidBoundaryParticle>* boundaryParticles
+) {
+    lastStatistics.boundaryParticleCount = boundaryParticles
+        ? boundaryParticles->size()
+        : 0;
+    lastStatistics.boundaryCandidateCount = 0;
     if (particles.empty()) {
         lastStatistics.neighbors = FluidNeighborStatistics{};
         lastStatistics.minimumDensity = 0.0f;
@@ -112,6 +147,59 @@ void WcsphSolver::prepareState(std::vector<FluidParticle>& particles) {
             Vector2(),
             particle.smoothingLength
         );
+    }
+    if (boundaryParticles && !boundaryParticles->empty()) {
+        const float cellSize = grid.getCellSize();
+        std::unordered_map<
+            BoundaryCell,
+            std::vector<std::size_t>,
+            BoundaryCellHash
+        > boundaryCells;
+        boundaryCells.reserve(boundaryParticles->size());
+        for (std::size_t index = 0; index < boundaryParticles->size(); ++index) {
+            const FluidBoundaryParticle& boundaryParticle = (*boundaryParticles)[index];
+            if (!std::isfinite(boundaryParticle.position.x)
+                || !std::isfinite(boundaryParticle.position.y)
+                || !std::isfinite(boundaryParticle.velocity.x)
+                || !std::isfinite(boundaryParticle.velocity.y)
+                || !std::isfinite(boundaryParticle.volume)
+                || boundaryParticle.volume <= 0.0f) {
+                throw std::invalid_argument(
+                    "WCSPH boundary particles must contain valid finite state."
+                );
+            }
+            boundaryCells[GetBoundaryCell(boundaryParticle.position, cellSize)]
+                .push_back(index);
+        }
+        for (FluidParticle& particle : particles) {
+            const int cellRange = static_cast<int>(std::ceil(
+                particle.smoothingLength / cellSize
+            ));
+            const BoundaryCell origin = GetBoundaryCell(particle.position, cellSize);
+            for (int x = origin.first - cellRange;
+                 x <= origin.first + cellRange;
+                 ++x) {
+                for (int y = origin.second - cellRange;
+                     y <= origin.second + cellRange;
+                     ++y) {
+                    const auto cell = boundaryCells.find({x, y});
+                    if (cell == boundaryCells.end()) {
+                        continue;
+                    }
+                    for (std::size_t boundaryIndex : cell->second) {
+                        ++lastStatistics.boundaryCandidateCount;
+                        const FluidBoundaryParticle& boundaryParticle =
+                            (*boundaryParticles)[boundaryIndex];
+                        particle.density += particle.restDensity
+                            * boundaryParticle.volume
+                            * SphKernels2D::DensityWeight(
+                                particle.position - boundaryParticle.position,
+                                particle.smoothingLength
+                            );
+                    }
+                }
+            }
+        }
     }
     for (const auto& pair : pairs) {
         FluidParticle& first = particles[pair.first];
@@ -268,7 +356,7 @@ void WcsphSolver::step(
     std::vector<FluidParticle>& particles,
     float deltaTime
 ) {
-    stepInternal(particles, deltaTime, nullptr);
+    stepInternal(particles, deltaTime, nullptr, nullptr, nullptr);
 }
 
 void WcsphSolver::step(
@@ -276,13 +364,63 @@ void WcsphSolver::step(
     float deltaTime,
     const IFluidContainer& boundary
 ) {
-    stepInternal(particles, deltaTime, &boundary);
+    stepInternal(particles, deltaTime, &boundary, nullptr, nullptr);
+}
+
+void WcsphSolver::step(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const SubstepCallback& afterSubstep
+) {
+    stepInternal(particles, deltaTime, nullptr, nullptr, &afterSubstep);
+}
+
+void WcsphSolver::step(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const std::vector<FluidBoundaryParticle>& boundaryParticles,
+    const SubstepCallback& afterSubstep
+) {
+    stepInternal(
+        particles,
+        deltaTime,
+        nullptr,
+        &boundaryParticles,
+        &afterSubstep
+    );
+}
+
+void WcsphSolver::step(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const IFluidContainer& boundary,
+    const SubstepCallback& afterSubstep
+) {
+    stepInternal(particles, deltaTime, &boundary, nullptr, &afterSubstep);
+}
+
+void WcsphSolver::step(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const IFluidContainer& boundary,
+    const std::vector<FluidBoundaryParticle>& boundaryParticles,
+    const SubstepCallback& afterSubstep
+) {
+    stepInternal(
+        particles,
+        deltaTime,
+        &boundary,
+        &boundaryParticles,
+        &afterSubstep
+    );
 }
 
 void WcsphSolver::stepInternal(
     std::vector<FluidParticle>& particles,
     float deltaTime,
-    const IFluidContainer* boundary
+    const IFluidContainer* boundary,
+    const std::vector<FluidBoundaryParticle>* boundaryParticles,
+    const SubstepCallback* afterSubstep
 ) {
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument(
@@ -290,7 +428,11 @@ void WcsphSolver::stepInternal(
         );
     }
     if (deltaTime == 0.0f) {
-        prepare(particles);
+        if (boundaryParticles) {
+            prepare(particles, *boundaryParticles);
+        } else {
+            prepare(particles);
+        }
         return;
     }
 
@@ -304,7 +446,7 @@ void WcsphSolver::stepInternal(
                 "WCSPH exceeded the configured maximum substeps."
             );
         }
-        prepareState(particles);
+        prepareState(particles, boundaryParticles);
         const float substep = std::min(
             remaining,
             lastStatistics.stableTimeStep
@@ -320,13 +462,16 @@ void WcsphSolver::stepInternal(
                 boundaryStatistics.maximumPenetration
             );
         }
+        if (afterSubstep && *afterSubstep) {
+            (*afterSubstep)(substep);
+        }
         remaining -= substep;
         if (remaining < deltaTime * 1e-6f) {
             remaining = 0.0f;
         }
         ++substeps;
     }
-    prepareState(particles);
+    prepareState(particles, boundaryParticles);
     lastStatistics.substepCount = substeps;
 }
 

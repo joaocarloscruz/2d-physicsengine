@@ -69,9 +69,11 @@ FluidParticleSpatialGrid::findNeighborPairs(
     );
     const float radiusSquared = interactionRadius * interactionRadius;
     std::vector<ParticlePair> pairs;
+    pairs.reserve(pairCapacityHint);
     std::vector<std::size_t> neighborCounts(particles.size(), 0);
 
     for (std::size_t first = 0; first < particles.size(); ++first) {
+        const std::size_t firstPair = pairs.size();
         const CellKey origin = getCell(particles[first].position);
         for (int x = origin.first - cellRange;
              x <= origin.first + cellRange;
@@ -98,10 +100,10 @@ FluidParticleSpatialGrid::findNeighborPairs(
                 }
             }
         }
+        std::sort(pairs.begin() + firstPair, pairs.end());
     }
 
-    std::sort(pairs.begin(), pairs.end());
-    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+    pairCapacityHint = std::max(pairCapacityHint, pairs.size());
     lastStatistics.neighborPairCount = pairs.size();
     if (!neighborCounts.empty()) {
         lastStatistics.maximumNeighborCount = *std::max_element(

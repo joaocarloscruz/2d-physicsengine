@@ -1,13 +1,23 @@
 # Two-way fluid and rigid-body coupling
 
 `FluidRigidCoupler` connects WCSPH particles to dynamic or static circle and
-convex-polygon rigid bodies. It is deliberately a separate step so callers can
-choose their fluid substep order explicitly:
+convex-polygon rigid bodies. Advanced callers can invoke it directly, but the
+recommended entry point is `CoupledFluidSimulation`, which owns the ordering:
 
 1. advance the WCSPH solver;
 2. enforce static fluid containers;
 3. call `FluidRigidCoupler::couple` with the particles, bodies, and substep;
 4. integrate the rigid bodies.
+
+These operations run for every CFL-selected fluid substep. Rigid bodies receive
+the fluid configuration's external acceleration during the same substep, so
+buoyancy and gravity do not depend on rendered frame duration.
+
+```cpp
+PhysicsEngine::CoupledFluidSimulation simulation(smoothingLength);
+simulation.step(particles, bodies, frameTime, tank);
+const auto& statistics = simulation.getLastStatistics();
+```
 
 ## Hydrodynamic impulses
 
@@ -60,6 +70,9 @@ The headless coupling regressions require:
   expected signs;
 - a circular hydrostatic pressure field to accelerate a body lighter than the
   fluid upward and a denser body downward after gravity;
+- a complete sampled-wall tank run in which a density-500 circle rises from
+  `1.0` to approximately `1.164`, while a density-1500 circle sinks to
+  approximately `0.880` after `0.4` simulated seconds;
 - penetrating contact to be projected out with no inward relative velocity.
 
 The hydrostatic check derives buoyancy from the sampled pressure field; it does

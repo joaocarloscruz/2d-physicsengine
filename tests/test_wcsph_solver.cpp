@@ -193,35 +193,42 @@ TEST_CASE("WCSPH CFL limit responds to wave and particle speeds", "[fluid][wcsph
     REQUIRE(solver.getLastStatistics().substepCount >= 3);
 }
 
-TEST_CASE("WCSPH neighborhood work remains local for three thousand particles", "[fluid][wcsph][scaling]") {
-    constexpr int columns = 60;
-    constexpr int rows = 50;
+TEST_CASE("WCSPH neighborhood work remains linear through ten thousand particles", "[fluid][wcsph][scaling]") {
     constexpr float spacing = 0.25f;
     FluidParticleProperties properties;
     properties.mass = properties.restDensity * spacing * spacing;
     properties.smoothingLength = 0.5f;
-    std::vector<FluidParticle> particles;
-    particles.reserve(columns * rows);
-    for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
+    for (std::size_t particleCount : {1000u, 3000u, 10000u}) {
+        const std::size_t columns = static_cast<std::size_t>(std::ceil(
+            std::sqrt(static_cast<double>(particleCount))
+        ));
+        std::vector<FluidParticle> particles;
+        particles.reserve(particleCount);
+        for (std::size_t index = 0; index < particleCount; ++index) {
+            const std::size_t row = index / columns;
+            const std::size_t column = index % columns;
             particles.emplace_back(
-                Vector2(column * spacing, row * spacing),
+                Vector2(
+                    static_cast<float>(column) * spacing,
+                    static_cast<float>(row) * spacing
+                ),
                 Vector2(),
                 properties
             );
         }
+        WcsphConfig config;
+        config.externalAcceleration = Vector2();
+        WcsphSolver solver(properties.smoothingLength, config);
+
+        solver.prepare(particles);
+
+        const FluidNeighborStatistics& neighbors =
+            solver.getLastStatistics().neighbors;
+        INFO("particle count: " << particleCount);
+        REQUIRE(neighbors.particleCount == particleCount);
+        REQUIRE(neighbors.candidatePairCount < particleCount * 25);
+        REQUIRE(neighbors.neighborPairCount < particleCount * 10);
     }
-    WcsphConfig config;
-    config.externalAcceleration = Vector2();
-    WcsphSolver solver(properties.smoothingLength, config);
-
-    solver.prepare(particles);
-
-    const FluidNeighborStatistics& neighbors =
-        solver.getLastStatistics().neighbors;
-    REQUIRE(neighbors.particleCount == 3000);
-    REQUIRE(neighbors.candidatePairCount < particles.size() * 80);
-    REQUIRE(neighbors.neighborPairCount < particles.size() * 20);
 }
 
 TEST_CASE("WCSPH hydrostatic column benchmark is finite and repeatable", "[fluid][wcsph][benchmark]") {

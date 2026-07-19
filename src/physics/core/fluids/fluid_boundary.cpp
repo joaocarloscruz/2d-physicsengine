@@ -1,5 +1,8 @@
 #include "physics/core/fluids/fluid_boundary.h"
 
+#include "physics/core/rigidbody.h"
+#include "physics/math/matrix2x2.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -9,6 +12,7 @@ namespace PhysicsEngine {
 namespace {
 
 constexpr float BoundaryTolerance = 1e-6f;
+constexpr float Pi = 3.14159265358979323846f;
 
 void RemoveOutwardVelocity(
     FluidParticle& particle,
@@ -34,7 +38,124 @@ float SignedDoubleArea(const std::vector<Vector2>& vertices) {
     return area;
 }
 
+void AppendCircleSamples(
+    const Vector2& center,
+    float radius,
+    bool sampleInside,
+    const Vector2& linearVelocity,
+    float angularVelocity,
+    const FluidBoundarySamplingSettings& settings,
+    std::vector<FluidBoundaryParticle>& particles
+) {
+    const int layerCount = std::max(
+        1,
+        static_cast<int>(std::ceil(settings.supportRadius / settings.spacing))
+    );
+    for (int layer = 0; layer < layerCount; ++layer) {
+        const float layerRadius = sampleInside
+            ? radius - static_cast<float>(layer) * settings.spacing
+            : radius + static_cast<float>(layer) * settings.spacing;
+        if (layerRadius <= BoundaryTolerance) {
+            particles.push_back({center, linearVelocity, settings.spacing * settings.spacing});
+            break;
+        }
+        const int sampleCount = std::max(
+            1,
+            static_cast<int>(std::ceil(2.0f * Pi * layerRadius / settings.spacing))
+        );
+        for (int index = 0; index < sampleCount; ++index) {
+            const float angle = 2.0f * Pi * static_cast<float>(index)
+                / static_cast<float>(sampleCount);
+            const Vector2 offset(
+                layerRadius * std::cos(angle),
+                layerRadius * std::sin(angle)
+            );
+            particles.push_back({
+                center + offset,
+                linearVelocity + Vector2::cross(angularVelocity, offset),
+                settings.spacing * settings.spacing
+            });
+        }
+    }
+}
+
+bool IsInsideConvex(
+    const std::vector<Vector2>& vertices,
+    const Vector2& position,
+    bool counterClockwise
+) {
+    for (std::size_t index = 0; index < vertices.size(); ++index) {
+        const Vector2 edge = vertices[(index + 1) % vertices.size()]
+            - vertices[index];
+        const float side = edge.cross(position - vertices[index]);
+        if ((counterClockwise && side < -BoundaryTolerance)
+            || (!counterClockwise && side > BoundaryTolerance)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void AppendPolygonSamples(
+    const std::vector<Vector2>& vertices,
+    const Vector2& position,
+    float orientation,
+    bool sampleInside,
+    const Vector2& linearVelocity,
+    float angularVelocity,
+    const FluidBoundarySamplingSettings& settings,
+    std::vector<FluidBoundaryParticle>& particles
+) {
+    const bool counterClockwise = SignedDoubleArea(vertices) > 0.0f;
+    const Matrix2x2 rotation = Matrix2x2::rotation(orientation);
+    const int layerCount = std::max(
+        1,
+        static_cast<int>(std::ceil(settings.supportRadius / settings.spacing))
+    );
+    for (std::size_t edgeIndex = 0; edgeIndex < vertices.size(); ++edgeIndex) {
+        const Vector2 start = vertices[edgeIndex];
+        const Vector2 edge = vertices[(edgeIndex + 1) % vertices.size()] - start;
+        const float length = edge.magnitude();
+        const int sampleCount = std::max(
+            1,
+            static_cast<int>(std::ceil(length / settings.spacing))
+        );
+        const Vector2 inward = counterClockwise
+            ? Vector2(-edge.y, edge.x).normalized()
+            : Vector2(edge.y, -edge.x).normalized();
+        for (int layer = 0; layer < layerCount; ++layer) {
+            const Vector2 layerOffset = inward
+                * (static_cast<float>(layer) * settings.spacing
+                    * (sampleInside ? 1.0f : -1.0f));
+            for (int index = 0; index < sampleCount; ++index) {
+                const float parameter = (static_cast<float>(index) + 0.5f)
+                    / static_cast<float>(sampleCount);
+                const Vector2 localPoint = start + edge * parameter + layerOffset;
+                if (sampleInside
+                    && !IsInsideConvex(vertices, localPoint, counterClockwise)) {
+                    continue;
+                }
+                const Vector2 worldOffset = rotation * localPoint;
+                particles.push_back({
+                    position + worldOffset,
+                    linearVelocity + Vector2::cross(angularVelocity, worldOffset),
+                    settings.spacing * settings.spacing
+                });
+            }
+        }
+    }
+}
+
 } // namespace
+
+void FluidBoundarySamplingSettings::Validate() const {
+    if (!std::isfinite(spacing) || spacing <= 0.0f
+        || !std::isfinite(supportRadius) || supportRadius <= 0.0f) {
+        throw std::invalid_argument(
+            "Fluid boundary sampling dimensions must be positive and finite."
+        );
+    }
+}
 
 void FluidBoundarySettings::Validate() const {
     if (!std::isfinite(particleRadius) || particleRadius <= 0.0f) {
@@ -53,6 +174,11 @@ void FluidBoundarySettings::Validate() const {
         );
     }
 }
+
+void IFluidContainer::appendBoundaryParticles(
+    const FluidBoundarySamplingSettings&,
+    std::vector<FluidBoundaryParticle>&
+) const {}
 
 FluidCircleContainer::FluidCircleContainer(
     const Vector2& containerCenter,
@@ -74,6 +200,22 @@ bool FluidCircleContainer::contains(const Vector2& position) const {
     const float permittedRadius = radius - settings.particleRadius;
     return (position - center).magnitudeSquared()
         <= permittedRadius * permittedRadius + BoundaryTolerance;
+}
+
+void FluidCircleContainer::appendBoundaryParticles(
+    const FluidBoundarySamplingSettings& sampling,
+    std::vector<FluidBoundaryParticle>& particles
+) const {
+    sampling.Validate();
+    AppendCircleSamples(
+        center,
+        radius,
+        false,
+        Vector2(),
+        0.0f,
+        sampling,
+        particles
+    );
 }
 
 FluidBoundaryCorrection FluidCircleContainer::enforce(
@@ -156,6 +298,23 @@ bool FluidConvexPolygonContainer::contains(const Vector2& position) const {
     return true;
 }
 
+void FluidConvexPolygonContainer::appendBoundaryParticles(
+    const FluidBoundarySamplingSettings& sampling,
+    std::vector<FluidBoundaryParticle>& particles
+) const {
+    sampling.Validate();
+    AppendPolygonSamples(
+        vertices,
+        Vector2(),
+        0.0f,
+        false,
+        Vector2(),
+        0.0f,
+        sampling,
+        particles
+    );
+}
+
 FluidBoundaryCorrection FluidConvexPolygonContainer::enforce(
     FluidParticle& particle
 ) const {
@@ -212,6 +371,59 @@ FluidBoundaryStatistics EnforceFluidBoundary(
         }
     }
     return statistics;
+}
+
+std::vector<FluidBoundaryParticle> SampleFluidContainerBoundary(
+    const IFluidContainer& boundary,
+    const FluidBoundarySamplingSettings& settings
+) {
+    settings.Validate();
+    std::vector<FluidBoundaryParticle> particles;
+    boundary.appendBoundaryParticles(settings, particles);
+    return particles;
+}
+
+std::vector<FluidBoundaryParticle> SampleRigidBodyBoundaries(
+    const std::vector<RigidBody*>& bodies,
+    const FluidBoundarySamplingSettings& settings
+) {
+    settings.Validate();
+    std::vector<FluidBoundaryParticle> particles;
+    for (const RigidBody* body : bodies) {
+        if (body == nullptr) {
+            throw std::invalid_argument(
+                "Fluid boundary sampling requires valid rigid bodies."
+            );
+        }
+        if (body->shape->type == ShapeType::CIRCLE) {
+            AppendCircleSamples(
+                body->GetPosition(),
+                body->shape->GetRadius(),
+                true,
+                body->GetVelocity(),
+                body->GetAngularVelocity(),
+                settings,
+                particles
+            );
+        } else if (body->shape->type == ShapeType::POLYGON) {
+            const auto* polygon = static_cast<const Polygon*>(body->shape);
+            AppendPolygonSamples(
+                polygon->getVertices(),
+                body->GetPosition(),
+                body->GetOrientation(),
+                true,
+                body->GetVelocity(),
+                body->GetAngularVelocity(),
+                settings,
+                particles
+            );
+        } else {
+            throw std::invalid_argument(
+                "Fluid boundary sampling received an unsupported shape."
+            );
+        }
+    }
+    return particles;
 }
 
 }

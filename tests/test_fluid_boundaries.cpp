@@ -2,12 +2,75 @@
 
 #include "physics/core/fluids/fluid_boundary.h"
 #include "physics/core/fluids/wcsph_solver.h"
+#include "physics/core/rigidbody.h"
+#include "physics/core/shape.h"
 
 #include <cmath>
 #include <memory>
 #include <vector>
 
 using namespace PhysicsEngine;
+
+TEST_CASE("Sampled container boundaries restore SPH density support", "[fluid][boundary][samples]") {
+    FluidBoundarySettings boundarySettings;
+    boundarySettings.particleRadius = 0.05f;
+    FluidConvexPolygonContainer container(
+        {
+            Vector2(-2.0f, -2.0f),
+            Vector2(2.0f, -2.0f),
+            Vector2(2.0f, 2.0f),
+            Vector2(-2.0f, 2.0f),
+        },
+        boundarySettings
+    );
+    FluidBoundarySamplingSettings sampling;
+    sampling.spacing = 0.1f;
+    sampling.supportRadius = 0.4f;
+    const auto samples = SampleFluidContainerBoundary(container, sampling);
+    REQUIRE_FALSE(samples.empty());
+
+    FluidParticleProperties properties;
+    properties.mass = 1000.0f * 0.1f * 0.1f;
+    properties.restDensity = 1000.0f;
+    properties.smoothingLength = 0.4f;
+    std::vector<FluidParticle> unsupported = {
+        FluidParticle(Vector2(0.0f, -1.9f), Vector2(), properties)
+    };
+    std::vector<FluidParticle> supported = unsupported;
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    WcsphSolver solver(properties.smoothingLength, config);
+
+    solver.prepare(unsupported);
+    solver.prepare(supported, samples);
+
+    REQUIRE(supported.front().density > unsupported.front().density);
+    REQUIRE(std::abs(supported.front().density - properties.restDensity)
+        < std::abs(unsupported.front().density - properties.restDensity));
+}
+
+TEST_CASE("Sampled rigid boundaries follow surface motion", "[fluid][boundary][samples][rigid]") {
+    Circle shape(0.5f);
+    Material material{1.0f, 0.0f, 0.0f, 0.0f};
+    RigidBody body(&shape, material, Vector2(1.0f, 2.0f));
+    body.SetVelocity(Vector2(3.0f, -1.0f));
+    body.SetAngularVelocity(2.0f);
+    FluidBoundarySamplingSettings sampling;
+    sampling.spacing = 0.1f;
+    sampling.supportRadius = 0.3f;
+
+    const auto samples = SampleRigidBodyBoundaries({&body}, sampling);
+
+    REQUIRE_FALSE(samples.empty());
+    for (const FluidBoundaryParticle& sample : samples) {
+        REQUIRE((sample.position - body.GetPosition()).magnitude()
+            <= shape.GetRadius() + 1e-5f);
+        const Vector2 expectedVelocity = body.GetVelocityAtPoint(sample.position);
+        REQUIRE(sample.velocity.x == Catch::Approx(expectedVelocity.x).margin(1e-5f));
+        REQUIRE(sample.velocity.y == Catch::Approx(expectedVelocity.y).margin(1e-5f));
+        REQUIRE(sample.volume == Catch::Approx(0.01f));
+    }
+}
 
 namespace {
 
