@@ -27,7 +27,15 @@ void RemoveOutwardVelocity(
     const float remainingNormalSpeed = particle.velocity.dot(outwardNormal);
     const Vector2 tangentVelocity = particle.velocity
         - outwardNormal * remainingNormalSpeed;
-    particle.velocity = particle.velocity - tangentVelocity * settings.friction;
+    const float tangentSpeed = tangentVelocity.magnitude();
+    if (tangentSpeed > 0.0f && outwardSpeed > 0.0f) {
+        const float frictionDelta = std::min(
+            tangentSpeed,
+            settings.friction * (1.0f + settings.restitution) * outwardSpeed
+        );
+        particle.velocity = particle.velocity
+            - tangentVelocity * (frictionDelta / tangentSpeed);
+    }
 }
 
 float SignedDoubleArea(const std::vector<Vector2>& vertices) {

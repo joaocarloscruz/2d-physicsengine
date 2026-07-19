@@ -52,6 +52,33 @@ TEST_CASE("2D SPH scalar kernels are numerically normalized", "[fluid][sph][kern
     }
 }
 
+TEST_CASE("Square lattice mass scale corrects discrete kernel quadrature", "[fluid][sph][kernel][lattice]") {
+    constexpr float spacing = 0.1f;
+    for (const float ratio : {1.5f, 2.0f, 2.5f}) {
+        const float smoothingLength = ratio * spacing;
+        double densityRatio = 0.0;
+        const int extent = static_cast<int>(std::ceil(ratio));
+        for (int y = -extent; y <= extent; ++y) {
+            for (int x = -extent; x <= extent; ++x) {
+                densityRatio += spacing * spacing
+                    * SphKernels2D::DensityWeight(
+                        Vector2(x * spacing, y * spacing),
+                        smoothingLength
+                    );
+            }
+        }
+        const float scale = SphKernels2D::SquareLatticeMassScale(
+            spacing, smoothingLength
+        );
+        REQUIRE(static_cast<float>(densityRatio) * scale
+            == Catch::Approx(1.0f).margin(2e-6f));
+    }
+    REQUIRE_THROWS_AS(
+        SphKernels2D::SquareLatticeMassScale(0.0f, 0.2f),
+        std::invalid_argument
+    );
+}
+
 TEST_CASE("2D SPH kernels enforce compact support", "[fluid][sph][kernel][support]") {
     constexpr float smoothingLength = 0.8f;
     for (float radius : {smoothingLength, 1.0f, 100.0f}) {

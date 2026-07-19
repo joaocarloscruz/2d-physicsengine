@@ -116,6 +116,7 @@ else()
         ${TESTS_SRC_DIR}/test_fluid_boundaries.cpp
         ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
         ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
+        ${TESTS_SRC_DIR}/test_fluid_physics_validation.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp

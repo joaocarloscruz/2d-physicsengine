@@ -33,6 +33,32 @@ float CheckedFloat(double value) {
 
 } // namespace
 
+float SphKernels2D::SquareLatticeMassScale(
+    float spacing,
+    float smoothingLength
+) {
+    if (!std::isfinite(spacing) || spacing <= 0.0f
+        || !std::isfinite(smoothingLength) || smoothingLength <= 0.0f) {
+        throw std::invalid_argument(
+            "SPH lattice spacing and smoothing length must be positive and finite."
+        );
+    }
+    const int extent = static_cast<int>(std::ceil(
+        smoothingLength / spacing
+    ));
+    double discreteDensityRatio = 0.0;
+    for (int y = -extent; y <= extent; ++y) {
+        for (int x = -extent; x <= extent; ++x) {
+            discreteDensityRatio += static_cast<double>(spacing) * spacing
+                * DensityWeight(
+                    Vector2(x * spacing, y * spacing),
+                    smoothingLength
+                );
+        }
+    }
+    return CheckedFloat(1.0 / discreteDensityRatio);
+}
+
 float SphKernels2D::DensityWeight(
     const Vector2& displacement,
     float smoothingLength

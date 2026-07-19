@@ -305,6 +305,7 @@ float WcsphSolver::getStableTimeStep(
     float minimumSmoothingLength = std::numeric_limits<float>::max();
     float maximumSpeed = 0.0f;
     float maximumViscosity = 0.0f;
+    float maximumAcceleration = 0.0f;
     for (const FluidParticle& particle : particles) {
         ValidateParticleState(particle);
         minimumSmoothingLength = std::min(
@@ -319,6 +320,10 @@ float WcsphSolver::getStableTimeStep(
             maximumViscosity,
             particle.viscosity
         );
+        maximumAcceleration = std::max(
+            maximumAcceleration,
+            particle.force.magnitude() * particle.inverseMass
+        );
     }
     const float acousticLimit = config.cflFactor * minimumSmoothingLength
         / (config.speedOfSound + maximumSpeed);
@@ -328,6 +333,12 @@ float WcsphSolver::getStableTimeStep(
             * minimumSmoothingLength * minimumSmoothingLength
             / maximumViscosity;
         stableTimeStep = std::min(stableTimeStep, viscosityLimit);
+    }
+    if (maximumAcceleration > 0.0f) {
+        const float forceLimit = config.cflFactor * std::sqrt(
+            minimumSmoothingLength / maximumAcceleration
+        );
+        stableTimeStep = std::min(stableTimeStep, forceLimit);
     }
     if (!std::isfinite(stableTimeStep) || stableTimeStep <= 0.0f) {
         throw std::runtime_error("WCSPH stable timestep is not positive and finite.");

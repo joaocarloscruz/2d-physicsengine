@@ -26,7 +26,7 @@ struct FluidBoundarySamplingSettings {
 struct FluidBoundarySettings {
     float particleRadius = 0.05f;
     float restitution = 0.0f;
-    float friction = 0.05f;
+    float friction = 0.0f;
 
     void Validate() const;
 };

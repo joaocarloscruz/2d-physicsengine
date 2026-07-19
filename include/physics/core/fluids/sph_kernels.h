@@ -7,6 +7,12 @@ namespace PhysicsEngine {
 
 class SphKernels2D {
 public:
+    // Corrects rho * spacing^2 particle masses for the discrete density sum
+    // of an infinite square lattice at the requested resolution.
+    static float SquareLatticeMassScale(
+        float spacing,
+        float smoothingLength
+    );
     static float DensityWeight(
         const Vector2& displacement,
         float smoothingLength
