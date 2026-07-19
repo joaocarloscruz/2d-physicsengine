@@ -43,6 +43,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/sph_kernels.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/wcsph_solver.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_boundary.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/fluid_rigid_coupler.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
@@ -112,6 +113,7 @@ else()
         ${TESTS_SRC_DIR}/test_sph_kernels.cpp
         ${TESTS_SRC_DIR}/test_wcsph_solver.cpp
         ${TESTS_SRC_DIR}/test_fluid_boundaries.cpp
+        ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
