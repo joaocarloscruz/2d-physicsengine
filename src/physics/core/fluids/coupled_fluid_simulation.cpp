@@ -146,6 +146,13 @@ void CoupledFluidSimulation::step(
     lastStatistics.fluid = fluidSolver.getLastStatistics();
 }
 
+void CoupledFluidSimulation::setBoundarySamplingSettings(
+    const FluidBoundarySamplingSettings& settings
+) {
+    settings.Validate();
+    boundarySampling = settings;
+}
+
 const CoupledFluidStatistics&
 CoupledFluidSimulation::getLastStatistics() const {
     return lastStatistics;

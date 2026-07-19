@@ -50,6 +50,7 @@ void AppendCircleSamples(
     const Vector2& center,
     float radius,
     bool sampleInside,
+    float pressureScale,
     const Vector2& linearVelocity,
     float angularVelocity,
     const FluidBoundarySamplingSettings& settings,
@@ -64,7 +65,13 @@ void AppendCircleSamples(
             ? radius - static_cast<float>(layer) * settings.spacing
             : radius + static_cast<float>(layer) * settings.spacing;
         if (layerRadius <= BoundaryTolerance) {
-            particles.push_back({center, linearVelocity, settings.spacing * settings.spacing});
+            particles.push_back({
+                center,
+                linearVelocity,
+                settings.spacing * settings.spacing,
+                Vector2(),
+                pressureScale
+            });
             break;
         }
         const int sampleCount = std::max(
@@ -81,7 +88,9 @@ void AppendCircleSamples(
             particles.push_back({
                 center + offset,
                 linearVelocity + Vector2::cross(angularVelocity, offset),
-                settings.spacing * settings.spacing
+                settings.spacing * settings.spacing,
+                Vector2(),
+                pressureScale
             });
         }
     }
@@ -109,6 +118,7 @@ void AppendPolygonSamples(
     const Vector2& position,
     float orientation,
     bool sampleInside,
+    float pressureScale,
     const Vector2& linearVelocity,
     float angularVelocity,
     const FluidBoundarySamplingSettings& settings,
@@ -147,7 +157,9 @@ void AppendPolygonSamples(
                 particles.push_back({
                     position + worldOffset,
                     linearVelocity + Vector2::cross(angularVelocity, worldOffset),
-                    settings.spacing * settings.spacing
+                    settings.spacing * settings.spacing,
+                    Vector2(),
+                    pressureScale
                 });
             }
         }
@@ -219,6 +231,7 @@ void FluidCircleContainer::appendBoundaryParticles(
         center,
         radius,
         false,
+        1.0f,
         Vector2(),
         0.0f,
         sampling,
@@ -316,6 +329,7 @@ void FluidConvexPolygonContainer::appendBoundaryParticles(
         Vector2(),
         0.0f,
         false,
+        1.0f,
         Vector2(),
         0.0f,
         sampling,
@@ -408,6 +422,7 @@ std::vector<FluidBoundaryParticle> SampleRigidBodyBoundaries(
                 body->GetPosition(),
                 body->shape->GetRadius(),
                 true,
+                0.0f,
                 body->GetVelocity(),
                 body->GetAngularVelocity(),
                 settings,
@@ -420,6 +435,7 @@ std::vector<FluidBoundaryParticle> SampleRigidBodyBoundaries(
                 body->GetPosition(),
                 body->GetOrientation(),
                 true,
+                0.0f,
                 body->GetVelocity(),
                 body->GetAngularVelocity(),
                 settings,

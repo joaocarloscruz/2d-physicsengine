@@ -114,6 +114,44 @@ TEST_CASE("Coupled simulation preserves zero-restitution fluid contact across su
         - body.GetVelocityAtPoint(Vector2(0.5f, 0.0f))).x >= -1e-5f);
 }
 
+TEST_CASE("Coupled simulation applies validated boundary sampling settings", "[fluid][coupled][boundary]") {
+    WcsphConfig fluidConfig;
+    fluidConfig.externalAcceleration = Vector2();
+    CoupledFluidSimulation simulation(0.4f, fluidConfig);
+    FluidConvexPolygonContainer tank({
+        Vector2(-1.0f, 0.0f),
+        Vector2(1.0f, 0.0f),
+        Vector2(1.0f, 2.0f),
+        Vector2(-1.0f, 2.0f),
+    });
+    std::vector<FluidParticle> particles;
+
+    FluidBoundarySamplingSettings coarse;
+    coarse.spacing = 0.4f;
+    coarse.supportRadius = 0.4f;
+    simulation.setBoundarySamplingSettings(coarse);
+    simulation.step(particles, {}, 0.001f, tank);
+    const std::size_t coarseCount =
+        simulation.getLastStatistics().fluid.boundaryParticleCount;
+
+    FluidBoundarySamplingSettings fine = coarse;
+    fine.spacing = 0.1f;
+    simulation.setBoundarySamplingSettings(fine);
+    simulation.step(particles, {}, 0.001f, tank);
+    const std::size_t fineCount =
+        simulation.getLastStatistics().fluid.boundaryParticleCount;
+
+    REQUIRE(coarseCount > 0);
+    REQUIRE(fineCount > coarseCount);
+
+    FluidBoundarySamplingSettings invalid = fine;
+    invalid.spacing = 0.0f;
+    REQUIRE_THROWS_AS(
+        simulation.setBoundarySamplingSettings(invalid),
+        std::invalid_argument
+    );
+}
+
 TEST_CASE("Coupled tank keeps a light body above a denser body", "[fluid][coupled][buoyancy][benchmark]") {
     const float lightBodyHeight = RunTankBody(500.0f);
     const float denseBodyHeight = RunTankBody(1500.0f);

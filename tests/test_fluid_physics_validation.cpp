@@ -2,6 +2,7 @@
 
 #include "physics/core/fluids/fluid_boundary.h"
 #include "physics/core/fluids/fluid_rigid_coupler.h"
+#include "physics/core/fluids/sph_kernels.h"
 #include "physics/core/fluids/wcsph_solver.h"
 #include "physics/core/shape.h"
 
@@ -56,7 +57,12 @@ struct HydrostaticTrace {
     float maximumForceCriterionViolation = 0.0f;
 };
 
-HydrostaticTrace TraceHydrostaticColumn(float outerTimeStep, float duration) {
+HydrostaticTrace TraceHydrostaticColumn(
+    float outerTimeStep,
+    float duration,
+    bool enableWallPressure = true,
+    float gravityRampDuration = 0.0f
+) {
     constexpr int columns = 19;
     constexpr int rows = 15;
     constexpr float spacing = 0.1f;
@@ -80,6 +86,9 @@ HydrostaticTrace TraceHydrostaticColumn(float outerTimeStep, float duration) {
     auto boundaryParticles = SampleFluidContainerBoundary(tank, sampling);
     for (FluidBoundaryParticle& boundaryParticle : boundaryParticles) {
         boundaryParticle.volume *= massScale;
+        if (!enableWallPressure) {
+            boundaryParticle.pressureScale = 0.0f;
+        }
     }
     auto particles = MakeLattice(
         columns,
@@ -93,11 +102,21 @@ HydrostaticTrace TraceHydrostaticColumn(float outerTimeStep, float duration) {
     WcsphConfig config;
     config.speedOfSound = 40.0f;
     config.maximumTimeStep = outerTimeStep;
-    WcsphSolver solver(smoothingLength, config);
     const WcsphSolver::SubstepCallback noOp = [](float) {};
     const int steps = static_cast<int>(std::round(duration / outerTimeStep));
     HydrostaticTrace trace;
     for (int step = 0; step < steps; ++step) {
+        WcsphConfig stepConfig = config;
+        if (gravityRampDuration > 0.0f) {
+            const float simulatedTime = (step + 1) * outerTimeStep;
+            const float gravityFraction = std::min(
+                simulatedTime / gravityRampDuration,
+                1.0f
+            );
+            stepConfig.externalAcceleration = config.externalAcceleration
+                * gravityFraction;
+        }
+        WcsphSolver solver(smoothingLength, stepConfig);
         solver.step(
             particles, outerTimeStep, tank, boundaryParticles, noOp
         );
@@ -774,6 +793,302 @@ TEST_CASE("Resting column is initialized with hydrostatic pressure support", "[f
     REQUIRE(accelerationRms < 1.0f);
 }
 
+TEST_CASE("Dummy wall pressure balances quiescent column weight", "[fluid][validation][boundary][force-balance][!mayfail]") {
+    constexpr int columns = 19;
+    constexpr int rows = 15;
+    constexpr float spacing = 0.1f;
+    constexpr float smoothingLength = 0.2f;
+    const float massScale = SphKernels2D::SquareLatticeMassScale(
+        spacing, smoothingLength
+    );
+    FluidBoundarySettings settings;
+    settings.particleRadius = 0.05f;
+    settings.friction = 0.0f;
+    FluidConvexPolygonContainer tank(
+        {
+            Vector2(-1.0f, 0.0f),
+            Vector2(1.0f, 0.0f),
+            Vector2(1.0f, 2.0f),
+            Vector2(-1.0f, 2.0f),
+        },
+        settings
+    );
+    FluidBoundarySamplingSettings sampling;
+    sampling.spacing = spacing;
+    sampling.supportRadius = smoothingLength;
+    auto boundaryParticles = SampleFluidContainerBoundary(tank, sampling);
+    for (FluidBoundaryParticle& boundaryParticle : boundaryParticles) {
+        boundaryParticle.volume *= massScale;
+    }
+    auto particles = MakeLattice(
+        columns,
+        rows,
+        spacing,
+        smoothingLength,
+        Vector2(-0.9f, 0.1f),
+        Vector2(),
+        massScale
+    );
+    WcsphConfig config;
+    config.speedOfSound = 40.0f;
+    WcsphSolver solver(smoothingLength, config);
+    solver.prepare(particles, boundaryParticles);
+
+    Vector2 totalForce;
+    float totalWeight = 0.0f;
+    for (const FluidParticle& particle : particles) {
+        totalForce = totalForce + particle.force;
+        totalWeight += particle.mass * std::abs(config.externalAcceleration.y);
+    }
+    const float verticalResidual = std::abs(totalForce.y) / totalWeight;
+    INFO("net vertical force: " << totalForce.y);
+    INFO("column weight: " << totalWeight);
+    INFO("normalized vertical residual: " << verticalResidual);
+    REQUIRE(std::abs(totalForce.x) / totalWeight < 0.01f);
+    REQUIRE(verticalResidual < 0.1f);
+}
+
+TEST_CASE("Continuity density supplies initialized hydrostatic wall balance", "[fluid][validation][boundary][force-balance][initialized][continuity]") {
+    constexpr int columns = 19;
+    constexpr int rows = 15;
+    constexpr float spacing = 0.1f;
+    constexpr float smoothingLength = 0.25f;
+    constexpr float soundSpeed = 40.0f;
+    constexpr float gamma = 7.0f;
+    constexpr float gravity = 9.81f;
+    constexpr float surfaceHeight = 1.55f;
+    const float massScale = SphKernels2D::SquareLatticeMassScale(
+        spacing, smoothingLength
+    );
+    FluidBoundarySettings settings;
+    settings.particleRadius = 0.05f;
+    settings.friction = 0.0f;
+    FluidConvexPolygonContainer tank(
+        {
+            Vector2(-1.0f, 0.0f),
+            Vector2(1.0f, 0.0f),
+            Vector2(1.0f, 2.0f),
+            Vector2(-1.0f, 2.0f),
+        },
+        settings
+    );
+    FluidBoundarySamplingSettings sampling;
+    sampling.spacing = spacing;
+    sampling.supportRadius = smoothingLength;
+    auto boundaryParticles = SampleFluidContainerBoundary(tank, sampling);
+    for (FluidBoundaryParticle& boundaryParticle : boundaryParticles) {
+        boundaryParticle.volume *= massScale;
+    }
+    auto particles = MakeLattice(
+        columns,
+        rows,
+        spacing,
+        smoothingLength,
+        Vector2(-0.9f, 0.1f),
+        Vector2(),
+        massScale
+    );
+    std::vector<float> rowHeights(rows);
+    rowHeights.front() = 0.1f;
+    for (int row = 1; row < rows; ++row) {
+        const float estimatedMidpoint = rowHeights[row - 1] + spacing * 0.5f;
+        const float depth = surfaceHeight - estimatedMidpoint;
+        const float densityRatio = std::pow(
+            1.0f + gamma * gravity * depth / (soundSpeed * soundSpeed),
+            1.0f / gamma
+        );
+        rowHeights[row] = rowHeights[row - 1] + spacing / densityRatio;
+    }
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            FluidParticle& particle = particles[row * columns + column];
+            particle.position.y = rowHeights[row];
+            const float depth = surfaceHeight - particle.position.y;
+            particle.density = particle.restDensity * std::pow(
+                1.0f + gamma * gravity * depth / (soundSpeed * soundSpeed),
+                1.0f / gamma
+            );
+        }
+    }
+    WcsphConfig config;
+    config.speedOfSound = soundSpeed;
+    config.equationOfStateExponent = gamma;
+    config.densityMode = WcsphDensityMode::Continuity;
+    WcsphSolver solver(smoothingLength, config);
+    solver.prepare(particles, boundaryParticles);
+
+    Vector2 totalForce;
+    float totalWeight = 0.0f;
+    double squaredPressureError = 0.0;
+    int pressureSamples = 0;
+    for (const FluidParticle& particle : particles) {
+        totalForce = totalForce + particle.force;
+        totalWeight += particle.mass * gravity;
+    }
+    for (int row = 2; row <= 11; ++row) {
+        const FluidParticle& particle = particles[row * columns + columns / 2];
+        const float expectedPressure = particle.restDensity * gravity
+            * (surfaceHeight - particle.position.y);
+        const float normalizedError = (particle.pressure - expectedPressure)
+            / (particle.restDensity * gravity * surfaceHeight);
+        squaredPressureError += normalizedError * normalizedError;
+        ++pressureSamples;
+    }
+    const float verticalResidual = std::abs(totalForce.y) / totalWeight;
+    const float pressureRmse = static_cast<float>(std::sqrt(
+        squaredPressureError / pressureSamples
+    ));
+    INFO("bottom particle height: " << rowHeights.front());
+    INFO("bottom center density ratio: "
+        << particles[columns / 2].density / particles[columns / 2].restDensity);
+    INFO("bottom center pressure: " << particles[columns / 2].pressure);
+    INFO("net vertical force: " << totalForce.y);
+    INFO("column weight: " << totalWeight);
+    INFO("normalized pressure RMSE: " << pressureRmse);
+    INFO("normalized vertical force residual: " << verticalResidual);
+    REQUIRE(pressureRmse < 0.1f);
+    REQUIRE(verticalResidual < 0.1f);
+
+    const WcsphSolver::SubstepCallback noOp = [](float) {};
+    for (int step = 0; step < 500; ++step) {
+        try {
+            solver.step(particles, 0.001f, tank, boundaryParticles, noOp);
+        } catch (const std::exception& error) {
+            float minimumDensityRatio = std::numeric_limits<float>::max();
+            float maximumDensityRatio = 0.0f;
+            float finiteMaximumSpeed = 0.0f;
+            for (const FluidParticle& particle : particles) {
+                if (std::isfinite(particle.density)) {
+                    minimumDensityRatio = std::min(
+                        minimumDensityRatio,
+                        particle.density / particle.restDensity
+                    );
+                    maximumDensityRatio = std::max(
+                        maximumDensityRatio,
+                        particle.density / particle.restDensity
+                    );
+                }
+                if (std::isfinite(particle.velocity.x)
+                    && std::isfinite(particle.velocity.y)) {
+                    finiteMaximumSpeed = std::max(
+                        finiteMaximumSpeed,
+                        particle.velocity.magnitude()
+                    );
+                }
+            }
+            INFO("failed step: " << step);
+            INFO("solver error: " << error.what());
+            INFO("finite density ratio range: " << minimumDensityRatio
+                << " to " << maximumDensityRatio);
+            INFO("finite maximum speed: " << finiteMaximumSpeed);
+            FAIL("continuity hydrostatic integration failed");
+        }
+    }
+    float maximumSpeed = 0.0f;
+    float maximumDensityError = 0.0f;
+    for (const FluidParticle& particle : particles) {
+        maximumSpeed = std::max(maximumSpeed, particle.velocity.magnitude());
+        maximumDensityError = std::max(
+            maximumDensityError,
+            std::abs(particle.density / particle.restDensity - 1.0f)
+        );
+    }
+    INFO("maximum speed after 0.5 s: " << maximumSpeed);
+    INFO("maximum density error after 0.5 s: " << maximumDensityError);
+    REQUIRE(maximumSpeed < 0.2f);
+    REQUIRE(maximumDensityError < 0.01f);
+}
+
+TEST_CASE("Dummy wall force balance converges with particle spacing", "[fluid][validation][boundary][force-balance][resolution][!mayfail]") {
+    const auto measureResidual = [](float spacing) {
+        const int columns = static_cast<int>(std::round(2.0f / spacing)) - 1;
+        const int rows = static_cast<int>(std::round(1.5f / spacing));
+        const float smoothingLength = spacing * 2.5f;
+        constexpr float soundSpeed = 40.0f;
+        constexpr float gamma = 7.0f;
+        constexpr float gravity = 9.81f;
+        const float surfaceHeight = 1.5f + spacing * 0.5f;
+        const float massScale = SphKernels2D::SquareLatticeMassScale(
+            spacing, smoothingLength
+        );
+        FluidBoundarySettings settings;
+        settings.particleRadius = spacing * 0.5f;
+        settings.friction = 0.0f;
+        FluidConvexPolygonContainer tank(
+            {
+                Vector2(-1.0f, 0.0f),
+                Vector2(1.0f, 0.0f),
+                Vector2(1.0f, 2.0f),
+                Vector2(-1.0f, 2.0f),
+            },
+            settings
+        );
+        FluidBoundarySamplingSettings sampling;
+        sampling.spacing = spacing;
+        sampling.supportRadius = smoothingLength;
+        auto boundaryParticles = SampleFluidContainerBoundary(tank, sampling);
+        for (FluidBoundaryParticle& boundaryParticle : boundaryParticles) {
+            boundaryParticle.volume *= massScale;
+        }
+        auto particles = MakeLattice(
+            columns,
+            rows,
+            spacing,
+            smoothingLength,
+            Vector2(-1.0f + spacing, spacing),
+            Vector2(),
+            massScale
+        );
+        std::vector<float> rowHeights(rows);
+        rowHeights.front() = spacing;
+        for (int row = 1; row < rows; ++row) {
+            const float midpoint = rowHeights[row - 1] + spacing * 0.5f;
+            const float depth = surfaceHeight - midpoint;
+            const float densityRatio = std::pow(
+                1.0f + gamma * gravity * depth / (soundSpeed * soundSpeed),
+                1.0f / gamma
+            );
+            rowHeights[row] = rowHeights[row - 1] + spacing / densityRatio;
+        }
+        for (int row = 0; row < rows; ++row) {
+            for (int column = 0; column < columns; ++column) {
+                particles[row * columns + column].position.y = rowHeights[row];
+            }
+        }
+        WcsphConfig config;
+        config.speedOfSound = soundSpeed;
+        config.equationOfStateExponent = gamma;
+        WcsphSolver solver(smoothingLength, config);
+        solver.prepare(particles, boundaryParticles);
+        float totalVerticalForce = 0.0f;
+        float totalWeight = 0.0f;
+        for (const FluidParticle& particle : particles) {
+            totalVerticalForce += particle.force.y;
+            totalWeight += particle.mass * gravity;
+        }
+        return std::pair<float, float>{
+            std::abs(totalVerticalForce) / totalWeight,
+            particles[columns / 2].density
+                / particles[columns / 2].restDensity
+        };
+    };
+
+    const auto coarse = measureResidual(0.1f);
+    const auto fine = measureResidual(0.05f);
+    const auto extraFine = measureResidual(0.025f);
+    const float coarseResidual = coarse.first;
+    const float fineResidual = fine.first;
+    INFO("coarse force residual: " << coarseResidual);
+    INFO("fine force residual: " << fineResidual);
+    INFO("extra-fine force residual: " << extraFine.first);
+    INFO("coarse bottom density ratio: " << coarse.second);
+    INFO("fine bottom density ratio: " << fine.second);
+    INFO("extra-fine bottom density ratio: " << extraFine.second);
+    REQUIRE(fineResidual < coarseResidual * 0.8f);
+    REQUIRE(extraFine.first < fineResidual * 0.8f);
+    REQUIRE(extraFine.first < 0.1f);
+}
+
 TEST_CASE("Sampled-wall hydrostatic column remains quiet and weakly compressible", "[fluid][validation][boundary][hydrostatic][!mayfail]") {
     constexpr int columns = 19;
     constexpr int rows = 15;
@@ -914,4 +1229,37 @@ TEST_CASE("Hydrostatic instability is measured under timestep refinement", "[flu
         << fine.maximumForceCriterionViolation);
     REQUIRE(fine.maximumSpeed < coarse.maximumSpeed);
     REQUIRE(fine.maximumDensityError < coarse.maximumDensityError);
+}
+
+TEST_CASE("Gravity-aware dummy wall pressure suppresses hydrostatic impact", "[fluid][validation][boundary][pressure]") {
+    const HydrostaticTrace densityOnly = TraceHydrostaticColumn(
+        0.001f, 0.2f, false
+    );
+    const HydrostaticTrace pressureWall = TraceHydrostaticColumn(
+        0.001f, 0.2f, true
+    );
+    INFO("density-only max speed: " << densityOnly.maximumSpeed);
+    INFO("pressure-wall max speed: " << pressureWall.maximumSpeed);
+    INFO("density-only max density error: "
+        << densityOnly.maximumDensityError);
+    INFO("pressure-wall max density error: "
+        << pressureWall.maximumDensityError);
+    REQUIRE(pressureWall.maximumSpeed < densityOnly.maximumSpeed * 0.5f);
+    REQUIRE(pressureWall.maximumDensityError
+        < densityOnly.maximumDensityError * 0.6f);
+}
+
+TEST_CASE("Gravity ramp reduces hydrostatic startup impulse", "[fluid][validation][hydrostatic][initialization][ramp][!mayfail]") {
+    const HydrostaticTrace immediate = TraceHydrostaticColumn(
+        0.001f, 1.0f, true, 0.0f
+    );
+    const HydrostaticTrace ramped = TraceHydrostaticColumn(
+        0.001f, 1.0f, true, 0.5f
+    );
+    INFO("immediate max speed: " << immediate.maximumSpeed);
+    INFO("ramped max speed: " << ramped.maximumSpeed);
+    INFO("immediate max density error: " << immediate.maximumDensityError);
+    INFO("ramped max density error: " << ramped.maximumDensityError);
+    REQUIRE(ramped.maximumSpeed < immediate.maximumSpeed * 0.7f);
+    REQUIRE(ramped.maximumDensityError < immediate.maximumDensityError * 0.8f);
 }

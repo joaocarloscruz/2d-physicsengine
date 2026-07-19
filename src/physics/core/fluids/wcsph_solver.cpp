@@ -25,6 +25,8 @@ void ValidateParticleState(const FluidParticle& particle) {
         || particle.smoothingLength <= 0.0f
         || !std::isfinite(particle.viscosity)
         || particle.viscosity < 0.0f
+        || !std::isfinite(particle.density)
+        || particle.density <= 0.0f
         || !std::isfinite(particle.position.x)
         || !std::isfinite(particle.position.y)
         || !std::isfinite(particle.velocity.x)
@@ -87,6 +89,18 @@ void WcsphConfig::Validate() const {
             "WCSPH maximum substeps must be positive."
         );
     }
+    if (densityMode != WcsphDensityMode::Summation
+        && densityMode != WcsphDensityMode::Continuity) {
+        throw std::invalid_argument(
+            "WCSPH density mode is not recognized."
+        );
+    }
+    if (!std::isfinite(densityDiffusion)
+        || densityDiffusion < 0.0f || densityDiffusion > 1.0f) {
+        throw std::invalid_argument(
+            "WCSPH density diffusion must be finite and between zero and one."
+        );
+    }
 }
 
 WcsphSolver::WcsphSolver(
@@ -118,6 +132,11 @@ void WcsphSolver::prepareState(
     std::vector<FluidParticle>& particles,
     const std::vector<FluidBoundaryParticle>* boundaryParticles
 ) {
+    struct FluidBoundaryPair {
+        std::size_t fluid;
+        std::size_t boundary;
+    };
+    std::vector<FluidBoundaryPair> boundaryPairs;
     lastStatistics.boundaryParticleCount = boundaryParticles
         ? boundaryParticles->size()
         : 0;
@@ -142,11 +161,13 @@ void WcsphSolver::prepareState(
     grid.rebuild(particles);
     const auto pairs = grid.findNeighborPairs(particles, interactionRadius);
 
-    for (FluidParticle& particle : particles) {
-        particle.density = particle.mass * SphKernels2D::DensityWeight(
-            Vector2(),
-            particle.smoothingLength
-        );
+    if (config.densityMode == WcsphDensityMode::Summation) {
+        for (FluidParticle& particle : particles) {
+            particle.density = particle.mass * SphKernels2D::DensityWeight(
+                Vector2(),
+                particle.smoothingLength
+            );
+        }
     }
     if (boundaryParticles && !boundaryParticles->empty()) {
         const float cellSize = grid.getCellSize();
@@ -163,7 +184,11 @@ void WcsphSolver::prepareState(
                 || !std::isfinite(boundaryParticle.velocity.x)
                 || !std::isfinite(boundaryParticle.velocity.y)
                 || !std::isfinite(boundaryParticle.volume)
-                || boundaryParticle.volume <= 0.0f) {
+                || boundaryParticle.volume <= 0.0f
+                || !std::isfinite(boundaryParticle.acceleration.x)
+                || !std::isfinite(boundaryParticle.acceleration.y)
+                || !std::isfinite(boundaryParticle.pressureScale)
+                || boundaryParticle.pressureScale < 0.0f) {
                 throw std::invalid_argument(
                     "WCSPH boundary particles must contain valid finite state."
                 );
@@ -171,7 +196,10 @@ void WcsphSolver::prepareState(
             boundaryCells[GetBoundaryCell(boundaryParticle.position, cellSize)]
                 .push_back(index);
         }
-        for (FluidParticle& particle : particles) {
+        for (std::size_t particleIndex = 0;
+             particleIndex < particles.size();
+             ++particleIndex) {
+            FluidParticle& particle = particles[particleIndex];
             const int cellRange = static_cast<int>(std::ceil(
                 particle.smoothingLength / cellSize
             ));
@@ -190,68 +218,133 @@ void WcsphSolver::prepareState(
                         ++lastStatistics.boundaryCandidateCount;
                         const FluidBoundaryParticle& boundaryParticle =
                             (*boundaryParticles)[boundaryIndex];
-                        particle.density += particle.restDensity
-                            * boundaryParticle.volume
-                            * SphKernels2D::DensityWeight(
-                                particle.position - boundaryParticle.position,
-                                particle.smoothingLength
-                            );
+                        const Vector2 displacement = particle.position
+                            - boundaryParticle.position;
+                        const float weight = SphKernels2D::DensityWeight(
+                            displacement,
+                            particle.smoothingLength
+                        );
+                        if (config.densityMode == WcsphDensityMode::Summation) {
+                            particle.density += particle.restDensity
+                                * boundaryParticle.volume * weight;
+                        }
+                        if (weight > 0.0f) {
+                            boundaryPairs.push_back({
+                                particleIndex,
+                                boundaryIndex
+                            });
+                        }
                     }
                 }
             }
         }
     }
-    for (const auto& pair : pairs) {
-        FluidParticle& first = particles[pair.first];
-        FluidParticle& second = particles[pair.second];
-        const Vector2 displacement = first.position - second.position;
-        first.density += second.mass * SphKernels2D::DensityWeight(
-            displacement,
-            first.smoothingLength
-        );
-        second.density += first.mass * SphKernels2D::DensityWeight(
-            displacement,
-            second.smoothingLength
-        );
+    if (config.densityMode == WcsphDensityMode::Summation) {
+        for (const auto& pair : pairs) {
+            FluidParticle& first = particles[pair.first];
+            FluidParticle& second = particles[pair.second];
+            const Vector2 displacement = first.position - second.position;
+            first.density += second.mass * SphKernels2D::DensityWeight(
+                displacement,
+                first.smoothingLength
+            );
+            second.density += first.mass * SphKernels2D::DensityWeight(
+                displacement,
+                second.smoothingLength
+            );
+        }
     }
 
-    lastStatistics.minimumDensity = std::numeric_limits<float>::max();
-    lastStatistics.maximumDensity = 0.0f;
-    lastStatistics.maximumSpeed = 0.0f;
+    const auto updateThermodynamicState = [this, &particles]() {
+        lastStatistics.minimumDensity = std::numeric_limits<float>::max();
+        lastStatistics.maximumDensity = 0.0f;
+        lastStatistics.maximumSpeed = 0.0f;
+        for (FluidParticle& particle : particles) {
+            RequireFinite(particle.density, "WCSPH density became non-finite.");
+            const float densityRatio = particle.density / particle.restDensity;
+            const double pressureScale = static_cast<double>(particle.restDensity)
+                * config.speedOfSound * config.speedOfSound
+                / config.equationOfStateExponent;
+            double pressure = pressureScale * (
+                std::pow(
+                    static_cast<double>(densityRatio),
+                    static_cast<double>(config.equationOfStateExponent)
+                ) - 1.0
+            );
+            if (config.clampNegativePressure) {
+                pressure = std::max(pressure, 0.0);
+            }
+            if (!std::isfinite(pressure)
+                || std::abs(pressure) > std::numeric_limits<float>::max()) {
+                throw std::runtime_error("WCSPH pressure exceeded float range.");
+            }
+            particle.pressure = static_cast<float>(pressure);
+            particle.volume = particle.mass / particle.density;
+            particle.force = config.externalAcceleration * particle.mass;
+            lastStatistics.minimumDensity = std::min(
+                lastStatistics.minimumDensity,
+                particle.density
+            );
+            lastStatistics.maximumDensity = std::max(
+                lastStatistics.maximumDensity,
+                particle.density
+            );
+            lastStatistics.maximumSpeed = std::max(
+                lastStatistics.maximumSpeed,
+                particle.velocity.magnitude()
+            );
+        }
+    };
+
+    std::vector<double> wallPressureNumerator;
+    std::vector<double> wallPressureDenominator;
+    const auto extrapolateWallPressure = [
+        this,
+        &particles,
+        boundaryParticles,
+        &boundaryPairs,
+        &wallPressureNumerator,
+        &wallPressureDenominator
+    ]() {
+        wallPressureNumerator.assign(boundaryParticles->size(), 0.0);
+        wallPressureDenominator.assign(boundaryParticles->size(), 0.0);
+        for (const FluidBoundaryPair& pair : boundaryPairs) {
+            const FluidParticle& particle = particles[pair.fluid];
+            const FluidBoundaryParticle& boundaryParticle =
+                (*boundaryParticles)[pair.boundary];
+            if (boundaryParticle.pressureScale <= 0.0f) {
+                continue;
+            }
+            const Vector2 displacement = particle.position
+                - boundaryParticle.position;
+            const float distance = displacement.magnitude();
+            if (distance <= 0.0f) {
+                continue;
+            }
+            const Vector2 direction = displacement / distance;
+            const float normalExternalAcceleration = std::max(
+                (config.externalAcceleration - boundaryParticle.acceleration)
+                    .dot(direction * -1.0f),
+                0.0f
+            );
+            const float weight = SphKernels2D::DensityWeight(
+                displacement,
+                particle.smoothingLength
+            );
+            const double extrapolatedPressure = particle.pressure
+                + particle.density * distance * normalExternalAcceleration;
+            wallPressureNumerator[pair.boundary] += extrapolatedPressure * weight;
+            wallPressureDenominator[pair.boundary] += weight;
+        }
+    };
+
+    updateThermodynamicState();
+    if (boundaryParticles && !boundaryPairs.empty()) {
+        extrapolateWallPressure();
+    }
+
     for (FluidParticle& particle : particles) {
-        RequireFinite(particle.density, "WCSPH density became non-finite.");
-        const float densityRatio = particle.density / particle.restDensity;
-        const double pressureScale = static_cast<double>(particle.restDensity)
-            * config.speedOfSound * config.speedOfSound
-            / config.equationOfStateExponent;
-        double pressure = pressureScale * (
-            std::pow(
-                static_cast<double>(densityRatio),
-                static_cast<double>(config.equationOfStateExponent)
-            ) - 1.0
-        );
-        if (config.clampNegativePressure) {
-            pressure = std::max(pressure, 0.0);
-        }
-        if (!std::isfinite(pressure)
-            || std::abs(pressure) > std::numeric_limits<float>::max()) {
-            throw std::runtime_error("WCSPH pressure exceeded float range.");
-        }
-        particle.pressure = static_cast<float>(pressure);
-        particle.volume = particle.mass / particle.density;
-        particle.force = config.externalAcceleration * particle.mass;
-        lastStatistics.minimumDensity = std::min(
-            lastStatistics.minimumDensity,
-            particle.density
-        );
-        lastStatistics.maximumDensity = std::max(
-            lastStatistics.maximumDensity,
-            particle.density
-        );
-        lastStatistics.maximumSpeed = std::max(
-            lastStatistics.maximumSpeed,
-            particle.velocity.magnitude()
-        );
+        particle.densityRate = 0.0f;
     }
 
     for (const auto& pair : pairs) {
@@ -290,6 +383,75 @@ void WcsphSolver::prepareState(
         }
         first.force = first.force + pairForce;
         second.force = second.force - pairForce;
+        if (config.densityMode == WcsphDensityMode::Continuity) {
+            const float compressionRate = (
+                first.velocity - second.velocity
+            ).dot(gradient);
+            first.densityRate += second.mass * compressionRate;
+            second.densityRate += first.mass * compressionRate;
+            if (config.densityDiffusion > 0.0f) {
+                const float distanceSquared = displacement.magnitudeSquared();
+                const float regularization = 0.01f
+                    * smoothingLength * smoothingLength;
+                const float averageDensity = 0.5f
+                    * (first.density + second.density);
+                const float hydrostaticDensityDifference = averageDensity
+                    * config.externalAcceleration.dot(displacement)
+                    / (config.speedOfSound * config.speedOfSound);
+                const float dynamicDensityDifference = first.density
+                    - second.density - hydrostaticDensityDifference;
+                const float diffusion = 2.0f * config.densityDiffusion
+                    * smoothingLength * config.speedOfSound
+                    * dynamicDensityDifference
+                    * displacement.dot(gradient)
+                    / (distanceSquared + regularization);
+                first.densityRate += second.mass / second.density * diffusion;
+                second.densityRate -= first.mass / first.density * diffusion;
+            }
+        }
+    }
+
+    if (boundaryParticles) {
+        for (const FluidBoundaryPair& pair : boundaryPairs) {
+            FluidParticle& particle = particles[pair.fluid];
+            const FluidBoundaryParticle& boundaryParticle =
+                (*boundaryParticles)[pair.boundary];
+            const Vector2 displacement = particle.position
+                - boundaryParticle.position;
+            const float distance = displacement.magnitude();
+            if (distance <= 0.0f) {
+                continue;
+            }
+            const double denominator = wallPressureDenominator[pair.boundary];
+            const float wallPressure = denominator > 0.0
+                ? static_cast<float>(
+                    wallPressureNumerator[pair.boundary] / denominator
+                )
+                : particle.pressure;
+            const Vector2 pressureGradient = SphKernels2D::PressureGradient(
+                displacement,
+                particle.smoothingLength
+            );
+            if (boundaryParticle.pressureScale > 0.0f) {
+                const float pressureScale = -particle.volume
+                    * boundaryParticle.volume
+                    * (particle.pressure + wallPressure)
+                    * boundaryParticle.pressureScale;
+                particle.force = particle.force
+                    + pressureGradient * pressureScale;
+            }
+            if (config.densityMode == WcsphDensityMode::Continuity
+                && boundaryParticle.pressureScale > 0.0f) {
+                const Vector2 direction = displacement / distance;
+                const Vector2 relativeVelocity = particle.velocity
+                    - boundaryParticle.velocity;
+                const Vector2 normalRelativeVelocity = direction
+                    * relativeVelocity.dot(direction);
+                particle.densityRate += particle.density
+                    * boundaryParticle.volume * 2.0f
+                    * normalRelativeVelocity.dot(pressureGradient);
+            }
+        }
     }
 
     lastStatistics.neighbors = grid.getLastStatistics();
@@ -354,10 +516,15 @@ void WcsphSolver::integrate(
         const Vector2 acceleration = particle.force * particle.inverseMass;
         particle.velocity = particle.velocity + acceleration * deltaTime;
         particle.position = particle.position + particle.velocity * deltaTime;
+        if (config.densityMode == WcsphDensityMode::Continuity) {
+            particle.density += particle.densityRate * deltaTime;
+        }
         if (!std::isfinite(particle.position.x)
             || !std::isfinite(particle.position.y)
             || !std::isfinite(particle.velocity.x)
-            || !std::isfinite(particle.velocity.y)) {
+            || !std::isfinite(particle.velocity.y)
+            || !std::isfinite(particle.density)
+            || particle.density <= 0.0f) {
             throw std::runtime_error("WCSPH integration became non-finite.");
         }
     }

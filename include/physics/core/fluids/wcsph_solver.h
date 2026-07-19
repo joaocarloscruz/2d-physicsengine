@@ -11,6 +11,11 @@
 
 namespace PhysicsEngine {
 
+enum class WcsphDensityMode {
+    Summation,
+    Continuity
+};
+
 struct WcsphConfig {
     Vector2 externalAcceleration = Vector2(0.0f, -9.81f);
     float speedOfSound = 20.0f;
@@ -19,6 +24,8 @@ struct WcsphConfig {
     float maximumTimeStep = 1.0f / 60.0f;
     int maximumSubsteps = 1024;
     bool clampNegativePressure = true;
+    WcsphDensityMode densityMode = WcsphDensityMode::Summation;
+    float densityDiffusion = 0.1f;
 
     void Validate() const;
 };

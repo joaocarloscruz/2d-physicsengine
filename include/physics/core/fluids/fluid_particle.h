@@ -21,6 +21,7 @@ struct FluidParticle {
     float mass;
     float inverseMass;
     float density;
+    float densityRate;
     float pressure;
     float smoothingLength;
     float restDensity;

@@ -28,6 +28,10 @@ TEST_CASE("Sampled container boundaries restore SPH density support", "[fluid][b
     sampling.supportRadius = 0.4f;
     const auto samples = SampleFluidContainerBoundary(container, sampling);
     REQUIRE_FALSE(samples.empty());
+    for (const FluidBoundaryParticle& sample : samples) {
+        REQUIRE(sample.pressureScale == Catch::Approx(1.0f));
+        REQUIRE(sample.acceleration == Vector2());
+    }
 
     FluidParticleProperties properties;
     properties.mass = 1000.0f * 0.1f * 0.1f;
@@ -69,6 +73,7 @@ TEST_CASE("Sampled rigid boundaries follow surface motion", "[fluid][boundary][s
         REQUIRE(sample.velocity.x == Catch::Approx(expectedVelocity.x).margin(1e-5f));
         REQUIRE(sample.velocity.y == Catch::Approx(expectedVelocity.y).margin(1e-5f));
         REQUIRE(sample.volume == Catch::Approx(0.01f));
+        REQUIRE(sample.pressureScale == Catch::Approx(0.0f));
     }
 }
 

@@ -71,3 +71,28 @@ tests for unresolved physics.
 Unresolved work is therefore ordered as: hydrostatic initialization and wall
 reaction, density diffusion/particle shifting, hydrostatic and sloshing
 convergence, then coupled floating/settling and dam-break benchmarks.
+
+## Hydrostatic boundary pass (2026-07-19)
+
+The solver now offers an opt-in continuity-density mode while retaining density
+summation as the compatibility default. Continuity mode integrates the SPH
+continuity equation and applies delta-SPH density diffusion to the dynamic
+density difference after subtracting the expected hydrostatic gradient. Static
+container samples extrapolate wall pressure from neighboring fluid pressure and
+the local body-force balance. Rigid-body samples remain pressure-neutral in the
+solver because their pressure exchange is handled by the rigid coupler.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Hydrostatic wall A/B peak speed at 0.2 s | 4.8571 m/s | 1.2499 m/s |
+| Hydrostatic wall A/B peak density error | 51.51% | 21.86% |
+| Initialized continuity column peak speed at 0.5 s | unstable / unbounded at nominal dt | 0.1576 m/s |
+| Initialized continuity column peak density error at 0.5 s | above 10% without diffusion | 0.956% |
+| Initial normalized pressure RMSE | - | 3.21e-6 |
+| Initial normalized wall-force residual | - | 7.27% |
+
+The initialized continuity column now meets the one-percent WCSPH density
+target at the tested resolution (`h/dx = 2.5`, `c = 40 m/s`, `dt = 0.001 s`).
+The uninitialized summation-density cases remain explicit characterization
+failures: they are useful controls and must not be reinterpreted as supported
+hydrostatic initial conditions.

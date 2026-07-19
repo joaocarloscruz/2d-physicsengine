@@ -36,6 +36,9 @@ public:
         float deltaTime,
         const IFluidContainer& boundary
     );
+    void setBoundarySamplingSettings(
+        const FluidBoundarySamplingSettings& settings
+    );
 
     const CoupledFluidStatistics& getLastStatistics() const;
 

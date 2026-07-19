@@ -38,6 +38,7 @@ FluidParticle::FluidParticle(
     mass(properties.mass),
     inverseMass(0.0f),
     density(properties.restDensity),
+    densityRate(0.0f),
     pressure(0.0f),
     smoothingLength(properties.smoothingLength),
     restDensity(properties.restDensity),

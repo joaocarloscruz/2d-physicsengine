@@ -135,6 +135,23 @@ TEST_CASE("WCSPH rejects invalid solver configuration and timesteps", "[fluid][w
         config.cflFactor = 1.1f;
         REQUIRE_THROWS_AS(WcsphSolver(0.5f, config), std::invalid_argument);
     }
+    SECTION("density diffusion must be normalized") {
+        config.densityDiffusion = 1.1f;
+        REQUIRE_THROWS_AS(WcsphSolver(0.5f, config), std::invalid_argument);
+    }
+    SECTION("density mode must be recognized") {
+        config.densityMode = static_cast<WcsphDensityMode>(-1);
+        REQUIRE_THROWS_AS(WcsphSolver(0.5f, config), std::invalid_argument);
+    }
+    SECTION("continuity mode requires positive supplied density") {
+        config.densityMode = WcsphDensityMode::Continuity;
+        WcsphSolver solver(0.5f, config);
+        std::vector<FluidParticle> particles = {
+            FluidParticle(Vector2(), Vector2(), FluidParticleProperties{})
+        };
+        particles.front().density = 0.0f;
+        REQUIRE_THROWS_AS(solver.prepare(particles), std::invalid_argument);
+    }
     SECTION("step rejects negative time") {
         WcsphSolver solver(0.5f, config);
         std::vector<FluidParticle> particles;
@@ -191,6 +208,78 @@ TEST_CASE("WCSPH CFL limit responds to wave and particle speeds", "[fluid][wcsph
     REQUIRE(movingLimit < restingLimit);
     solver.step(particles, restingLimit * 2.5f);
     REQUIRE(solver.getLastStatistics().substepCount >= 3);
+}
+
+TEST_CASE("WCSPH continuity mode preserves supplied density at rest", "[fluid][wcsph][density][continuity]") {
+    FluidParticleProperties properties;
+    properties.mass = 10.0f;
+    properties.restDensity = 1000.0f;
+    properties.smoothingLength = 0.2f;
+    std::vector<FluidParticle> particles = {
+        FluidParticle(Vector2(0.0f, 0.0f), Vector2(), properties),
+        FluidParticle(Vector2(0.1f, 0.0f), Vector2(), properties),
+    };
+    particles[0].density = 1008.0f;
+    particles[1].density = 1003.0f;
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    config.densityMode = WcsphDensityMode::Continuity;
+    WcsphSolver solver(properties.smoothingLength, config);
+
+    solver.prepare(particles);
+
+    REQUIRE(particles[0].density == Catch::Approx(1008.0f));
+    REQUIRE(particles[1].density == Catch::Approx(1003.0f));
+    REQUIRE(particles[0].pressure > particles[1].pressure);
+}
+
+TEST_CASE("WCSPH continuity mode increases density under compression", "[fluid][wcsph][density][continuity]") {
+    FluidParticleProperties properties;
+    properties.mass = 10.0f;
+    properties.restDensity = 1000.0f;
+    properties.smoothingLength = 0.2f;
+    properties.viscosity = 0.0f;
+    std::vector<FluidParticle> particles = {
+        FluidParticle(Vector2(-0.05f, 0.0f), Vector2(1.0f, 0.0f), properties),
+        FluidParticle(Vector2(0.05f, 0.0f), Vector2(-1.0f, 0.0f), properties),
+    };
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    config.densityMode = WcsphDensityMode::Continuity;
+    config.maximumTimeStep = 0.0001f;
+    WcsphSolver solver(properties.smoothingLength, config);
+
+    solver.step(particles, 0.0001f);
+
+    REQUIRE(particles[0].density > properties.restDensity);
+    REQUIRE(particles[1].density > properties.restDensity);
+    REQUIRE(particles[0].density == Catch::Approx(particles[1].density));
+}
+
+TEST_CASE("WCSPH continuity diffusion damps dynamic density differences", "[fluid][wcsph][density][continuity][diffusion]") {
+    FluidParticleProperties properties;
+    properties.mass = 10.0f;
+    properties.restDensity = 1000.0f;
+    properties.smoothingLength = 0.2f;
+    properties.viscosity = 0.0f;
+    std::vector<FluidParticle> particles = {
+        FluidParticle(Vector2(-0.05f, 0.0f), Vector2(), properties),
+        FluidParticle(Vector2(0.05f, 0.0f), Vector2(), properties),
+    };
+    particles[0].density = 1008.0f;
+    particles[1].density = 1000.0f;
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    config.densityMode = WcsphDensityMode::Continuity;
+    config.densityDiffusion = 0.1f;
+    config.maximumTimeStep = 0.00001f;
+    WcsphSolver solver(properties.smoothingLength, config);
+
+    solver.step(particles, 0.00001f);
+
+    REQUIRE(particles[0].density < 1008.0f);
+    REQUIRE(particles[1].density > 1000.0f);
+    REQUIRE(particles[0].density > particles[1].density);
 }
 
 TEST_CASE("WCSPH neighborhood work remains linear through ten thousand particles", "[fluid][wcsph][scaling]") {

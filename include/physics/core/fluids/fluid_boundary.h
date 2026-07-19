@@ -14,6 +14,8 @@ struct FluidBoundaryParticle {
     Vector2 position;
     Vector2 velocity;
     float volume = 0.0f;
+    Vector2 acceleration;
+    float pressureScale = 0.0f;
 };
 
 struct FluidBoundarySamplingSettings {
