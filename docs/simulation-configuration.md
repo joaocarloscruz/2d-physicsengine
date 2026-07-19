@@ -14,6 +14,9 @@ config.maxSubstepsPerAdvance = 12;
 config.positionCorrectionFactor = 0.6f;
 config.penetrationSlop = 0.002f;
 config.warmStartFactor = 0.9f;
+config.restitutionVelocityThreshold = 1.0f;
+config.velocityTolerance = 0.0001f;
+config.maxPositionCorrection = 0.2f;
 config.enableLinearVelocityLimit = false;
 config.enableAngularVelocityLimit = false;
 
@@ -30,6 +33,9 @@ The defaults preserve the behavior that predates this configuration API:
 | Position correction factor | `0.8` |
 | Penetration slop | `0.005` |
 | Warm-start factor | `0.8` |
+| Restitution velocity threshold | `1.0` |
+| Velocity tolerance | `0.0001` |
+| Maximum position correction | `0.2` |
 | Linear velocity limit | enabled at `200` |
 | Angular velocity limit | enabled at `30` |
 
@@ -38,6 +44,11 @@ must be positive. Correction and warm-start factors must be finite values betwee
 Penetration slop must be finite and non-negative. Enabled velocity limits must
 be positive and finite. Set either enable flag to `false` when the simulation
 must not silently clamp that velocity.
+
+Contacts slower than the restitution velocity threshold are solved without a
+bounce, which prevents resting contacts from injecting energy. Velocity
+components at or below the velocity tolerance are treated as settled. Maximum
+position correction caps the distance repaired by one position iteration.
 
 The same value object is available through WebAssembly using
 `engine.getSimulationConfig()` and `engine.setSimulationConfig(config)`.

@@ -8,13 +8,18 @@ async function main() {
     assert.equal(simulationConfig.solverIterations, 10);
     assert.ok(Math.abs(simulationConfig.fixedTimeStep - 1 / 60) < 0.000001);
     assert.equal(simulationConfig.maxSubstepsPerAdvance, 8);
+    assert.equal(simulationConfig.restitutionVelocityThreshold, 1.0);
+    assert.ok(Math.abs(simulationConfig.velocityTolerance - 0.0001) < 0.000001);
+    assert.ok(Math.abs(simulationConfig.maxPositionCorrection - 0.2) < 0.000001);
     assert.equal(simulationConfig.enableLinearVelocityLimit, true);
     simulationConfig.solverIterations = 4;
+    simulationConfig.restitutionVelocityThreshold = 0.75;
     simulationConfig.enableLinearVelocityLimit = false;
     simulationConfig.enableAngularVelocityLimit = false;
     engine.setSimulationConfig(simulationConfig);
     const configuredSimulation = engine.getSimulationConfig();
     assert.equal(configuredSimulation.solverIterations, 4);
+    assert.equal(configuredSimulation.restitutionVelocityThreshold, 0.75);
     assert.equal(configuredSimulation.enableLinearVelocityLimit, false);
     assert.equal(configuredSimulation.enableAngularVelocityLimit, false);
     const shape = new physics.Circle(1.0);

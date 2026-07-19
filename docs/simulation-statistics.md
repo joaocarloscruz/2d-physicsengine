@@ -8,16 +8,17 @@ After every successful `World::step`, callers can inspect the immutable
 | --- | --- |
 | `integratedBodyCount` | Non-static rigid bodies integrated |
 | `integratedParticleCount` | Particles integrated across all particle systems |
-| `broadPhaseCandidateCount` | Pairs generated, summed across solver iterations |
-| `narrowPhaseCandidateCount` | Pairs left after collision filtering, summed across iterations |
-| `resolvedContactCount` | Contact resolutions performed across solver iterations |
+| `broadPhaseCandidateCount` | Pairs generated while preparing this step's constraints |
+| `narrowPhaseCandidateCount` | Pairs left after collision filtering |
+| `resolvedContactCount` | Manifold points prepared for constraint solving |
 | `solverIterationCount` | Rigid contact solver iterations executed |
 | `activeContactCount` | Unique contacts active at the end of the step |
 | `fluidIterationCount` | Fluid solver iterations; zero until a fluid solver is configured |
 
-Counts describe work performed, so a single persistent contact can contribute
-multiple resolved contacts when the solver runs multiple iterations. The
-active contact count is the unique physical-pair view.
+Collision detection runs once per step before the velocity and position
+constraint phases. A two-point manifold therefore contributes two resolved
+contacts regardless of the configured solver iteration count. The active
+contact count is the unique physical-pair view.
 
 Each successful step replaces the whole snapshot; values never accumulate
 across steps. A rejected timestep or another exception preserves the most

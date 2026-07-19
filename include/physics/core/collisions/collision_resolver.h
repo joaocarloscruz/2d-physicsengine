@@ -22,6 +22,33 @@ namespace PhysicsEngine {
         std::uint8_t contactCount = 0;
     };
 
+    struct ContactConstraintPoint {
+        Vector2 localAnchorA;
+        Vector2 localAnchorB;
+        float penetration = 0.0f;
+        float normalMass = 0.0f;
+        float tangentMass = 0.0f;
+        float velocityBias = 0.0f;
+        std::uint32_t featureId = 0;
+        ContactImpulse impulse;
+    };
+
+    struct ContactConstraint {
+        RigidBody* bodyA = nullptr;
+        RigidBody* bodyB = nullptr;
+        Vector2 normal;
+        Vector2 tangent;
+        std::array<ContactConstraintPoint, 2> points{};
+        std::uint8_t pointCount = 0;
+        float staticFriction = 0.0f;
+        float dynamicFriction = 0.0f;
+        float positionCorrectionFactor = 0.0f;
+        float penetrationSlop = 0.0f;
+        float maxPositionCorrection = 0.0f;
+        float velocityTolerance = 0.0f;
+        ContactImpulseCache* cache = nullptr;
+    };
+
     class CollisionResolver {
     public:
         static void Resolve(const CollisionManifold& manifold);
@@ -46,6 +73,16 @@ namespace PhysicsEngine {
             const SimulationConfig& config,
             bool reduceWarmStart = false
         );
+
+        static ContactConstraint PrepareConstraint(
+            const CollisionManifold& manifold,
+            ContactImpulseCache& cache,
+            const SimulationConfig& config
+        );
+
+        static void WarmStart(ContactConstraint& constraint);
+        static void SolveVelocity(ContactConstraint& constraint);
+        static bool SolvePosition(ContactConstraint& constraint);
     };
 }
 

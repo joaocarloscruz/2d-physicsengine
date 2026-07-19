@@ -173,63 +173,86 @@ void World::step(float deltaTime) {
         }
     }
 
-    // Narrow phase + resolve with multiple iterations for stability
-    // Listeners fire only on the first iteration to avoid duplicate callbacks
+    // Detect contacts once, then solve the prepared constraints in distinct
+    // velocity and position phases.
+    potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
+    statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(
+        potentialCollisions.size()
+    );
+    potentialCollisions.erase(
+        std::remove_if(
+            potentialCollisions.begin(),
+            potentialCollisions.end(),
+            [](const CollisionPair& pair) {
+                return !pair.first
+                    || !pair.second
+                    || !pair.first->CanCollideWith(*pair.second);
+            }
+        ),
+        potentialCollisions.end()
+    );
+    statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(
+        potentialCollisions.size()
+    );
+
+    std::vector<ContactConstraint> constraints;
+    constraints.reserve(potentialCollisions.size());
+    for (const auto& pair : potentialCollisions) {
+        CollisionManifold manifold = CheckCollision(
+            pair.first.get(),
+            pair.second.get()
+        );
+        if (!manifold.hasCollision) {
+            continue;
+        }
+
+        statistics.resolvedContactCount += std::max<std::uint32_t>(
+            manifold.contactCount,
+            1
+        );
+        CanonicalizeManifold(manifold);
+        const ContactKey key = ContactKey::From(manifold.A, manifold.B);
+        auto [contact, inserted] = contactCache.try_emplace(key);
+        activeContacts.insert(key);
+
+        if (!inserted) {
+            for (std::uint8_t i = 0;
+                 i < contact->second.contactCount;
+                 ++i) {
+                contact->second.contacts[i].impulse.normal *=
+                    simulationConfig.warmStartFactor;
+                contact->second.contacts[i].impulse.tangent *=
+                    simulationConfig.warmStartFactor;
+            }
+        }
+
+        constraints.push_back(CollisionResolver::PrepareConstraint(
+            manifold,
+            contact->second,
+            simulationConfig
+        ));
+        if (!inserted) {
+            CollisionResolver::WarmStart(constraints.back());
+        }
+        for (ICollisionListener* listener : collisionListeners) {
+            listener->onCollision(manifold);
+        }
+    }
+
     for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
         ++statistics.solverIterationCount;
-        potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
-        statistics.broadPhaseCandidateCount += static_cast<std::uint32_t>(
-            potentialCollisions.size()
-        );
-        potentialCollisions.erase(
-            std::remove_if(
-                potentialCollisions.begin(),
-                potentialCollisions.end(),
-                [](const CollisionPair& pair) {
-                    return !pair.first
-                        || !pair.second
-                        || !pair.first->CanCollideWith(*pair.second);
-                }
-            ),
-            potentialCollisions.end()
-        );
-        statistics.narrowPhaseCandidateCount += static_cast<std::uint32_t>(
-            potentialCollisions.size()
-        );
-        for (const auto& pair : potentialCollisions) {
-            CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
-            if (manifold.hasCollision) {
-                statistics.resolvedContactCount += std::max<std::uint32_t>(
-                    manifold.contactCount,
-                    1
-                );
-                CanonicalizeManifold(manifold);
-                const ContactKey key = ContactKey::From(manifold.A, manifold.B);
-                auto [contact, inserted] = contactCache.try_emplace(key);
-                activeContacts.insert(key);
-
-                if (iter == 0 && !inserted) {
-                    for (std::uint8_t i = 0; i < contact->second.contactCount; ++i) {
-                        contact->second.contacts[i].impulse.normal *=
-                            simulationConfig.warmStartFactor;
-                        contact->second.contacts[i].impulse.tangent *=
-                            simulationConfig.warmStartFactor;
-                    }
-                    CollisionResolver::WarmStart(manifold, contact->second);
-                }
-
-                CollisionResolver::Resolve(
-                    manifold,
-                    contact->second,
-                    simulationConfig,
-                    iter == 0 && !inserted
-                );
-                if (iter == 0) {
-                    for (ICollisionListener* listener : collisionListeners) {
-                        listener->onCollision(manifold);
-                    }
-                }
-            }
+        for (ContactConstraint& constraint : constraints) {
+            CollisionResolver::SolveVelocity(constraint);
+        }
+    }
+    for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
+        bool positionsSolved = true;
+        for (ContactConstraint& constraint : constraints) {
+            positionsSolved = CollisionResolver::SolvePosition(constraint)
+                && positionsSolved;
+        }
+        if (positionsSolved) {
+            break;
         }
     }
 

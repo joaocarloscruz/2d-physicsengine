@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <memory>
+#include <algorithm>
 
 using namespace PhysicsEngine;
 
@@ -33,6 +34,9 @@ TEST_CASE("SimulationConfig preserves the current numerical defaults", "[simulat
     REQUIRE(config.positionCorrectionFactor == Catch::Approx(0.8f));
     REQUIRE(config.penetrationSlop == Catch::Approx(0.005f));
     REQUIRE(config.warmStartFactor == Catch::Approx(0.8f));
+    REQUIRE(config.restitutionVelocityThreshold == Catch::Approx(1.0f));
+    REQUIRE(config.velocityTolerance == Catch::Approx(0.0001f));
+    REQUIRE(config.maxPositionCorrection == Catch::Approx(0.2f));
     REQUIRE(config.enableLinearVelocityLimit);
     REQUIRE(config.maxLinearSpeed == Catch::Approx(200.0f));
     REQUIRE(config.enableAngularVelocityLimit);
@@ -65,6 +69,17 @@ TEST_CASE("SimulationConfig rejects invalid numerical settings", "[simulation_co
         REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
     }
 
+    SECTION("contact solver tolerances must be finite and non-negative") {
+        config.restitutionVelocityThreshold = -0.1f;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.restitutionVelocityThreshold = 1.0f;
+        config.velocityTolerance = std::numeric_limits<float>::quiet_NaN();
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.velocityTolerance = 0.0001f;
+        config.maxPositionCorrection = 0.0f;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+    }
+
     SECTION("enabled velocity limits must be positive and finite") {
         config.maxLinearSpeed = 0.0f;
         REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
@@ -93,8 +108,91 @@ TEST_CASE("World uses the configured solver iteration count", "[simulation_confi
     world.setBroadPhase(std::move(broadPhase));
     world.step(0.0f);
 
-    REQUIRE(observer->calls == 3);
+    REQUIRE(observer->calls == 1);
     REQUIRE(world.getSimulationConfig().solverIterations == 3);
+}
+
+TEST_CASE("World suppresses restitution below the configured impact threshold", "[simulation_config][solver]") {
+    Circle shape(1.0f);
+    Material material = {1.0f, 1.0f, 0.0f, 0.0f};
+    SimulationConfig config;
+    config.restitutionVelocityThreshold = 1.0f;
+    World world(config);
+
+    auto first = std::make_shared<RigidBody>(
+        &shape,
+        material,
+        Vector2(0.0f, 0.0f)
+    );
+    auto second = std::make_shared<RigidBody>(
+        &shape,
+        material,
+        Vector2(1.99f, 0.0f)
+    );
+    first->SetMass(1.0f);
+    second->SetMass(1.0f);
+    first->SetVelocity(Vector2(0.05f, 0.0f));
+    second->SetVelocity(Vector2(-0.05f, 0.0f));
+    world.addBody(first);
+    world.addBody(second);
+
+    world.step(0.0f);
+
+    REQUIRE(std::abs(first->GetVelocity().x) < 0.001f);
+    REQUIRE(std::abs(second->GetVelocity().x) < 0.001f);
+}
+
+TEST_CASE("Contact constraints converge as solver iterations increase", "[simulation_config][solver][convergence]") {
+    const auto velocitySpread = [](int iterations) {
+        Circle shape(1.0f);
+        Material material = {1.0f, 0.0f, 0.0f, 0.0f};
+        SimulationConfig config;
+        config.solverIterations = iterations;
+        World world(config);
+
+        auto first = std::make_shared<RigidBody>(
+            &shape,
+            material,
+            Vector2(0.0f, 0.0f)
+        );
+        auto second = std::make_shared<RigidBody>(
+            &shape,
+            material,
+            Vector2(1.99f, 0.0f)
+        );
+        auto third = std::make_shared<RigidBody>(
+            &shape,
+            material,
+            Vector2(3.98f, 0.0f)
+        );
+        first->SetMass(1.0f);
+        second->SetMass(1.0f);
+        third->SetMass(1.0f);
+        first->SetVelocity(Vector2(3.0f, 0.0f));
+        world.addBody(first);
+        world.addBody(second);
+        world.addBody(third);
+
+        world.step(0.0f);
+
+        const float minimum = std::min({
+            first->GetVelocity().x,
+            second->GetVelocity().x,
+            third->GetVelocity().x
+        });
+        const float maximum = std::max({
+            first->GetVelocity().x,
+            second->GetVelocity().x,
+            third->GetVelocity().x
+        });
+        return maximum - minimum;
+    };
+
+    const float oneIterationSpread = velocitySpread(1);
+    const float tenIterationSpread = velocitySpread(10);
+
+    REQUIRE(tenIterationSpread < oneIterationSpread * 0.01f);
+    REQUIRE(tenIterationSpread < 0.001f);
 }
 
 TEST_CASE("World velocity limits can be configured or disabled", "[simulation_config][World]") {

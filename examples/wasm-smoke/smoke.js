@@ -6,6 +6,7 @@ async function runSmokeTest() {
         const engine = new physics.Engine();
         const simulationConfig = engine.getSimulationConfig();
         simulationConfig.solverIterations = 4;
+        simulationConfig.restitutionVelocityThreshold = 0.75;
         simulationConfig.fixedTimeStep = 0.1;
         simulationConfig.maxSubstepsPerAdvance = 2;
         simulationConfig.enableLinearVelocityLimit = false;
@@ -47,6 +48,7 @@ async function runSmokeTest() {
             && body.getCollisionCategoryBits() === 0x00000002
             && body.getCollisionMaskBits() === 0x00000004
             && engine.getSimulationConfig().solverIterations === 4
+            && engine.getSimulationConfig().restitutionVelocityThreshold === 0.75
             && fixedProgress.stepsPerformed === 2
             && Math.abs(fixedProgress.remainingTime - 0.05) < 0.000001
             && engine.getTotalStepCount() === 2n

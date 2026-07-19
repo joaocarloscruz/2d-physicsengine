@@ -49,9 +49,9 @@ TEST_CASE("World reports work performed by one step", "[statistics][World]") {
     const SimulationStatistics& statistics = world.getLastStepStatistics();
     REQUIRE(statistics.integratedBodyCount == 2);
     REQUIRE(statistics.integratedParticleCount == 3);
-    REQUIRE(statistics.broadPhaseCandidateCount == 3);
-    REQUIRE(statistics.narrowPhaseCandidateCount == 3);
-    REQUIRE(statistics.resolvedContactCount == 3);
+    REQUIRE(statistics.broadPhaseCandidateCount == 1);
+    REQUIRE(statistics.narrowPhaseCandidateCount == 1);
+    REQUIRE(statistics.resolvedContactCount == 1);
     REQUIRE(statistics.solverIterationCount == 3);
     REQUIRE(statistics.activeContactCount == 1);
     REQUIRE(statistics.fluidIterationCount == 0);

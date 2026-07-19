@@ -34,6 +34,23 @@ void SimulationConfig::Validate() const {
             "Warm-start factor must be finite and between zero and one."
         );
     }
+    if (!std::isfinite(restitutionVelocityThreshold)
+        || restitutionVelocityThreshold < 0.0f) {
+        throw std::invalid_argument(
+            "Restitution velocity threshold must be finite and non-negative."
+        );
+    }
+    if (!std::isfinite(velocityTolerance) || velocityTolerance < 0.0f) {
+        throw std::invalid_argument(
+            "Velocity tolerance must be finite and non-negative."
+        );
+    }
+    if (!std::isfinite(maxPositionCorrection)
+        || maxPositionCorrection <= 0.0f) {
+        throw std::invalid_argument(
+            "Maximum position correction must be positive and finite."
+        );
+    }
     if (enableLinearVelocityLimit
         && (!std::isfinite(maxLinearSpeed) || maxLinearSpeed <= 0.0f)) {
         throw std::invalid_argument(
