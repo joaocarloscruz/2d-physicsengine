@@ -44,3 +44,6 @@ differ.
 accepted neighbor pairs, and the maximum neighbors observed for one particle.
 The statistics describe the most recent rebuild/query and are intended for
 solver diagnostics and performance measurements.
+
+The reference continuum solver using this state and neighborhood layer is
+documented in [wcsph-solver.md](wcsph-solver.md).
