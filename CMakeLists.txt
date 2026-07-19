@@ -38,6 +38,8 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/particles/particle.cpp
     ${PHYSICS_SRC_DIR}/core/particles/particle_system.cpp
     ${PHYSICS_SRC_DIR}/core/particles/particle_spatial_grid.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle_spatial_grid.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
@@ -103,6 +105,7 @@ else()
         ${TESTS_SRC_DIR}/test_simulation.cpp
         ${TESTS_SRC_DIR}/test_collision_listener.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp
+        ${TESTS_SRC_DIR}/test_fluid_particles.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
