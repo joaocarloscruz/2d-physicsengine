@@ -72,3 +72,6 @@ layouts. A simple test-only box clamp keeps those scenarios bounded until the
 production boundary model is implemented; both runs are required to remain
 finite and bitwise repeatable. The clamp is not part of `WcsphSolver` and is
 not presented as a physical boundary treatment.
+
+Production static containment is provided separately by the circle and convex
+polygon models documented in [fluid-boundaries.md](fluid-boundaries.md).

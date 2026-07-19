@@ -81,6 +81,8 @@ WcsphSolver::WcsphSolver(
 
 void WcsphSolver::prepare(std::vector<FluidParticle>& particles) {
     lastStatistics.substepCount = 0;
+    lastStatistics.boundaryCorrectionCount = 0;
+    lastStatistics.maximumBoundaryPenetration = 0.0f;
     prepareState(particles);
 }
 
@@ -266,6 +268,22 @@ void WcsphSolver::step(
     std::vector<FluidParticle>& particles,
     float deltaTime
 ) {
+    stepInternal(particles, deltaTime, nullptr);
+}
+
+void WcsphSolver::step(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const IFluidContainer& boundary
+) {
+    stepInternal(particles, deltaTime, &boundary);
+}
+
+void WcsphSolver::stepInternal(
+    std::vector<FluidParticle>& particles,
+    float deltaTime,
+    const IFluidContainer* boundary
+) {
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument(
             "WCSPH delta time must be finite and non-negative."
@@ -276,6 +294,8 @@ void WcsphSolver::step(
         return;
     }
 
+    lastStatistics.boundaryCorrectionCount = 0;
+    lastStatistics.maximumBoundaryPenetration = 0.0f;
     float remaining = deltaTime;
     std::uint32_t substeps = 0;
     while (remaining > 0.0f) {
@@ -290,6 +310,16 @@ void WcsphSolver::step(
             lastStatistics.stableTimeStep
         );
         integrate(particles, substep);
+        if (boundary) {
+            const FluidBoundaryStatistics boundaryStatistics =
+                EnforceFluidBoundary(*boundary, particles);
+            lastStatistics.boundaryCorrectionCount +=
+                boundaryStatistics.correctedParticleCount;
+            lastStatistics.maximumBoundaryPenetration = std::max(
+                lastStatistics.maximumBoundaryPenetration,
+                boundaryStatistics.maximumPenetration
+            );
+        }
         remaining -= substep;
         if (remaining < deltaTime * 1e-6f) {
             remaining = 0.0f;

@@ -3,6 +3,7 @@
 
 #include "fluid_particle.h"
 #include "fluid_particle_spatial_grid.h"
+#include "fluid_boundary.h"
 
 #include <cstdint>
 #include <vector>
@@ -28,6 +29,8 @@ struct WcsphStatistics {
     float maximumDensity = 0.0f;
     float maximumSpeed = 0.0f;
     float stableTimeStep = 0.0f;
+    std::uint64_t boundaryCorrectionCount = 0;
+    float maximumBoundaryPenetration = 0.0f;
 };
 
 class WcsphSolver {
@@ -39,6 +42,11 @@ public:
 
     void prepare(std::vector<FluidParticle>& particles);
     void step(std::vector<FluidParticle>& particles, float deltaTime);
+    void step(
+        std::vector<FluidParticle>& particles,
+        float deltaTime,
+        const IFluidContainer& boundary
+    );
     float getStableTimeStep(
         const std::vector<FluidParticle>& particles
     ) const;
@@ -49,6 +57,11 @@ public:
 private:
     void prepareState(std::vector<FluidParticle>& particles);
     void integrate(std::vector<FluidParticle>& particles, float deltaTime);
+    void stepInternal(
+        std::vector<FluidParticle>& particles,
+        float deltaTime,
+        const IFluidContainer* boundary
+    );
 
     WcsphConfig config;
     FluidParticleSpatialGrid grid;
