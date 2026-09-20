@@ -90,8 +90,11 @@ void ApplyVelocityImpulse(
     const Vector2& point,
     const Vector2& impulse
 ) {
-    bodyA->ApplyImpulse(impulse * -1.0f, point - bodyA->GetPosition());
-    bodyB->ApplyImpulse(impulse, point - bodyB->GetPosition());
+    // Internal constraint corrections do not count as external wake requests.
+    bodyA->velocity = bodyA->velocity - impulse * bodyA->inverseMass;
+    bodyB->velocity = bodyB->velocity + impulse * bodyB->inverseMass;
+    bodyA->angularVelocity -= bodyA->inverseInertia * (point-bodyA->position).cross(impulse);
+    bodyB->angularVelocity += bodyB->inverseInertia * (point-bodyB->position).cross(impulse);
 }
 
 void ApplyPositionImpulse(
@@ -102,22 +105,12 @@ void ApplyPositionImpulse(
     const Vector2& impulse
 ) {
     if (!bodyA->IsStatic()) {
-        bodyA->SetPosition(
-            bodyA->GetPosition() - impulse * bodyA->GetInverseMass()
-        );
-        bodyA->SetOrientation(
-            bodyA->GetOrientation()
-                - bodyA->GetInverseInertia() * ra.cross(impulse)
-        );
+        bodyA->position = bodyA->position - impulse * bodyA->inverseMass;
+        bodyA->orientation -= bodyA->inverseInertia * ra.cross(impulse);
     }
     if (!bodyB->IsStatic()) {
-        bodyB->SetPosition(
-            bodyB->GetPosition() + impulse * bodyB->GetInverseMass()
-        );
-        bodyB->SetOrientation(
-            bodyB->GetOrientation()
-                + bodyB->GetInverseInertia() * rb.cross(impulse)
-        );
+        bodyB->position = bodyB->position + impulse * bodyB->inverseMass;
+        bodyB->orientation += bodyB->inverseInertia * rb.cross(impulse);
     }
 }
 

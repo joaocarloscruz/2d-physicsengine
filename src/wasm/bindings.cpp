@@ -32,6 +32,13 @@ ParticleSystemPtr CreateParticleSystem() {
     return std::make_shared<ParticleSystem>();
 }
 
+JointPtr CreateDistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 anchorA, Vector2 anchorB) {
+    return std::make_shared<DistanceJoint>(std::move(a), std::move(b), length, anchorA, anchorB);
+}
+JointPtr CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
+    return std::make_shared<RevoluteJoint>(std::move(a), std::move(b), anchorA, anchorB);
+}
+
 } // namespace
 } // namespace PhysicsEngine
 
@@ -62,7 +69,11 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("enableLinearVelocityLimit", &SimulationConfig::enableLinearVelocityLimit)
         .field("maxLinearSpeed", &SimulationConfig::maxLinearSpeed)
         .field("enableAngularVelocityLimit", &SimulationConfig::enableAngularVelocityLimit)
-        .field("maxAngularSpeed", &SimulationConfig::maxAngularSpeed);
+        .field("maxAngularSpeed", &SimulationConfig::maxAngularSpeed)
+        .field("enableSleeping", &SimulationConfig::enableSleeping)
+        .field("sleepEnergyThreshold", &SimulationConfig::sleepEnergyThreshold)
+        .field("sleepTimeThreshold", &SimulationConfig::sleepTimeThreshold)
+        .field("maximumCcdImpacts", &SimulationConfig::maximumCcdImpacts);
 
     value_object<FixedStepResult>("FixedStepResult")
         .field("stepsPerformed", &FixedStepResult::stepsPerformed)
@@ -78,7 +89,13 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("resolvedContactCount", &SimulationStatistics::resolvedContactCount)
         .field("solverIterationCount", &SimulationStatistics::solverIterationCount)
         .field("activeContactCount", &SimulationStatistics::activeContactCount)
-        .field("fluidIterationCount", &SimulationStatistics::fluidIterationCount);
+        .field("fluidIterationCount", &SimulationStatistics::fluidIterationCount)
+        .field("ccdImpactCount", &SimulationStatistics::ccdImpactCount)
+        .field("islandCount", &SimulationStatistics::islandCount)
+        .field("solvedIslandCount", &SimulationStatistics::solvedIslandCount)
+        .field("sleepingBodyCount", &SimulationStatistics::sleepingBodyCount)
+        .field("solvedConstraintCount", &SimulationStatistics::solvedConstraintCount)
+        .field("ccdIterationLimitReached", &SimulationStatistics::ccdIterationLimitReached);
 
     class_<Shape>("Shape");
 
@@ -104,6 +121,10 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getCollisionCategoryBits", &RigidBody::GetCollisionCategoryBits)
         .function("getCollisionMaskBits", &RigidBody::GetCollisionMaskBits)
         .function("isStatic", &RigidBody::IsStatic)
+        .function("isAwake", &RigidBody::IsAwake)
+        .function("wake", &RigidBody::Wake)
+        .function("isCcdEnabled", &RigidBody::IsCcdEnabled)
+        .function("setCcdEnabled", &RigidBody::SetCcdEnabled)
         .function("setPosition", &RigidBody::SetPosition)
         .function("setOrientation", &RigidBody::SetOrientation)
         .function("setVelocity", &RigidBody::SetVelocity)
@@ -113,6 +134,12 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("setCollisionMaskBits", &RigidBody::SetCollisionMaskBits);
 
     function("createRigidBody", &CreateRigidBody, allow_raw_pointers());
+    class_<IJoint>("Joint")
+        .smart_ptr<JointPtr>("JointPtr")
+        .function("getAnchorA", &IJoint::getAnchorA)
+        .function("getAnchorB", &IJoint::getAnchorB);
+    function("createDistanceJoint", &CreateDistanceJoint);
+    function("createRevoluteJoint", &CreateRevoluteJoint);
 
     class_<ParticleSystem>("ParticleSystem")
         .smart_ptr<ParticleSystemPtr>("ParticleSystemPtr")
@@ -153,6 +180,12 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getSimulationConfig", &Engine::getSimulationConfig)
         .function("getLastStepStatistics", &Engine::getLastStepStatistics)
         .function("addBody", &Engine::addBody)
+        .function("removeBody", &Engine::removeBody)
+        .function("clearBodies", &Engine::clearBodies)
+        .function("addJoint", &Engine::addJoint)
+        .function("removeJoint", &Engine::removeJoint)
+        .function("exportJson", &Engine::exportJson)
+        .function("exportCsv", &Engine::exportCsv)
         .function("addParticleSystem", &Engine::addParticleSystem)
         .function("removeParticleSystem", &Engine::removeParticleSystem)
         .function("getMaterial", &Engine::getMaterial);

@@ -17,25 +17,13 @@
 #include "types.h"
 #include "simulation_config.h"
 #include "simulation_statistics.h"
+#include "joints.h"
 
 namespace PhysicsEngine {
 
 struct ForceRegistration {
     RigidBodyPtr body;
     std::unique_ptr<IForceGenerator> generator;
-};
-
-struct ContactKey {
-    std::uint64_t first;
-    std::uint64_t second;
-
-    static ContactKey From(const RigidBody* bodyA, const RigidBody* bodyB);
-    bool contains(std::uint64_t bodyId) const;
-    bool operator==(const ContactKey& other) const;
-};
-
-struct ContactKeyHash {
-    std::size_t operator()(const ContactKey& key) const;
 };
 
 class World {
@@ -47,6 +35,9 @@ public:
     void addBody(RigidBodyPtr body);
     void removeBody(RigidBodyPtr body);
     void clearBodies();
+    void addJoint(JointPtr joint);
+    void removeJoint(const JointPtr& joint);
+    const std::vector<JointPtr>& getJoints() const { return joints; }
 
     void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
     void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
@@ -74,6 +65,43 @@ public:
     const SimulationStatistics& getLastStepStatistics() const;
 
 private:
+    struct ContactKey {
+        std::uint64_t first;
+        std::uint64_t second;
+
+        static ContactKey From(const RigidBody* bodyA, const RigidBody* bodyB);
+        bool contains(std::uint64_t bodyId) const;
+        bool operator==(const ContactKey& other) const;
+    };
+
+    struct ContactKeyHash {
+        std::size_t operator()(const ContactKey& key) const;
+    };
+
+    struct Island {
+        std::vector<RigidBody*> bodies;
+        std::vector<ContactConstraint*> contacts;
+        std::vector<JointPtr> joints;
+    };
+    std::vector<Island> buildIslands(std::vector<ContactConstraint>& constraints, bool previousContacts = false);
+    void wakeIsland(Island& island);
+    std::vector<JointPtr> joints;
+    enum class EventPhase { Begin, Persist, End };
+    struct PendingEvent {
+        EventPhase phase;
+        CollisionEvent event;
+        CollisionManifold manifold;
+        RigidBodyPtr bodyA;
+        RigidBodyPtr bodyB;
+    };
+    void dispatchEvents();
+    std::vector<CollisionManifold> advanceCcd(const std::vector<Vector2>& starts,
+        float deltaTime, SimulationStatistics& statistics);
+    void endContacts(std::uint64_t bodyId);
+    std::unordered_map<ContactKey, PendingEvent, ContactKeyHash> contactEvents;
+    std::vector<PendingEvent> pendingEvents;
+    bool dispatchingEvents = false;
+    bool stepping = false;
     std::vector<RigidBodyPtr> bodies;
     std::vector<ForceRegistration> forceRegistry;
     std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;

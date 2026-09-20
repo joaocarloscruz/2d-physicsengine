@@ -9,6 +9,10 @@
 namespace PhysicsEngine {
 
     namespace {
+        void ValidateFinite(float value) {
+            if (!std::isfinite(value)) throw std::invalid_argument("RigidBody state must be finite.");
+        }
+        void ValidateFinite(Vector2 value) { ValidateFinite(value.x); ValidateFinite(value.y); }
         void ValidateMaterial(const Material& material) {
             if (!std::isfinite(material.density) || material.density <= 0.0f) {
                 throw std::invalid_argument("Material density must be positive and finite.");
@@ -29,14 +33,14 @@ namespace PhysicsEngine {
 
     std::atomic<std::uint64_t> RigidBody::nextId{1};
 
-    RigidBody::RigidBody(Shape* s, const Material& mat, const Vector2& pos, bool isStatic)
+    RigidBody::RigidBody(const Shape* s, const Material& mat, const Vector2& pos, bool isStatic)
         : position(pos),
           orientation(0.0f),
           velocity(0.0f, 0.0f),
           angularVelocity(0.0f),
           previousPosition(pos),
           previousOrientation(0.0f),
-          shape(s),
+          shape(s ? s->Clone() : nullptr),
           material(mat),
           force(0.0f, 0.0f),
           torque(0.0f),
@@ -51,6 +55,7 @@ namespace PhysicsEngine {
             throw std::invalid_argument("RigidBody requires a valid Shape.");
         }
         ValidateMaterial(material);
+        ValidateFinite(position);
         if (isStatic) {
             mass = 0.0f;
             inverseMass = 0.0f;
@@ -68,15 +73,21 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::ApplyForce(const Vector2& f) {
+        ValidateFinite(f);
+        if (!applyingAutomaticForces && f.magnitudeSquared() > 0) Wake();
         force = force + f; 
     }
 
     void RigidBody::ApplyTorque(float t) {
+        ValidateFinite(t);
+        if (!applyingAutomaticForces && t != 0) Wake();
         torque += t; 
     }
 
     void RigidBody::ApplyImpulse(const Vector2& impulse, const Vector2& contactVector) {
+        ValidateFinite(impulse); ValidateFinite(contactVector);
         if (isStatic) return;
+        if (impulse.magnitudeSquared() > 0) Wake();
 
         velocity = velocity + impulse * inverseMass;
         angularVelocity = angularVelocity + inverseInertia * contactVector.cross(impulse);
@@ -137,39 +148,50 @@ namespace PhysicsEngine {
     // ---- Setters ----
 
     void RigidBody::SetVelocity(const Vector2& v) {
+        ValidateFinite(v);
+        Wake();
         velocity = v;
     }
 
     void RigidBody::SetAngularVelocity(float w) {
+        ValidateFinite(w);
+        Wake();
         angularVelocity = w;
     }
 
     void RigidBody::SetPosition(const Vector2& p) {
+        ValidateFinite(p);
+        contactWakeRequested = true;
+        Wake();
         position = p;
     }
 
     void RigidBody::SetOrientation(float o) {
+        ValidateFinite(o);
+        contactWakeRequested = true;
+        Wake();
         orientation = o;
     }
 
     void RigidBody::SetMass(float m) {
-        if (isStatic) {
-            return;
-        }
         if (!std::isfinite(m) || m <= 0.0f) {
             throw std::invalid_argument("RigidBody mass must be positive and finite.");
         }
+        if (isStatic) return;
         mass = m;
+        Wake();
         inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
         inertia = shape->GetInertia(mass);
         inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
     }
 
     void RigidBody::SetCollisionCategoryBits(std::uint32_t bits) {
+        Wake(); contactWakeRequested = true;
         collisionCategoryBits = bits;
     }
 
     void RigidBody::SetCollisionMaskBits(std::uint32_t bits) {
+        Wake(); contactWakeRequested = true;
         collisionMaskBits = bits;
     }
 
@@ -181,12 +203,12 @@ namespace PhysicsEngine {
 
     AABB RigidBody::GetAABB() const {
         if (shape->type == ShapeType::CIRCLE) {
-            Circle* circle = static_cast<Circle*>(shape);
+            const Circle* circle = static_cast<const Circle*>(shape.get());
             Vector2 min = position - Vector2(circle->GetRadius(), circle->GetRadius());
             Vector2 max = position + Vector2(circle->GetRadius(), circle->GetRadius());
             return { min, max };
         } else if (shape->type == ShapeType::POLYGON) {
-            Polygon* poly = static_cast<Polygon*>(shape);
+            const Polygon* poly = static_cast<const Polygon*>(shape.get());
 
             Matrix2x2 rot = Matrix2x2::rotation(orientation);
             Vector2 min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());

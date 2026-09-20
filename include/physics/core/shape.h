@@ -6,6 +6,7 @@
 #include <numeric>
 #include <algorithm> // For std::reverse if needed
 #include <stdexcept>
+#include <memory>
 #include "../math/vector2.h"
 
 namespace PhysicsEngine {
@@ -17,11 +18,12 @@ namespace PhysicsEngine {
 
     class Shape {
     public:
-        ShapeType type;
+        const ShapeType type;
         Shape(ShapeType type) : type(type) {}
         virtual ~Shape() = default;
 
         virtual float GetArea() const = 0;
+        virtual std::unique_ptr<Shape> Clone() const = 0;
         virtual float GetInertia(float mass) const = 0;
         virtual float GetRadius() const { return 0.0f; };
     };
@@ -37,7 +39,8 @@ namespace PhysicsEngine {
             }
         }
 
-        float GetArea() const override { return M_PI * radius * radius; }
+        std::unique_ptr<Shape> Clone() const override { return std::make_unique<Circle>(*this); }
+        float GetArea() const override { return 3.14159265358979323846f * radius * radius; }
         float GetInertia(float mass) const override { return 0.5f * mass * radius * radius; }
         float GetRadius() const override { return radius; }
     };
@@ -74,6 +77,7 @@ namespace PhysicsEngine {
         }
 
         // --- NEW: Static Factories to replace old Classes ---
+        std::unique_ptr<Shape> Clone() const override { return std::make_unique<Polygon>(*this); }
         
         static Polygon MakeBox(float width, float height) {
             if (!std::isfinite(width) || !std::isfinite(height)

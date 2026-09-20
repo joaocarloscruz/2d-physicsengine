@@ -9,7 +9,7 @@ namespace PhysicsEngine {
 
     // Helper: Transform polygon vertices to world space
     static std::vector<Vector2> GetWorldVertices(RigidBody* body) {
-        Polygon* poly = static_cast<Polygon*>(body->shape);
+        const Polygon* poly = static_cast<const Polygon*>(body->shape.get());
         const std::vector<Vector2>& localVerts = poly->getVertices();
         
         std::vector<Vector2> worldVerts;
@@ -61,7 +61,7 @@ namespace PhysicsEngine {
         RigidBody* circleBody = (a->shape->type == ShapeType::CIRCLE) ? a : b;
         RigidBody* polyBody = (a->shape->type == ShapeType::POLYGON) ? a : b;
 
-        Circle* circleShape = static_cast<Circle*>(circleBody->shape);
+        const Circle* circleShape = static_cast<const Circle*>(circleBody->shape.get());
 
         std::vector<Vector2> polyVertices = GetWorldVertices(polyBody);
         Vector2 circleCenter = circleBody->GetPosition();

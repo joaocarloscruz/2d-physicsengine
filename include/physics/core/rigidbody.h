@@ -21,7 +21,8 @@ namespace PhysicsEngine {
         Vector2 previousPosition;
         float previousOrientation;
 
-        Shape* shape;
+        // Owned immutable copy; source shapes may be destroyed immediately.
+        const std::unique_ptr<const Shape> shape;
         Material material;
 
         Vector2 force; // Accumulated force
@@ -32,7 +33,9 @@ namespace PhysicsEngine {
         float inertia;
         float inverseInertia; //1/inertia, used for calculations
 
-        RigidBody(Shape* s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false);
+        RigidBody(const Shape* s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false);
+        RigidBody(const Shape& s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false)
+            : RigidBody(&s, mat, pos, isStatic) {}
 
         void ApplyForce(const Vector2& f);
         void ApplyTorque(float t);
@@ -60,6 +63,10 @@ namespace PhysicsEngine {
         bool CanCollideWith(const RigidBody& other) const;
 
         bool IsStatic() const;
+        bool IsAwake() const { return !isStatic && awake; }
+        void Wake() { if (!isStatic) { awake = true; sleepTime = 0; } }
+        bool IsCcdEnabled() const { return ccdEnabled; }
+        void SetCcdEnabled(bool enabled) { ccdEnabled = enabled; }
 
         // setters
 
@@ -80,6 +87,11 @@ namespace PhysicsEngine {
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;
+        bool ccdEnabled = false;
+        bool awake = true;
+        float sleepTime = 0;
+        bool applyingAutomaticForces = false;
+        bool contactWakeRequested = false;
         std::uint32_t collisionCategoryBits = 0x00000001u;
         std::uint32_t collisionMaskBits = 0xFFFFFFFFu;
     };

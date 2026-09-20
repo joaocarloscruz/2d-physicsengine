@@ -1,4 +1,5 @@
 #include "../include/engine.h"
+#include "physics/core/state_export.h"
 
 namespace PhysicsEngine {
 
@@ -52,6 +53,12 @@ namespace PhysicsEngine {
     void Engine::addBody(RigidBodyPtr body) {
         world.addBody(body);
     }
+    void Engine::removeBody(const RigidBodyPtr& body) { world.removeBody(body); }
+    void Engine::clearBodies() { world.clearBodies(); }
+    void Engine::addJoint(JointPtr joint) { world.addJoint(std::move(joint)); }
+    void Engine::removeJoint(const JointPtr& joint) { world.removeJoint(joint); }
+    std::string Engine::exportJson(double time) const { return ExportWorldJson(world, time); }
+    std::string Engine::exportCsv(double time) const { return ExportWorldCsv(world, time); }
 
     void Engine::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
         world.addForce(body, std::move(generator));

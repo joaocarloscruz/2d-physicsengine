@@ -28,6 +28,12 @@ namespace PhysicsEngine {
         SimulationStatistics getLastStepStatistics() const;
 
         void addBody(RigidBodyPtr body);
+        void removeBody(const RigidBodyPtr& body);
+        void clearBodies();
+        void addJoint(JointPtr joint);
+        void removeJoint(const JointPtr& joint);
+        std::string exportJson(double time = 0) const;
+        std::string exportCsv(double time = 0) const;
         void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
         void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
         void addParticleSystem(ParticleSystemPtr system);
@@ -45,8 +51,6 @@ namespace PhysicsEngine {
         World world;
         FixedStepRunner fixedStepRunner;
         std::map<std::string, Material> materials;
-        std::vector<std::unique_ptr<Shape>> owned_shapes;
-        std::vector<RigidBodyPtr> owned_bodies;
     };
 }
 

@@ -12,11 +12,11 @@ namespace Visualization {
 
 class Renderer {
 public:
-    Renderer(int width, int height, const std::string& title);
+    Renderer(int width, int height, const std::string& title, bool visible = true);
     ~Renderer();
 
     void setWorld(World* world);
-    void run();
+    void run(std::size_t frameLimit = 0, const std::string& capturePath = {});
 
 private:
     void processEvents();
@@ -48,12 +48,12 @@ private:
     // Interaction
     RigidBody* draggedBody;
     Vector2 dragOffset;
-    float draggedBodyOriginalMass;
     bool isPaused;
     
     // Simulation
     sf::Clock clock;
     float timeAccumulator;
+    float lastFrameTime = 1.0f / 60.0f;
     const float fixedTimeStep = 1.0f / 60.0f;
     
     // Shapes (owned by renderer to keep them alive)
@@ -61,6 +61,7 @@ private:
     
     // Visual settings
     sf::Font font;
+    bool fontAvailable = false;
     bool showDebugInfo;
 };
 
