@@ -143,7 +143,9 @@ if(EMSCRIPTEN)
     )
 elseif(BUILD_TESTING)
     # --- Native Test Executable
-    add_executable(run_tests
+    # Visual Studio project names are case-insensitive: run_tests would collide
+    # with CTest's generated RUN_TESTS target. Preserve the executable filename.
+    add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
         ${TESTS_SRC_DIR}/test_math.cpp
         ${TESTS_SRC_DIR}/test_rigidbody.cpp
@@ -181,8 +183,9 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/catch_amalgamated.cpp
     )
 
-    target_link_libraries(run_tests PRIVATE Engine)
-    target_include_directories(run_tests PRIVATE ${TESTS_SRC_DIR})
+    set_target_properties(engine_tests_runner PROPERTIES OUTPUT_NAME run_tests)
+    target_link_libraries(engine_tests_runner PRIVATE Engine)
+    target_include_directories(engine_tests_runner PRIVATE ${TESTS_SRC_DIR})
 
     add_executable(numerical_validation
         ${TESTS_SRC_DIR}/numerical_validation.cpp
@@ -197,7 +200,7 @@ elseif(BUILD_TESTING)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
 
     enable_testing()
-    add_test(NAME engine_tests COMMAND run_tests)
+    add_test(NAME engine_tests COMMAND engine_tests_runner)
     add_test(
         NAME numerical_validation_fast
         COMMAND numerical_validation
