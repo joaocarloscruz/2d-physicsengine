@@ -2,6 +2,7 @@
 #include "physics/core/fluids/fluid_solver.h"
 
 #include <array>
+#include <cfenv>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -149,4 +150,26 @@ TEST_CASE("Finite comparison diagnostics retain the pressure operator and caller
     REQUIRE(std::memcmp(before.data(), p.data(), before.size()) == 0);
     REQUIRE(Pairs == std::vector<Pair>{{0, 1}});
     REQUIRE(wall == std::vector<float>{.25f, -.5f});
+}
+
+TEST_CASE("Absolute fluid rate division retains directed rounding order",
+          "[fluid][diagnostic-input]") {
+    struct RestoreRounding {
+        int previous = std::fegetround();
+        ~RestoreRounding() { std::fesetround(previous); }
+    } restore;
+    REQUIRE(restore.previous != -1);
+    auto p = Particles();
+    p.resize(1);
+    p[0].density = p[0].restDensity = 3;
+    for (const int direction : {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO}) {
+        REQUIRE(std::fesetround(direction) == 0);
+        // Volatile operands prevent constant folding of this reference division.
+        // abs(rate / rho0) rounds differently from abs(rate) / rho0 for rate<0.
+        volatile float magnitude = .1f, restDensity = 3;
+        const float expected = magnitude / restDensity;
+        const auto d = MeasureFluidDiagnostics(p, {}, SphKernelFamily::Poly6Spiky, {-.1f});
+        REQUIRE(d.maximumAbsoluteDensityRate == expected);
+        REQUIRE(d.maximumCompressionRate == 0);
+    }
 }

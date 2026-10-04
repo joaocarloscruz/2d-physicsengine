@@ -55,9 +55,10 @@ FluidDiagnostics MeasureFluidDiagnostics(const std::vector<FluidParticle>& parti
         const auto& p = particles[i];
         const float error = CheckedMeasurement(p.density/p.restDensity-1);
         const float normalizedRate = CheckedMeasurement(rates[i]/p.restDensity);
+        const float absoluteRate = CheckedMeasurement(std::abs(rates[i])/p.restDensity);
         result.maximumDensityError = std::max(result.maximumDensityError, std::abs(error));
         result.maximumCompression = std::max(result.maximumCompression, error);
-        result.maximumAbsoluteDensityRate = std::max(result.maximumAbsoluteDensityRate, std::abs(normalizedRate));
+        result.maximumAbsoluteDensityRate = std::max(result.maximumAbsoluteDensityRate, absoluteRate);
         result.maximumCompressionRate = std::max(result.maximumCompressionRate, normalizedRate);
     }
     return result;
