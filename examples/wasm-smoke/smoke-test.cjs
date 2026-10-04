@@ -35,6 +35,9 @@ async function main() {
         false,
     );
 
+    // The body owns a copy: deleting the JavaScript shape must be safe.
+    shape.delete();
+
     body.setCollisionCategoryBits(0x00000002);
     body.setCollisionMaskBits(0x00000004);
     assert.equal(body.getCollisionCategoryBits(), 0x00000002);
@@ -79,11 +82,30 @@ async function main() {
     assert.equal(statistics.solverIterationCount, 4);
     assert.equal(statistics.fluidIterationCount, 0);
 
+    const exported = JSON.parse(engine.exportJson(1));
+    assert.equal(exported.schemaVersion, 1);
+    assert.equal(exported.bodies.length, 1);
+    assert.equal(exported.bodies[0].shape.type, "circle");
+    assert.equal(typeof exported.bodies[0].id, "string");
+    assert.ok(engine.exportCsv(1).startsWith("time,id,"));
+    assert.throws(() => body.setVelocity({ x: NaN, y: 0 }));
+    const box = physics.Polygon.makeBox(1, 1);
+    const second = physics.createRigidBody(box, {density: 1, restitution: 0,
+        staticFriction: 0, dynamicFriction: 0}, {x: 8, y: 0}, false);
+    box.delete();
+    second.setCollisionMaskBits(0);
+    engine.addBody(second);
+    const joint = physics.createDistanceJoint(body, second, 2, {x: 0, y: 0}, {x: 0, y: 0});
+    engine.addJoint(joint);
+    // World and joint retain their shared bodies after JS handles are deleted.
+    second.delete(); body.delete(); joint.delete();
+    for (let i = 0; i < 20; ++i) engine.stepFixed();
+    assert.equal(JSON.parse(engine.exportJson(2)).bodies.length, 2);
+    engine.clearBodies();
+    assert.equal(JSON.parse(engine.exportJson(2)).bodies.length, 0);
     engine.delete();
     particles.delete();
-    body.delete();
-    shape.delete();
-    console.log("PASS: configuration, fixed stepping, filtering, bodies, and particles");
+    console.log("PASS: configuration, stepping, filtering, shape/body/joint lifetimes, exports, and particles");
 }
 
 main().catch((error) => {

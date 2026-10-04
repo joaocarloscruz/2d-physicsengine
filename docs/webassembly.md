@@ -86,6 +86,16 @@ After `step`, `stepFixed`, or `advance`,
 contact, solver, and fluid counters. See `docs/simulation-statistics.md` for the
 counting and reset semantics.
 
-`RigidBody` currently refers to its `Shape` through a non-owning pointer. Keep
-the JavaScript shape object alive for as long as its body exists, and delete the
-engine and body before deleting the shape.
+`RigidBody` owns a cloned shape. The JavaScript shape handle may be deleted
+immediately after `createRigidBody`. World and joint shared handles keep bodies
+alive independently of JavaScript handles. Delete each JavaScript handle once.
+`engine.removeBody(body)` also removes attached joints; `engine.clearBodies()`
+removes all bodies and joints.
+
+`createDistanceJoint(a, b, length, localAnchorA, localAnchorB)` and
+`createRevoluteJoint(a, b, localAnchorA, localAnchorB)` return shared joint handles
+for `engine.addJoint`/`removeJoint`. CCD and waking use `body.setCcdEnabled`,
+`isCcdEnabled`, `wake` and `isAwake`. Sleeping is configured through the object
+returned by `getSimulationConfig`. Use that complete object when changing fields.
+`engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.
+Fluid solvers and collision listener subclasses currently have native C++ APIs only.
