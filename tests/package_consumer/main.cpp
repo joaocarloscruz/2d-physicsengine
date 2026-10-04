@@ -26,6 +26,13 @@ int main() {
     PhysicsEngine::NBodyGravity gravity;
     gravity.addParticle({}, {2, 0});
     gravity.step(0.25);
+    PhysicsEngine::WaveMembraneConfig waveConfig;
+    waveConfig.boundary = PhysicsEngine::WaveBoundary::Periodic;
+    PhysicsEngine::WaveMembrane wave(2, 2, 1, 1, waveConfig);
+    wave.setState(std::vector<double>(4), std::vector<double>(4, 2));
+    wave.step(0.25);
+    if (std::abs(wave.getDisplacements()[0] - 0.5) > 1e-12
+        || std::abs(wave.getDiagnostics().kineticEnergy - 8) > 1e-12) return 1;
     return std::abs(body->position.x-1) < 1e-6f
         && !PhysicsEngine::ExportWorldJson(world).empty()
         && hit && hit->body == body && std::abs(hit->hit.fraction - 1.0 / 3.0) < 1e-6

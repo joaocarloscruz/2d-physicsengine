@@ -16,3 +16,4 @@
 #include "physics/core/state_export.h"
 #include "physics/core/spatial_queries.h"
 #include "physics/core/prismatic_joint.h"
+#include "physics/core/wave_membrane.h"

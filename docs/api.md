@@ -4,7 +4,7 @@ Include `physics/physics.h` and link `PhysicsEngine::Engine`. Supported consumer
 types are `Engine`, `World`, `RigidBody`, shapes/materials, force generators,
 `SimulationConfig`, statistics, fixed-step runner, listeners/events, joints,
 particle systems, standalone `SoftBody` mass-spring and `ThermalNetwork`
-conduction networks, fluid solvers/containers/coupling, point/ray/sweep queries, and export
+conduction networks, standalone `WaveMembrane` scalar waves, fluid solvers/containers/coupling, point/ray/sweep queries, and export
 functions. Solver caches, constraint preparation, and broad/narrow-phase
 implementation headers are internal interfaces without compatibility guarantees.
 
@@ -13,6 +13,10 @@ support [prescribed-field electromagnetic particle motion](electromagnetic-parti
 
 `NBodyGravity` supports independent [planar Newtonian point-mass gravity](nbody-gravity.md)
 with bounded pair work, optional Plummer softening and transactional stepping.
+
+`WaveMembrane` and its configuration/boundary/diagnostic types support
+[uniform scalar waves and membranes](wave-membranes.md). Its steps are staged:
+numeric or budget failures preserve state, queued acceleration and diagnostics.
 
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
