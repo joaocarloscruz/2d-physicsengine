@@ -21,7 +21,8 @@ namespace PhysicsEngine {
         Vector2 previousPosition;
         float previousOrientation;
 
-        Shape* shape;
+        // Owned immutable copy; source shapes may be destroyed immediately.
+        const std::unique_ptr<const Shape> shape;
         Material material;
 
         Vector2 force; // Accumulated force
@@ -32,7 +33,9 @@ namespace PhysicsEngine {
         float inertia;
         float inverseInertia; //1/inertia, used for calculations
 
-        RigidBody(Shape* s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false);
+        RigidBody(const Shape* s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false);
+        RigidBody(const Shape& s, const Material& mat, const Vector2& pos = {0, 0}, bool isStatic = false)
+            : RigidBody(&s, mat, pos, isStatic) {}
 
         void ApplyForce(const Vector2& f);
         void ApplyTorque(float t);

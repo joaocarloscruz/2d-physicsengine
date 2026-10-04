@@ -202,7 +202,7 @@ void Renderer::renderBody(const RigidBody* body) {
 }
 
 void Renderer::renderCircle(const RigidBody* body) {
-    Circle* circle = static_cast<Circle*>(body->shape);
+    const Circle* circle = static_cast<const Circle*>(body->shape.get());
     float radius = circle->GetRadius();
     
     sf::CircleShape shape(radius * zoom);
@@ -239,7 +239,7 @@ void Renderer::renderCircle(const RigidBody* body) {
 }
 
 void Renderer::renderPolygon(const RigidBody* body) {
-    Polygon* polygon = static_cast<Polygon*>(body->shape);
+    const Polygon* polygon = static_cast<const Polygon*>(body->shape.get());
     const std::vector<Vector2>& localVertices = polygon->getVertices();
     
     Matrix2x2 rot = Matrix2x2::rotation(body->GetOrientation());
@@ -296,13 +296,13 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
             bool hit = false;
             
             if (body->shape->type == ShapeType::CIRCLE) {
-                Circle* circle = static_cast<Circle*>(body->shape);
+                const Circle* circle = static_cast<const Circle*>(body->shape.get());
                 Vector2 diff = body->GetPosition() - worldPos;
                 float distSq = diff.magnitudeSquared();
                 hit = (distSq < circle->GetRadius() * circle->GetRadius());
             } else if (body->shape->type == ShapeType::POLYGON) {
                 // Better polygon hit test using point-in-polygon
-                Polygon* polygon = static_cast<Polygon*>(body->shape);
+                const Polygon* polygon = static_cast<const Polygon*>(body->shape.get());
                 const std::vector<Vector2>& localVertices = polygon->getVertices();
                 Matrix2x2 rot = Matrix2x2::rotation(body->GetOrientation());
                 Vector2 pos = body->GetPosition();

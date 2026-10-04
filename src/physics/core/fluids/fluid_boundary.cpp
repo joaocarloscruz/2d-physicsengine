@@ -429,7 +429,7 @@ std::vector<FluidBoundaryParticle> SampleRigidBodyBoundaries(
                 particles
             );
         } else if (body->shape->type == ShapeType::POLYGON) {
-            const auto* polygon = static_cast<const Polygon*>(body->shape);
+            const auto* polygon = static_cast<const Polygon*>(body->shape.get());
             AppendPolygonSamples(
                 polygon->getVertices(),
                 body->GetPosition(),

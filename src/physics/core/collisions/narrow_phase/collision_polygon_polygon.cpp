@@ -18,7 +18,7 @@ struct FaceSeparation {
 };
 
 std::vector<Vector2> GetWorldVertices(const RigidBody* body) {
-    const auto* polygon = static_cast<const Polygon*>(body->shape);
+    const auto* polygon = static_cast<const Polygon*>(body->shape.get());
     const Matrix2x2 rotation = Matrix2x2::rotation(body->GetOrientation());
     std::vector<Vector2> result;
     result.reserve(polygon->getVertices().size());

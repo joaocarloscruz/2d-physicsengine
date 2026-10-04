@@ -41,7 +41,7 @@ float SignedDoubleArea(const std::vector<Vector2>& vertices) {
 }
 
 SurfaceSample SamplePolygon(const RigidBody& body, const Vector2& position) {
-    const auto* polygon = static_cast<const Polygon*>(body.shape);
+    const auto* polygon = static_cast<const Polygon*>(body.shape.get());
     const auto& vertices = polygon->getVertices();
     const Matrix2x2 toLocal = Matrix2x2::rotation(-body.GetOrientation());
     const Matrix2x2 toWorld = Matrix2x2::rotation(body.GetOrientation());

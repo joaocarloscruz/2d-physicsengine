@@ -7,8 +7,8 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
     manifold.A = a;
     manifold.B = b;
 
-    Circle* circleA = static_cast<Circle*>(a->shape);
-    Circle* circleB = static_cast<Circle*>(b->shape);
+    const Circle* circleA = static_cast<const Circle*>(a->shape.get());
+    const Circle* circleB = static_cast<const Circle*>(b->shape.get());
     
     Vector2 normal = b->position - a->position;
     float distSq = normal.magnitudeSquared();
