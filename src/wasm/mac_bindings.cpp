@@ -14,6 +14,11 @@ struct MacOptions {
     double density, timeStep, absoluteDivergenceTolerance, relativeDivergenceTolerance;
     double maximumIterations, maximumCellVisits;
 };
+struct MacDiffusionOptions {
+    double kinematicViscosity, timeStep, density;
+    double absoluteVelocityTolerance, relativeVelocityTolerance;
+    double maximumIterations, maximumCellVisits;
+};
 struct MacVelocities {
     emscripten::val xFaces, yFaces;
 };
@@ -31,6 +36,11 @@ MacProjectionConfig Native(MacOptions c) {
             c.relativeDivergenceTolerance,
             Count(c.maximumIterations),
             Count(c.maximumCellVisits)};
+}
+MacDiffusionConfig Native(MacDiffusionOptions c) {
+    return {c.kinematicViscosity, c.timeStep, c.density,
+            c.absoluteVelocityTolerance, c.relativeVelocityTolerance,
+            Count(c.maximumIterations), Count(c.maximumCellVisits)};
 }
 PeriodicMacGrid *CreateDefault() {
     return new PeriodicMacGrid();
@@ -102,6 +112,40 @@ EMSCRIPTEN_BINDINGS(periodic_mac_grid) {
     value_object<MacVelocities>("MacVelocityState")
         .field("xFaces", &MacVelocities::xFaces)
         .field("yFaces", &MacVelocities::yFaces);
+    value_object<MacDiffusionOptions>("MacDiffusionConfig")
+        .field("kinematicViscosity", &MacDiffusionOptions::kinematicViscosity)
+        .field("timeStep", &MacDiffusionOptions::timeStep)
+        .field("density", &MacDiffusionOptions::density)
+        .field("absoluteVelocityTolerance", &MacDiffusionOptions::absoluteVelocityTolerance)
+        .field("relativeVelocityTolerance", &MacDiffusionOptions::relativeVelocityTolerance)
+        .field("maximumIterations", &MacDiffusionOptions::maximumIterations)
+        .field("maximumCellVisits", &MacDiffusionOptions::maximumCellVisits);
+    value_object<MacDiffusionDiagnostics>("MacDiffusionDiagnostics")
+        .field("iterations", &MacDiffusionDiagnostics::iterations)
+        .field("iterationsX", &MacDiffusionDiagnostics::iterationsX)
+        .field("iterationsY", &MacDiffusionDiagnostics::iterationsY)
+        .field("cellVisits", &MacDiffusionDiagnostics::cellVisits)
+        .field("kinematicViscosity", &MacDiffusionDiagnostics::kinematicViscosity)
+        .field("timeStep", &MacDiffusionDiagnostics::timeStep)
+        .field("density", &MacDiffusionDiagnostics::density)
+        .field("initialVelocityRms", &MacDiffusionDiagnostics::initialVelocityRms)
+        .field("finalResidualRms", &MacDiffusionDiagnostics::finalResidualRms)
+        .field("targetResidualRms", &MacDiffusionDiagnostics::targetResidualRms)
+        .field("initialMeanX", &MacDiffusionDiagnostics::initialMeanX)
+        .field("initialMeanY", &MacDiffusionDiagnostics::initialMeanY)
+        .field("finalMeanX", &MacDiffusionDiagnostics::finalMeanX)
+        .field("finalMeanY", &MacDiffusionDiagnostics::finalMeanY)
+        .field("meanRoundoffAllowanceX", &MacDiffusionDiagnostics::meanRoundoffAllowanceX)
+        .field("meanRoundoffAllowanceY", &MacDiffusionDiagnostics::meanRoundoffAllowanceY)
+        .field("initialKineticEnergy", &MacDiffusionDiagnostics::initialKineticEnergy)
+        .field("finalKineticEnergy", &MacDiffusionDiagnostics::finalKineticEnergy)
+        .field("gradientDissipation", &MacDiffusionDiagnostics::gradientDissipation)
+        .field("incrementKineticEnergy", &MacDiffusionDiagnostics::incrementKineticEnergy)
+        .field("residualWork", &MacDiffusionDiagnostics::residualWork)
+        .field("residualEnergyBound", &MacDiffusionDiagnostics::residualEnergyBound)
+        .field("storageEnergyError", &MacDiffusionDiagnostics::storageEnergyError)
+        .field("roundoffEnergyAllowance", &MacDiffusionDiagnostics::roundoffEnergyAllowance)
+        .field("zeroTransportNoOp", &MacDiffusionDiagnostics::zeroTransportNoOp);
     value_object<MacProjectionDiagnostics>("MacProjectionDiagnostics")
         .field("iterations", &MacProjectionDiagnostics::iterations)
         .field("cellVisits", &MacProjectionDiagnostics::cellVisits)
@@ -138,6 +182,7 @@ EMSCRIPTEN_BINDINGS(periodic_mac_grid) {
         .function("getConfig", &Config)
         .function("getVelocities", &Velocities)
         .function("getLastProjection", &Projection)
+        .function("getLastDiffusion", &PeriodicMacGrid::lastDiffusion)
         .function("getDivergence", optional_override([](const PeriodicMacGrid &grid) {
                       return Copy(grid.divergence());
                   }))
@@ -146,5 +191,10 @@ EMSCRIPTEN_BINDINGS(periodic_mac_grid) {
                   optional_override([](PeriodicMacGrid &grid) { return grid.project(); }))
         .function("project", optional_override([](PeriodicMacGrid &grid, MacOptions c) {
                       return grid.project(Native(c));
+                  }))
+        .function("diffuse",
+                  optional_override([](PeriodicMacGrid &grid) { return grid.diffuse(); }))
+        .function("diffuse", optional_override([](PeriodicMacGrid &grid, MacDiffusionOptions c) {
+                      return grid.diffuse(Native(c));
                   }));
 }

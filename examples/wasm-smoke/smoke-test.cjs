@@ -600,11 +600,139 @@ function testMacProjection(physics) {
     assert.equal(largest.getConfig().columns*largest.getConfig().rows, 262144); largest.delete();
 }
 
+function testMacDiffusion(physics) {
+    const near = (actual, expected, tolerance=3e-14) => assert.ok(Math.abs(actual-expected)<=tolerance,
+        `MAC diffusion: ${actual} != ${expected} within ${tolerance}`);
+    const options = {kinematicViscosity:0.17, timeStep:0.3, density:3,
+        absoluteVelocityTolerance:1e-12, relativeVelocityTolerance:0, maximumIterations:1000, maximumCellVisits:100000000};
+    const fields = ["iterations", "iterationsX", "iterationsY", "cellVisits", "kinematicViscosity", "timeStep", "density",
+        "initialVelocityRms", "finalResidualRms", "targetResidualRms", "initialMeanX", "initialMeanY", "finalMeanX", "finalMeanY",
+        "meanRoundoffAllowanceX", "meanRoundoffAllowanceY", "initialKineticEnergy", "finalKineticEnergy", "gradientDissipation",
+        "incrementKineticEnergy", "residualWork", "residualEnergyBound", "storageEnergyError", "roundoffEnergyAllowance", "zeroTransportNoOp"];
+    const mode = (c,mx,my,u,v) => {
+        const xFaces=[], yFaces=[];
+        for(let j=0;j<c.rows;++j) for(let i=0;i<c.columns;++i) {
+            xFaces.push(u*Math.sin(2*Math.PI*(mx*i/c.columns+my*(j+0.5)/c.rows)+0.31));
+            yFaces.push(v*Math.sin(2*Math.PI*(mx*(i+0.5)/c.columns+my*j/c.rows)+0.31));
+        }
+        return {xFaces,yFaces};
+    };
+    const lambda = (c,mx,my) => 4*(Math.sin(Math.PI*mx/c.columns)/c.spacingX)**2+4*(Math.sin(Math.PI*my/c.rows)/c.spacingY)**2;
+    const auditDiagnostics = d => {
+        assert.deepEqual(Object.keys(d).sort(), fields.slice().sort());
+        assert.equal(Object.getPrototypeOf(d),Object.prototype);
+        assert.equal(typeof d.delete,"undefined");
+        for(const field of fields) {
+            if(field==="zeroTransportNoOp") assert.equal(typeof d[field],"boolean");
+            else assert.ok(Number.isFinite(d[field]),`${field} must be finite`);
+        }
+        assert.equal(d.iterations,d.iterationsX+d.iterationsY);
+        assert.ok(d.finalResidualRms<=d.targetResidualRms);
+    };
+    // Independent discrete Fourier eigenvalue: each two-cell axis contributes
+    // 4/spacing^2 for the alternating mode, rather than counting its neighbor once.
+    for(const [columns,rows] of [[13,11],[2,5],[5,2],[2,2]]) {
+        const c={columns,rows,spacingX:0.23,spacingY:0.41}, grid=new physics.PeriodicMacGrid(c);
+        const initial=mode(c,1,1,0.7,-0.4); grid.setVelocities(initial.xFaces,initial.yFaces);
+        const d=grid.diffuse(options), actual=grid.getVelocities(); auditDiagnostics(d);
+        assert.deepEqual(d,grid.getLastDiffusion()); assert.ok(d.iterations<=4);
+        const amplification=1/(1+options.kinematicViscosity*options.timeStep*lambda(c,1,1));
+        for(let k=0;k<columns*rows;++k) {
+            near(actual.xFaces[k],initial.xFaces[k]*amplification);
+            near(actual.yFaces[k],initial.yFaces[k]*amplification);
+        }
+        assert.ok(d.gradientDissipation>0); assert.ok(d.finalKineticEnergy<d.initialKineticEnergy);
+        grid.delete();
+    }
+    const c={columns:17,rows:12,spacingX:0.17,spacingY:0.31}, n=c.columns*c.rows;
+    const grid=new physics.PeriodicMacGrid(c), a=mode(c,1,2,0.7,-0.4), b=mode(c,3,1,-0.2,0.5);
+    const initial={xFaces:a.xFaces.map((v,k)=>v+b.xFaces[k]+0.17),yFaces:a.yFaces.map((v,k)=>v+b.yFaces[k]-0.23)};
+    const mixedOptions={...options,kinematicViscosity:0.2,timeStep:0.031,density:7};
+    grid.setVelocities(initial.xFaces,initial.yFaces);
+    const d=grid.diffuse(mixedOptions), actual=grid.getVelocities(); auditDiagnostics(d);
+    const fa=1/(1+0.2*0.031*lambda(c,1,2)), fb=1/(1+0.2*0.031*lambda(c,3,1));
+    for(let k=0;k<n;++k) {
+        near(actual.xFaces[k],fa*a.xFaces[k]+fb*b.xFaces[k]+0.17,1e-13);
+        near(actual.yFaces[k],fa*a.yFaces[k]+fb*b.yFaces[k]-0.23,1e-13);
+    }
+    let oldSquare=0,newSquare=0,incrementSquare=0,gradientSquare=0,residualSquare=0,residualPairing=0;
+    for(const component of ["xFaces","yFaces"]) for(let j=0;j<c.rows;++j) for(let i=0;i<c.columns;++i) {
+        const k=i+c.columns*j, next=actual[component], old=initial[component];
+        const dx=(next[k]-next[(i+1)%c.columns+c.columns*j])/c.spacingX;
+        const dy=(next[k]-next[i+c.columns*((j+1)%c.rows)])/c.spacingY;
+        const equation=(next[k]-old[k])+0.2*0.031*((next[k]-next[(i+1)%c.columns+c.columns*j]
+            +next[k]-next[(i+c.columns-1)%c.columns+c.columns*j])/(c.spacingX*c.spacingX)
+            +(next[k]-next[i+c.columns*((j+1)%c.rows)]+next[k]-next[i+c.columns*((j+c.rows-1)%c.rows)])/(c.spacingY*c.spacingY));
+        oldSquare+=old[k]*old[k]; newSquare+=next[k]*next[k]; incrementSquare+=(next[k]-old[k])**2;
+        gradientSquare+=dx*dx+dy*dy; residualSquare+=equation*equation; residualPairing+=next[k]*equation;
+    }
+    const mass=mixedOptions.density*c.spacingX*c.spacingY;
+    near(d.initialKineticEnergy,0.5*mass*oldSquare,2e-13); near(d.finalKineticEnergy,0.5*mass*newSquare,2e-13);
+    near(d.incrementKineticEnergy,0.5*mass*incrementSquare,1e-13);
+    near(d.gradientDissipation,mass*0.2*0.031*gradientSquare,2e-13);
+    near(d.finalResidualRms,Math.sqrt(residualSquare/n),2e-16); near(d.residualWork,mass*residualPairing,2e-13);
+    near(d.finalMeanX,0.17); near(d.finalMeanY,-0.23);
+    assert.ok(Math.abs(d.finalMeanX-d.initialMeanX)<=d.meanRoundoffAllowanceX);
+    assert.ok(Math.abs(d.finalMeanY-d.initialMeanY)<=d.meanRoundoffAllowanceY);
+    assert.ok(Math.abs(d.storageEnergyError)<=d.roundoffEnergyAllowance);
+    assert.ok(Math.abs(d.residualWork)<=d.residualEnergyBound+d.roundoffEnergyAllowance);
+    assert.ok(d.finalKineticEnergy<=d.initialKineticEnergy+d.residualEnergyBound+d.roundoffEnergyAllowance);
+
+    const retained=grid.getLastDiffusion(), retainedCopy={...retained};
+    d.finalKineticEnergy=99; assert.deepEqual(grid.getLastDiffusion(),retainedCopy);
+    grid.project(); assert.deepEqual(grid.getLastDiffusion(),retainedCopy);
+    const projection=grid.getLastProjection(); grid.setVelocities(initial.xFaces,initial.yFaces);
+    assert.deepEqual(grid.getLastDiffusion(),retainedCopy);
+    const sufficient=grid.diffuse(mixedOptions); grid.setVelocities(initial.xFaces,initial.yFaces);
+    assert.deepEqual(grid.diffuse({...mixedOptions,maximumCellVisits:sufficient.cellVisits}),sufficient);
+    assert.deepEqual(grid.getLastProjection(),projection);
+    grid.setVelocities(initial.xFaces,initial.yFaces);
+    const beforeV=grid.getVelocities(),beforeD=grid.getLastDiffusion();
+    const unchanged=()=>{assert.deepEqual(grid.getVelocities(),beforeV);assert.deepEqual(grid.getLastDiffusion(),beforeD);assert.deepEqual(grid.getLastProjection(),projection);};
+    for(const fail of [{...mixedOptions,maximumIterations:0},{...mixedOptions,maximumIterations:1},
+        {...mixedOptions,maximumCellVisits:0},{...mixedOptions,maximumCellVisits:sufficient.cellVisits-1},
+        {...mixedOptions,kinematicViscosity:1e308,timeStep:1e308},{...mixedOptions,density:1e308}]) {
+        assert.throws(()=>grid.diffuse(fail)); unchanged();
+    }
+    for(const field of ["maximumIterations","maximumCellVisits"]) for(const bad of [-1,0.5,NaN,Infinity,-Infinity,2**32,2**32+1,Number.MAX_SAFE_INTEGER,
+        field==="maximumIterations"?1000001:1000000001]) {
+        assert.throws(()=>grid.diffuse({...mixedOptions,[field]:bad})); unchanged();
+    }
+    for(const field of ["kinematicViscosity","timeStep","density","absoluteVelocityTolerance","relativeVelocityTolerance"])
+        for(const bad of [-1,NaN,Infinity,-Infinity]) { assert.throws(()=>grid.diffuse({...mixedOptions,[field]:bad})); unchanged(); }
+    assert.throws(()=>grid.diffuse({...mixedOptions,density:0})); unchanged();
+    for(const field of Object.keys(options)) { const incomplete={...options};delete incomplete[field];assert.throws(()=>grid.diffuse(incomplete));unchanged(); }
+
+    const defaults=grid.diffuse(); auditDiagnostics(defaults);
+    assert.equal(defaults.zeroTransportNoOp,true); assert.equal(defaults.kinematicViscosity,0); assert.equal(defaults.timeStep,0); assert.equal(defaults.density,1);
+    assert.equal(defaults.targetResidualRms,1e-10); assert.equal(defaults.finalResidualRms,0); assert.equal(defaults.iterations,0);
+    assert.equal(defaults.gradientDissipation,0); assert.equal(defaults.incrementKineticEnergy,0); assert.deepEqual(grid.getVelocities(),beforeV);
+    for(const zero of [{kinematicViscosity:0,timeStep:1},{kinematicViscosity:1,timeStep:0}]) {
+        const noop=grid.diffuse({...options,...zero,maximumIterations:0}); assert.equal(noop.zeroTransportNoOp,true);
+        assert.deepEqual(grid.getVelocities(),beforeV); assert.equal(noop.initialKineticEnergy,noop.finalKineticEnergy);
+    }
+    const constant={xFaces:Array(n).fill(0.7),yFaces:Array(n).fill(-0.2)};grid.setVelocities(constant.xFaces,constant.yFaces);
+    const constantD=grid.diffuse({...options,maximumIterations:0,maximumCellVisits:1000000000});
+    assert.equal(constantD.iterations,0);assert.equal(constantD.zeroTransportNoOp,false);assert.equal(constantD.gradientDissipation,0);
+    assert.deepEqual(grid.getVelocities(),constant);
+    const saved=grid.getLastDiffusion(), savedCopy={...saved};grid.diffuse();assert.deepEqual(saved,savedCopy);
+    saved.cellVisits=99;assert.notEqual(grid.getLastDiffusion().cellVisits,99);
+    grid.delete();assert.deepEqual(retained,retainedCopy);assert.equal(saved.finalMeanX,constantD.finalMeanX);
+
+    // One total iteration cannot pay for two independent single-mode solves.
+    const shared=new physics.PeriodicMacGrid(c), single=mode(c,1,1,0.7,-0.4);
+    shared.setVelocities(single.xFaces,single.yFaces);const sharedBefore=shared.getLastDiffusion();
+    assert.throws(()=>shared.diffuse({...options,maximumIterations:1}));
+    assert.deepEqual(shared.getVelocities(),single);assert.deepEqual(shared.getLastDiffusion(),sharedBefore);shared.delete();
+    const zeroGrid=new physics.PeriodicMacGrid();const zeroD=zeroGrid.diffuse();assert.equal(zeroD.roundoffEnergyAllowance,0);assert.equal(zeroD.initialKineticEnergy,0);zeroGrid.delete();
+}
+
 async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
     testWaves(physics);
     testMacProjection(physics);
+    testMacDiffusion(physics);
     testMaxwell(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
@@ -982,7 +1110,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic MAC projection, and periodic TMz Maxwell fields");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic MAC projection/diffusion, and periodic TMz Maxwell fields");
 }
 
 main().catch((error) => {

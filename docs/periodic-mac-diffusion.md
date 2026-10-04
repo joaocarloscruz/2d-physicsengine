@@ -2,7 +2,9 @@
 
 `PeriodicMacGrid::diffuse` integrates independent periodic face velocities with
 constant nonnegative kinematic viscosity. It is a native operation, separate
-from [velocity projection](periodic-mac-projection.md). This is not a complete
+from [velocity projection](periodic-mac-projection.md). [JavaScript diffusion
+bindings](webassembly.md#owned-periodic-mac-diffusion) provide the same solve and
+copied diagnostics. This is not a complete
 Navier–Stokes solver: advection, applied forces, walls, free surfaces, variable
 viscosity and World/SPH coupling remain separate work. No explicit substeps or
 automatic projection are hidden in the call.

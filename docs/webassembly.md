@@ -3,19 +3,24 @@
 The WebAssembly target exposes the engine's basic simulation API to JavaScript
 through Emscripten's Embind library.
 
+Native validation failures become owned JavaScript `Error` objects. The module
+uses the pinned Emscripten 6.0.3 SDK and an [exception-safe binding boundary](wasm-exception-boundary.md)
+that also snapshots bounded grid array inputs before native allocation.
+
 Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
 `rayCastNearest`, `sweepCircleAll` and `sweepCircleNearest`. They accept an Engine
 and return owned collections with exact BigInt body IDs, retained body handles
 and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
 
-## Owned periodic MAC projection grids
+## Owned periodic MAC grids
 
-`PeriodicMacGrid` owns a standalone periodic velocity projection grid.
+`PeriodicMacGrid` owns a standalone periodic velocity grid with separate
+projection and constant-viscosity diffusion operations.
 `new physics.PeriodicMacGrid()` uses 16 columns, 16 rows and unit spacings.
 The configured constructor accepts a complete plain object with `columns`,
 `rows`, `spacingX` and `spacingY`. Geometry is fixed after construction.
-This module projects velocities; it does not implement advection, viscosity,
-walls, free surfaces, time integration or Engine/World/SPH coupling. See the
+It does not implement advection, walls, free surfaces, applied forces, a complete
+Navier–Stokes step or Engine/World/SPH coupling. See the
 [native operators, physical units and accuracy limits](periodic-mac-projection.md).
 
 ```javascript
@@ -50,7 +55,7 @@ Each array uses index `i + columns*j` and has `columns*rows` entries.
 periodic faces are stored once, without a duplicate last row or column.
 
 `getConfig()`, `getVelocities()`, `getDivergence()` and
-`getLastProjection()` return plain copied objects/arrays, including the nested
+`getLastProjection()` and `getLastDiffusion()` return plain copied objects/arrays, including the nested
 `diagnostics` object. Changing inputs after `setVelocities`, mutating a snapshot,
 or deleting the grid cannot change other snapshots. No borrowed WASM memory,
 typed views or vector wrappers are returned; snapshots require no deletion.
@@ -98,6 +103,75 @@ Finite tolerance allows the measured residual energy term; success alone does
 not imply exact orthogonality or strict energy decrease. The roundoff allowance
 is a scale-aware heuristic guard, with no absolute energy floor. Consult the
 native derivation before interpreting these diagnostic pairings as physical work.
+
+## Owned periodic MAC diffusion
+
+`diffuse()` and `diffuse(options)` call the bounded native backward-Euler
+constant-viscosity solve on both periodic face components. Projection remains a
+separate operation: diffusion damps divergence modes but does not eliminate
+divergence or automatically project the result. See the [discrete equation,
+energy identity, means and numerical limits](periodic-mac-diffusion.md).
+
+```javascript
+const grid = new physics.PeriodicMacGrid({
+    columns: 2, rows: 2, spacingX: 0.25, spacingY: 0.5
+});
+let copiedDiffusion;
+try {
+    grid.setVelocities([1, -1, 1, -1], [0.5, 0.5, 0.5, 0.5]);
+    const diagnostics = grid.diffuse({
+        kinematicViscosity: 0.25, timeStep: 0.5, density: 1,
+        absoluteVelocityTolerance: 1e-10, relativeVelocityTolerance: 1e-10,
+        maximumIterations: 1000, maximumCellVisits: 100000000
+    });
+    copiedDiffusion = grid.getLastDiffusion();
+    console.log(grid.getVelocities(), diagnostics);
+} finally {
+    grid.delete();
+}
+console.log(copiedDiffusion.finalKineticEnergy); // Plain value, no delete().
+```
+
+The configured overload requires **all seven fields** shown above. Counts are
+received as JS doubles, validated as finite nonnegative integers before native
+conversion, and checked against the same hard ceilings: 1000000 total iterations
+and 1000000000 cell visits. Fractions and wrapping counts are rejected. The
+iteration cap is shared across both components. Geometry/allocation limits remain
+those of the owned grid. Zero budgets are accepted inputs but fail if more work
+is needed; diagnostic passes also count as work.
+
+Default `diffuse()` uses viscosity 0, dt 0, density 1, absolute/relative velocity
+tolerances `1e-10`, 1000 total iterations and 100000000 cell visits. Exact zero
+viscosity **or** zero dt leaves both velocities unchanged and publishes coherent
+no-op diagnostics with zero residual and iterations. Constant fields are exact
+fixed points even with positive transport. Density, options and derived arithmetic
+still require validation; no simulation clock advances.
+
+The fixed RMS velocity residual target is
+`max(absoluteVelocityTolerance, relativeVelocityTolerance*initialVelocityRms)`.
+The actual stored equation is audited after both component solves. Means and
+energy must meet the native scale-aware checks without an absolute energy floor.
+Loose tolerances permit the measured residual-work allowance; success alone is
+not a claim of exact energy nonincrease or a complete fluid step.
+
+Both `diffuse`'s return value and `getLastDiffusion()` are independent plain
+copied objects exposing every native diagnostic field. They need no deletion,
+remain valid after later operations and grid deletion, and cannot mutate the
+grid. `setVelocities` and `project` leave the last successful diffusion snapshot
+intact. `diffuse` leaves the last successful projection snapshot intact. Invalid
+configuration, shared-iteration/cell-work exhaustion, unrepresentable arithmetic
+and unattainable stored accuracy retain both velocities and both prior snapshots.
+
+| Diffusion fields | Units / meaning |
+| --- | --- |
+| `iterations`, `iterationsX`, `iterationsY`, `cellVisits` | Shared total, separate component iterations, charged cell visits |
+| `kinematicViscosity`, `timeStep`, `density` | Accepted length²/time, diffusion interval, and energy density |
+| `initialVelocityRms`, `finalResidualRms`, `targetResidualRms` | Velocity units; both components use N cells in the combined RMS |
+| `initialMeanX`, `initialMeanY`, `finalMeanX`, `finalMeanY` | Mean face velocities |
+| `meanRoundoffAllowanceX`, `meanRoundoffAllowanceY` | Velocity units; explicit separate mean-drift bounds |
+| `initialKineticEnergy`, `finalKineticEnergy`, `incrementKineticEnergy`, `gradientDissipation` | Energy; J per meter of depth for kg/m³ density, J for kg/m² density |
+| `residualWork`, `residualEnergyBound`, `storageEnergyError`, `roundoffEnergyAllowance` | Same energy units; signed residual pairing, its bound, identity discrepancy and arithmetic allowance |
+| `zeroTransportNoOp` | True only for exact zero viscosity or zero dt |
 
 ## Owned scalar-wave grids
 
