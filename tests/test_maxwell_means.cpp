@@ -39,6 +39,31 @@ void SameDiagnostics(const MaxwellGridDiagnostics &a, const MaxwellGridDiagnosti
     REQUIRE(a.lastCellVisits == b.lastCellVisits);
 }
 } // namespace
+TEST_CASE("Maxwell non-power-of-two constant means retain their represented value",
+          "[maxwell][means]") {
+    const double x = GENERATE(.1, .7, -1.2345678901234567);
+    MaxwellGridConfig c;
+    c.columns = 3;
+    c.rows = 2;
+    MaxwellGrid g(c);
+    auto s = g.getState();
+    s.ez.assign(6, x);
+    s.hx.assign(6, -x);
+    s.hy.assign(6, x);
+    g.setState(s);
+    auto check = [&]() {
+        const auto fields = g.getState();
+        const auto d = g.getDiagnostics();
+        REQUIRE(d.meanEz == fields.ez.front());
+        REQUIRE(d.meanHx == fields.hx.front());
+        REQUIRE(d.meanHy == fields.hy.front());
+    };
+    check();
+    g.step(.01);
+    check();
+    g.stepOhmic(.01, .7);
+    check();
+}
 TEST_CASE("Maxwell subnormal constant means survive independently weighted aggregate energy",
           "[maxwell][means][range]") {
     const double magnitude = GENERATE(6e-319, 7e-319);

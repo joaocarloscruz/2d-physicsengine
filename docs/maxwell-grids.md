@@ -194,7 +194,9 @@ fused diagnostic sweep. Power-of-two scaling retains supported represented
 samples exactly during normalization; Neumaier compensation preserves ordinary
 signed cancellation. Final division by the cell count stages the normalized
 mantissa and combined exponent, so it does not divide each raw field sample by
-N. Constants retain their stored value even in the subnormal range. Means
+N. Constant-sample detection returns the stored value directly, avoiding a second
+rounding through `N*x` for non-power-of-two counts; canonical zero remains +0.
+Constants retain their stored value even in the subnormal range. Means
 observe the actual represented fields after either stepping path; they do not
 correct the fields to enforce an ideal continuum mean after storage roundoff.
 

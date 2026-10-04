@@ -23,6 +23,15 @@ function coherent(g) {
 }
 function smoke(p) {
     const def=new p.MaxwellGrid(),base=def.getConfig();def.delete();
+    for(const x of [.1,.7,-1.2345678901234567]) {
+        const g=new p.MaxwellGrid({...base,columns:3,rows:2});
+        g.setState({ez:Array(6).fill(x),hx:Array(6).fill(-x),hy:Array(6).fill(x)});
+        function check() {
+            const s=g.getState(),d=g.getDiagnostics();
+            assert.equal(d.meanEz,s.ez[0]);assert.equal(d.meanHx,s.hx[0]);assert.equal(d.meanHy,s.hy[0]);
+        }
+        check();g.step(.01);check();g.stepOhmic(.01,.7);check();g.delete();
+    }
     const c={...base,columns:512,rows:512,permittivity:1e308,permeability:1e308},n=512*512;
     for(const magnitude of [6e-319,7e-319])for(const sign of [-1,1]) {
         const g=new p.MaxwellGrid(c),x=sign*magnitude,s={ez:Array(n).fill(x),hx:Array(n).fill(-x),hy:Array(n).fill(x)};

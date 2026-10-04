@@ -22,6 +22,8 @@ double Positive(double value) {
 class ScaledMean {
     int exponent_ = 0;
     bool nonzero_ = false;
+    bool initialized_ = false, constant_ = true;
+    double first_ = 0;
     double sum_ = 0, correction_ = 0;
     static double Rescale(double x, int exponent) {
         const double result = Checked(std::scalbn(x, exponent));
@@ -32,6 +34,12 @@ class ScaledMean {
 
   public:
     void add(double x) {
+        if (!initialized_) {
+            initialized_ = true;
+            first_ = x;
+        } else if (x != first_) {
+            constant_ = false;
+        }
         if (x == 0)
             return;
         const int exponent = std::ilogb(std::abs(x));
@@ -50,6 +58,10 @@ class ScaledMean {
         sum_ = next;
     }
     double value(std::size_t count) const {
+        // N*x rounded and divided by N need not round back to x for arbitrary
+        // N. A constant observed sample has exactly that stored-value mean.
+        if (constant_)
+            return first_ == 0 ? 0 : first_;
         if (!nonzero_)
             return 0;
         const double normalized = Checked(sum_ + correction_);
