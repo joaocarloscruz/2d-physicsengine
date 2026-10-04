@@ -4,6 +4,24 @@ const createModule = require('./physics_engine.js');
 (async () => {
     const physics = await createModule();
     assert.equal(typeof physics.boundaryTestStats, 'function', 'configure PHYSICS_WASM_BOUNDARY_TEST_PROBES=ON');
+    const handles = physics.count_emval_handles;
+    assert.equal(typeof handles, 'function', 'probe builds must export the live emval counter');
+    const initialHandles = handles();
+    assert.ok(Number.isSafeInteger(initialHandles) && initialHandles >= 0);
+    // Check the observer itself with a live native-owned JavaScript value.
+    // This table is separate from the native allocator and JavaScript GC.
+    const retained = new physics.BoundaryTestProbe({number: 1});
+    retained.retainValue({owned: true});
+    assert.equal(handles(), initialHandles + 1);
+    retained.retainValue(null);
+    assert.equal(handles(), initialHandles);
+    retained.retainValue([]);
+    assert.equal(handles(), initialHandles + 1);
+    retained.delete();
+    assert.equal(handles(), initialHandles);
+    // Include JS references in every existing component/lifetime snapshot.
+    const nativeStats = physics.boundaryTestStats;
+    physics.boundaryTestStats = () => ({...nativeStats(), emvalHandles: handles()});
     const stack = () => physics._emscripten_stack_get_current();
     const probe = new physics.BoundaryTestProbe({number: 1});
     const ordinary = new Error('original JavaScript getter failure');
@@ -23,6 +41,8 @@ const createModule = require('./physics_engine.js');
         () => physics.BoundaryTestProbe.copy(badGetter),
         () => { physics.BoundaryTestProbe.staticValue = badGetter; },
         () => physics.BoundaryTestProbe.copy(failedNested),
+        () => probe.withValue({owned: true}, {number: 0}),
+        () => physics.BoundaryTestProbe.withValueObject({value: [], later: {number: 0}}),
     ];
     function batch() {
         for (const fail of failures) {
@@ -38,6 +58,11 @@ const createModule = require('./physics_engine.js');
         result.number = 100;
         physics.BoundaryTestProbe.staticValue = {number: 3};
         assert.deepEqual(physics.BoundaryTestProbe.staticValue, {number: 3});
+        assert.throws(() => probe.withValue({}, badGetter), error => error === ordinary);
+        assert.throws(() => physics.BoundaryTestProbe.withValueObject({value: [], later: badGetter}),
+            error => error === ordinary);
+        // A nested call has its own pending ownership transfers.
+        assert.throws(() => probe.withValue({}, nested), /probe val native failure/);
     }
     // Warm the allocator and conversion/error paths, then compare live allocated
     // bytes (not memory capacity or a timing-dependent high-water mark).
@@ -89,6 +114,12 @@ const createModule = require('./physics_engine.js');
         Object.defineProperty(values, 3, {get: () => { receiver.delete(); return 0; }});
         assert.throws(() => receiver.setVelocities(values, Array(4).fill(0)), error => error instanceof Error);
         assert.equal(receiver.isDeleted(), true);
+        const dead = new physics.BoundaryTestProbe({number: 1});
+        dead.delete();
+        assert.throws(() => { dead.retainedValue = {}; }, /deleted/i);
+        assert.throws(() => dead.retainValue([]), /deleted/i);
+        const dying = new physics.BoundaryTestProbe({number: 1});
+        assert.throws(() => dying.withValue({}, {get number() { dying.delete(); return 0; }}), /deleted/i);
     }
     for (let i = 0; i < 20; ++i) deletingBatch();
     const deleteBefore = physics.boundaryTestStats(), deleteStack = stack();
@@ -256,5 +287,6 @@ const createModule = require('./physics_engine.js');
     probe.delete();
     assert.equal(physics.boundaryTestStats().objects, 0);
     assert.equal(physics.boundaryTestStats().values, 1); // test static field only
-    console.log(`PASS: WASM boundary stress; 2000 batches, stable stack=${initialStack}, live heap=${final.heap}, uncaught=0`);
+    assert.equal(handles(), initialHandles);
+    console.log(`PASS: WASM boundary stress; 2000 batches, stable stack=${initialStack}, live heap=${final.heap}, emval handles=${initialHandles}, uncaught=0`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

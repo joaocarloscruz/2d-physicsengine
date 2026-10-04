@@ -17,7 +17,12 @@ struct Value {
     Value(const Value &other) : number(other.number) { ++liveValues; }
     ~Value() { --liveValues; }
 };
+struct JavascriptValue {
+    emscripten::val value = emscripten::val::undefined();
+    Value later;
+};
 struct Probe {
+    emscripten::val retainedValue = emscripten::val::undefined();
     explicit Probe(const Value &value) {
         if (value.number < 0)
             throw std::invalid_argument("probe constructor");
@@ -35,6 +40,13 @@ struct Probe {
     int scalarInteger(int value) const { return value; }
     std::int64_t scalarInt64(std::int64_t value) const { return value; }
     std::uint64_t scalarUint64(std::uint64_t value) const { return value; }
+    void retainValue(const emscripten::val &value) { retainedValue = value; }
+    void withValue(const emscripten::val &, const Value &) const {
+        throw std::runtime_error("probe val native failure");
+    }
+    static void withValueObject(const JavascriptValue &) {
+        throw std::runtime_error("probe val object native failure");
+    }
     static Value staticValue;
 };
 Value Probe::staticValue;
@@ -55,6 +67,9 @@ Stats stats() {
 EMSCRIPTEN_BINDINGS(physics_boundary_test_probes) {
     using namespace emscripten;
     value_object<Value>("BoundaryTestValue").field("number", &Value::number);
+    value_object<JavascriptValue>("BoundaryTestJavascriptValue")
+        .field("value", &JavascriptValue::value)
+        .field("later", &JavascriptValue::later);
     value_object<Stats>("BoundaryTestStats")
         .field("heap", &Stats::heap)
         .field("uncaught", &Stats::uncaught)
@@ -64,6 +79,7 @@ EMSCRIPTEN_BINDINGS(physics_boundary_test_probes) {
         .constructor<const Value &>()
         .constructor<const Probe &, const Value &>()
         .property("value", &Probe::get, &Probe::set)
+        .property("retainedValue", &Probe::retainedValue)
         .class_property("staticValue", &Probe::staticValue)
         .function("method", select_overload<void(const Value &) const>(&Probe::method))
         .function("method", select_overload<double() const>(&Probe::method))
@@ -71,6 +87,9 @@ EMSCRIPTEN_BINDINGS(physics_boundary_test_probes) {
         .function("scalarInteger", &Probe::scalarInteger)
         .function("scalarInt64", &Probe::scalarInt64)
         .function("scalarUint64", &Probe::scalarUint64)
+        .function("retainValue", &Probe::retainValue)
+        .function("withValue", &Probe::withValue)
+        .class_function("withValueObject", &Probe::withValueObject)
         .class_function("function", &Probe::function)
         .class_function("copy", &Probe::copy);
     function("boundaryTestStats", &stats);

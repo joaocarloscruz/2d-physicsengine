@@ -137,6 +137,20 @@ addToLibrary({
     return value;
   },
 
+  // A direct val wire handle transfers ownership to BindingType<val> only
+  // when native code is entered. The SDK adds no destructor for this type.
+  // Track pending transfers separately from temporaries destroyed after calls.
+  $physicsConvertArgument__deps: ['$EmValType', '$physicsWireValue'],
+  $physicsConvertArgument: (type, destructors, pending, value) => {
+    const wire = type.toWireType(destructors, value);
+    if (type.toWireType === EmValType.toWireType) pending.push(wire);
+    return physicsWireValue(wire);
+  },
+  $physicsReleasePendingValues__deps: ['_emval_decref'],
+  $physicsReleasePendingValues: pending => {
+    while (pending.length) __emval_decref(pending.pop());
+  },
+
   $physicsClassHandleMethods__deps: ['$ClassHandle'],
   $physicsClassHandleMethods__postset: `
     physicsClassHandleMethods.clone = ClassHandle.prototype['clone'];
@@ -289,7 +303,7 @@ addToLibrary({
   },
 
   $craftInvokerFunction__deps: ['$physicsEmbindCall', '$runDestructors',
-    '$createNamedFunction', '$throwBindingError', '$getRequiredArgCount', '$physicsPrepareArguments', '$physicsSizingGetters', '$physicsWireValue'],
+    '$createNamedFunction', '$throwBindingError', '$getRequiredArgCount', '$physicsPrepareArguments', '$physicsSizingGetters', '$physicsWireValue', '$physicsConvertArgument', '$physicsReleasePendingValues'],
   $craftInvokerFunction: function(humanName, argTypes, classType, cppInvokerFunc, cppTargetFunc, isAsync) {
     if (isAsync) throwBindingError('PhysicsEngine does not support async bindings');
     const count = argTypes.length - 2;
@@ -302,7 +316,7 @@ addToLibrary({
         args = physicsPrepareArguments(humanName, this, args);
         // Per-call storage makes conversion reentrant. Every converter receives
         // a destructor stack, including those normally using the fast path.
-        const destructors = [];
+        const destructors = [], pending = [];
         try {
           const offset = method ? 2 : 1;
           const wired = new Array(count + offset);
@@ -313,15 +327,17 @@ addToLibrary({
           // both raw/reference and smart-pointer converters in the pinned SDK.
           for (let i = 0; i < count; ++i)
             if (!argTypes[i + 2].registeredClass)
-              wired[i + offset] = argTypes[i + 2].toWireType(destructors, args[i]);
+              wired[i + offset] = physicsConvertArgument(argTypes[i + 2], destructors, pending, args[i]);
           for (let i = 0; i < count; ++i)
             if (argTypes[i + 2].registeredClass)
-              wired[i + offset] = argTypes[i + 2].toWireType(destructors, args[i]);
-          if (method) wired[1] = argTypes[1].toWireType(destructors, this);
+              wired[i + offset] = physicsConvertArgument(argTypes[i + 2], destructors, pending, args[i]);
+          if (method) wired[1] = physicsConvertArgument(argTypes[1], destructors, pending, this);
           for (let i = 1; i < wired.length; ++i) physicsWireValue(wired[i]);
+          pending.length = 0; // Native parameter conversion now owns these vals.
           const result = cppInvokerFunc(...wired);
           return argTypes[0].isVoid ? undefined : argTypes[0].fromWireType(result);
         } finally {
+          physicsReleasePendingValues(pending);
           runDestructors(destructors);
         }
       });
@@ -336,7 +352,7 @@ addToLibrary({
   },
 
   _embind_finalize_value_object__deps: ['$structRegistrations', '$runDestructors',
-    '$readPointer', '$whenDependentTypesAreResolved', '$physicsWireValue'],
+    '$readPointer', '$whenDependentTypesAreResolved', '$physicsConvertArgument', '$physicsReleasePendingValues'],
   _embind_finalize_value_object: function(structType) {
     const reg = structRegistrations[structType];
     delete structRegistrations[structType];
@@ -349,9 +365,12 @@ addToLibrary({
         fields[field.fieldName] = {
           read: ptr => readType.fromWireType(field.getter(field.getterContext, ptr)),
           write: (ptr, value) => {
-            const destructors = [];
-            try { field.setter(field.setterContext, ptr, physicsWireValue(writeType.toWireType(destructors, value))); }
-            finally { runDestructors(destructors); }
+            const destructors = [], pending = [];
+            try {
+              const converted = physicsConvertArgument(writeType, destructors, pending, value);
+              pending.length = 0;
+              field.setter(field.setterContext, ptr, converted);
+            } finally { physicsReleasePendingValues(pending); runDestructors(destructors); }
           },
           optional: readType.optional,
         };
@@ -385,7 +404,7 @@ addToLibrary({
 
   _embind_register_class_property__deps: ['$AsciiToString', '$embind__requireFunction',
     '$runDestructors', '$throwBindingError', '$throwUnboundTypeError',
-    '$whenDependentTypesAreResolved', '$validateThis', '$physicsEmbindCall', '$physicsWireValue'],
+    '$whenDependentTypesAreResolved', '$validateThis', '$physicsEmbindCall', '$physicsConvertArgument', '$physicsReleasePendingValues'],
   _embind_register_class_property: function(classType, fieldName, getterReturnType,
       getterSignature, getter, getterContext, setterArgumentType, setterSignature, setter, setterContext) {
     fieldName = AsciiToString(fieldName);
@@ -406,12 +425,13 @@ addToLibrary({
         if (setter) {
           setter = embind__requireFunction(setterSignature, setter);
           descriptor.set = function(value) { return physicsEmbindCall(() => {
-            const destructors = [];
+            const destructors = [], pending = [];
             try {
-              const converted = physicsWireValue(fieldTypes[1].toWireType(destructors, value));
+              const converted = physicsConvertArgument(fieldTypes[1], destructors, pending, value);
               const ptr = validateThis(this, type, name + ' setter');
+              pending.length = 0;
               setter(setterContext, ptr, converted);
-            } finally { runDestructors(destructors); }
+            } finally { physicsReleasePendingValues(pending); runDestructors(destructors); }
           }); };
         } else descriptor.set = () => throwBindingError(name + ' is a read-only property');
         Object.defineProperty(type.registeredClass.instancePrototype, fieldName, descriptor);
@@ -423,7 +443,7 @@ addToLibrary({
 
   _embind_register_class_class_property__deps: ['$AsciiToString', '$embind__requireFunction',
     '$runDestructors', '$throwBindingError', '$throwUnboundTypeError',
-    '$whenDependentTypesAreResolved', '$physicsEmbindCall', '$physicsWireValue'],
+    '$whenDependentTypesAreResolved', '$physicsEmbindCall', '$physicsConvertArgument', '$physicsReleasePendingValues'],
   _embind_register_class_class_property: function(rawClassType, fieldName, rawFieldType, rawFieldPtr,
       getterSignature, getter, setterSignature, setter) {
     fieldName = AsciiToString(fieldName);
@@ -442,9 +462,12 @@ addToLibrary({
         if (setter) {
           setter = embind__requireFunction(setterSignature, setter);
           descriptor.set = value => physicsEmbindCall(() => {
-            const destructors = [];
-            try { setter(rawFieldPtr, physicsWireValue(fieldType.toWireType(destructors, value))); }
-            finally { runDestructors(destructors); }
+            const destructors = [], pending = [];
+            try {
+              const converted = physicsConvertArgument(fieldType, destructors, pending, value);
+              pending.length = 0;
+              setter(rawFieldPtr, converted);
+            } finally { physicsReleasePendingValues(pending); runDestructors(destructors); }
           });
         } else descriptor.set = () => throwBindingError(name + ' is a read-only property');
         Object.defineProperty(type.registeredClass.constructor, fieldName, descriptor);

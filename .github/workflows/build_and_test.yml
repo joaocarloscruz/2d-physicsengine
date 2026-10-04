@@ -211,7 +211,7 @@ jobs:
           const assert = require('node:assert/strict');
           require('./build-wasm/wasm/physics_engine.js')().then(module => {
             const helpers = Object.keys(module).filter(name =>
-              /boundaryTest|BoundaryTest|emscripten_stack_get_current/.test(name));
+              /boundaryTest|BoundaryTest|emscripten_stack_get_current|count_emval_handles/.test(name));
             assert.deepEqual(helpers, [], 'Production module exposes test helpers');
           }).catch(error => { console.error(error); process.exitCode = 1; });
           JS

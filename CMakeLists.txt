@@ -187,7 +187,8 @@ if(EMSCRIPTEN)
     if(PHYSICS_WASM_BOUNDARY_TEST_PROBES)
         target_sources(physics_engine_wasm PRIVATE tests/wasm_boundary_probe.cpp)
         target_link_options(physics_engine_wasm PRIVATE
-            "-sEXPORTED_FUNCTIONS=['_emscripten_stack_get_current']")
+            "-sEXPORTED_FUNCTIONS=['_emscripten_stack_get_current']"
+            "-sEXPORTED_RUNTIME_METHODS=['count_emval_handles']")
     endif()
     target_compile_options(physics_engine_wasm PRIVATE -fexceptions)
     target_link_options(physics_engine_wasm PRIVATE

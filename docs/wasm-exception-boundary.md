@@ -76,6 +76,17 @@ This does not promise RAII safety for arbitrary future C++ calls into foreign
 JavaScript, user-modified global intrinsics, asynchronous callbacks or traps.
 New native-to-JS access paths need the same explicit boundary review.
 
+Direct `emscripten::val` arguments transfer their SDK handle ownership to the
+native parameter converter. They do not use the ordinary temporary-destructor
+stack. Each wrapper therefore tracks pending val handles separately and releases
+them if later conversion or receiver validation fails before native entry. On
+entry the native parameter owns the handle; JavaScript must not release it a
+second time after a native exception. Value-object field setters each transfer
+their own val immediately; subsequent failure destroys the containing native
+object normally. These lists are local to each invocation, including reentrant
+calls. Tests cover pre-entry rejection, native exceptions after transfer, later
+value-object field failure, and setters on deleted receivers.
+
 Configure `-DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON` to add test-only bindings;
 production builds default to OFF. Run both:
 
@@ -85,7 +96,7 @@ node build-wasm/wasm/boundary-stress.cjs
 ```
 
 The stress test warms allocator paths, then checks exact live allocation bytes,
-stack pointer, native uncaught count, converted-value lifetimes and owned-object
+stack pointer, native uncaught count, live JavaScript emval handles, converted-value lifetimes and owned-object
 lifetimes across 2000 mixed exception/conversion/constructor/property/overload
 batches, 1000 array-accessor/proxy/reentrant batches and 1000 receiver-deletion
 batches. It also verifies JavaScript error identity and copied return values.
@@ -97,6 +108,15 @@ The production physics smoke suite runs in its existing order; no larger stack
 or test-only stack reset is used. Hosted WASM CI runs independent optimized,
 ASan/UBSan and production profiles. Both probe profiles run physical smoke and
 boundary stress; production runs smoke and checks that helper exports are absent.
+
+The emval count measures the SDK's live table entries for JavaScript values held
+by C++; native allocation bytes cannot detect those references. Probe builds
+export the pinned SDK's `count_emval_handles`. A positive control retains a
+JavaScript object in a native probe, checks the increment, then checks release
+on replacement and destruction. Every stress snapshot includes this counter,
+and the final count must equal the module's initial count. The observer does
+not measure all JavaScript heap allocations or require garbage collection.
+Production builds do not export it.
 
 The adapter's copied/adapted SDK portions retain Emscripten's copyright and MIT
 license in `src/wasm/embind_boundary.LICENSE`.
