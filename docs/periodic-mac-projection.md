@@ -1,7 +1,8 @@
 # Periodic MAC velocity projection
 
 `PeriodicMacGrid` projects double-precision periodic face velocities onto a
-discretely divergence-free field. It is a native, independent component: no
+discretely divergence-free field. It is an independent component with native and
+[owned JavaScript interfaces](webassembly.md#owned-periodic-mac-projection-grids): no
 advection, viscosity, obstacles, free surfaces, time integration, or World/SPH
 coupling. It does not resolve the outstanding SPH #44 validation failures.
 Include `physics/physics.h` and link `PhysicsEngine::Engine` from the installed

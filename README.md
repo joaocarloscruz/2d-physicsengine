@@ -2,9 +2,9 @@
 
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction, prescribed-field charged particles,
-planar Newtonian gravity and scalar membrane waves. WebAssembly exposes rigid
-bodies, particles, soft bodies, thermal networks, charged particles, gravity, waves
-and owned spatial query results;
+planar Newtonian gravity, scalar membrane waves and periodic MAC velocity projection.
+WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
+charged particles, gravity, waves, periodic projection and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
 distance, revolute and prismatic joints with drives and stops, simulation islands,
@@ -87,9 +87,15 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 `wave_membrane_demo` measures a fixed-edge membrane mode's energy. These native
 examples run without graphics and are included in the CTest smoke checks.
 
+`mac_projection_demo` reports divergence, mean flow and energy before and after
+a periodic grid projection. `rigid_contact_benchmark --quick` measures resting
+contacts, stacks, friction and isolated impacts against physical oracles; its
+finite output includes substantial stack drift in difficult configurations.
+
 ## Documentation
 
 - [Architecture, units and numerical limits](docs/architecture.md)
+- [Physics capabilities, evidence and remaining gaps](docs/physics-capabilities.md)
 - [Polygon centroids and rigid-body setup](docs/polygon-centering.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
@@ -100,6 +106,9 @@ examples run without graphics and are included in the CTest smoke checks.
 - [Thermal conduction networks](docs/thermal-networks.md)
 - [Planar Newtonian N-body gravity](docs/nbody-gravity.md)
 - [Scalar waves and membranes](docs/wave-membranes.md)
+- [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
+- [Rigid-contact physical benchmark](docs/rigid-contact-benchmark.md)
+- [Polygon manifold geometry and scale limits](docs/polygon-manifold-numerics.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)

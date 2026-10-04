@@ -42,6 +42,12 @@ preserving caller masses and rest densities. Perturbed neighborhoods and sampled
 wall startup retain limitations; see [kernel experiments](cubic-kernel-experiments.md).
 The nine legacy physical targets tracked in issue #44 remain expected failures.
 
+`PeriodicMacGrid` is a separate Eulerian component with double face velocities
+and compatible staggered divergence/gradient operators. It solves a bounded
+periodic pressure projection and checks the actual stored divergence before
+publishing velocities and diagnostics. It has no automatic connection to the
+SPH solvers or World; see [periodic projection](periodic-mac-projection.md).
+
 ## Deformable bodies
 
 `SoftBody` is an independent mass-spring network with fixed anchors, elastic links,

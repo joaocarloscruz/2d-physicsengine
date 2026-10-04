@@ -5,8 +5,11 @@
 solvers. It supports ropes and planar cloth-like spring networks, finite physical
 masses, fixed anchors, uniform acceleration, per-particle forces and impulses. It does
 not yet implement self-collision, rigid/fluid contact, volume or area preservation,
-plasticity, tearing, material calibration or WebAssembly bindings. A spring
+plasticity, tearing or material calibration. A spring
 network can fold, intersect and change enclosed area.
+
+The owned [WebAssembly interface](webassembly.md) exposes this module with
+copied particle, spring and diagnostic snapshots and checked indices.
 
 ## Construct and step a rope
 
