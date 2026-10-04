@@ -1,7 +1,6 @@
 #include "physics/core/fluids/fluid_boundary.h"
 
 #include "physics/core/rigidbody.h"
-#include "physics/math/matrix2x2.h"
 #include "../checked_grid.h"
 
 #include <algorithm>
@@ -13,46 +12,68 @@ namespace PhysicsEngine {
 namespace {
 
 constexpr float BoundaryTolerance = 1e-6f;
-constexpr float Pi = 3.14159265358979323846f;
+constexpr double Pi = 3.14159265358979323846;
 
-void RemoveOutwardVelocity(
-    FluidParticle& particle,
-    const Vector2& outwardNormal,
-    const FluidBoundarySettings& settings
-) {
-    const float outwardSpeed = particle.velocity.dot(outwardNormal);
-    if (outwardSpeed > 0.0f) {
-        particle.velocity = particle.velocity
-            - outwardNormal * ((1.0f + settings.restitution) * outwardSpeed);
+float CheckedGeometryFloat(double value) {
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max()) {
+        throw std::overflow_error("Fluid boundary geometry exceeds float range.");
     }
-    const float remainingNormalSpeed = particle.velocity.dot(outwardNormal);
-    const Vector2 tangentVelocity = particle.velocity
-        - outwardNormal * remainingNormalSpeed;
-    const float tangentSpeed = tangentVelocity.magnitude();
-    if (tangentSpeed > 0.0f && outwardSpeed > 0.0f) {
-        const float frictionDelta = std::min(
-            tangentSpeed,
-            settings.friction * (1.0f + settings.restitution) * outwardSpeed
-        );
-        particle.velocity = particle.velocity
-            - tangentVelocity * (frictionDelta / tangentSpeed);
-    }
+    return static_cast<float>(value);
 }
 
-double SignedDoubleArea(const std::vector<Vector2>& vertices) {
-    double area = 0.0;
-    for (std::size_t index = 0; index < vertices.size(); ++index) {
-        const auto& first = vertices[index];
-        const auto& second = vertices[(index + 1) % vertices.size()];
-        area += static_cast<double>(first.x) * second.y
-            - static_cast<double>(first.y) * second.x;
+Vector2 CheckedGeometryVector(double x, double y) {
+    return Vector2(CheckedGeometryFloat(x), CheckedGeometryFloat(y));
+}
+
+float RoundInward(double value, double direction) {
+    float rounded = CheckedGeometryFloat(value);
+    // A nearest float can land outside the permitted half-plane. Round toward
+    // the correction direction by one ULP when necessary, retaining the radius.
+    if ((direction > 0.0 && rounded < value) || (direction < 0.0 && rounded > value)) {
+        rounded = std::nextafter(rounded, direction > 0.0
+            ? std::numeric_limits<float>::infinity()
+            : -std::numeric_limits<float>::infinity());
+        CheckedGeometryFloat(rounded);
     }
-    return area;
+    return rounded;
+}
+
+double EdgeSide(const Vector2& start, const Vector2& end, double x, double y) {
+    const double dx = static_cast<double>(end.x) - start.x;
+    const double dy = static_cast<double>(end.y) - start.y;
+    return dx * (y - start.y) - dy * (x - start.x);
+}
+
+bool CounterClockwise(const std::vector<Vector2>& vertices) {
+    return EdgeSide(vertices[0], vertices[1], vertices[2].x, vertices[2].y) > 0.0;
+}
+
+void RemoveOutwardVelocity(FluidParticle& particle, double normalX, double normalY,
+                          const FluidBoundarySettings& settings) {
+    double velocityX = particle.velocity.x;
+    double velocityY = particle.velocity.y;
+    const double outwardSpeed = velocityX * normalX + velocityY * normalY;
+    if (outwardSpeed > 0.0) {
+        const double impulse = (1.0 + settings.restitution) * outwardSpeed;
+        velocityX -= normalX * impulse;
+        velocityY -= normalY * impulse;
+    }
+    const double normalSpeed = velocityX * normalX + velocityY * normalY;
+    const double tangentX = velocityX - normalX * normalSpeed;
+    const double tangentY = velocityY - normalY * normalSpeed;
+    const double tangentSpeed = std::hypot(tangentX, tangentY);
+    if (tangentSpeed > 0.0 && outwardSpeed > 0.0) {
+        const double frictionDelta = std::min(tangentSpeed,
+            settings.friction * (1.0 + settings.restitution) * outwardSpeed);
+        velocityX -= tangentX * (frictionDelta / tangentSpeed);
+        velocityY -= tangentY * (frictionDelta / tangentSpeed);
+    }
+    particle.velocity = CheckedGeometryVector(velocityX, velocityY);
 }
 
 void FiniteVector(const Vector2& value) {
     if (!std::isfinite(value.x) || !std::isfinite(value.y)) {
-        throw std::invalid_argument("Fluid boundary sampling state must be finite.");
+        throw std::invalid_argument("Fluid boundary geometry state must be finite.");
     }
 }
 
@@ -91,7 +112,7 @@ void AppendCircleSamples(
     if (static_cast<std::uint64_t>(layerCount) > remainingSamples) {
         throw std::length_error("Fluid boundary sampling exceeds its layer budget.");
     }
-    std::vector<std::pair<float, int>> layers;
+    std::vector<std::pair<double, int>> layers;
     for (int layer = 0; layer < layerCount; ++layer) {
         const double layerRadius = sampleInside
             ? static_cast<double>(radius) - static_cast<double>(layer) * settings.spacing
@@ -108,7 +129,7 @@ void AppendCircleSamples(
             std::ceil(2.0 * Pi * layerRadius / settings.spacing)
         ));
         CheckedGrid::Charge(static_cast<std::uint64_t>(sampleCount), remainingSamples);
-        layers.emplace_back(static_cast<float>(layerRadius), sampleCount);
+        layers.emplace_back(layerRadius, sampleCount);
     }
     std::vector<FluidBoundaryParticle> generated;
     for (const auto& [layerRadius, sampleCount] : layers) {
@@ -118,15 +139,13 @@ void AppendCircleSamples(
             break;
         }
         for (int index = 0; index < sampleCount; ++index) {
-            const float angle = 2.0f * Pi * static_cast<float>(index)
-                / static_cast<float>(sampleCount);
-            const Vector2 offset(
-                layerRadius * std::cos(angle),
-                layerRadius * std::sin(angle)
-            );
+            const double angle = 2.0 * Pi * index / sampleCount;
+            const double offsetX = layerRadius * std::cos(angle);
+            const double offsetY = layerRadius * std::sin(angle);
             generated.push_back({
-                center + offset,
-                linearVelocity + Vector2::cross(angularVelocity, offset),
+                CheckedGeometryVector(center.x + offsetX, center.y + offsetY),
+                CheckedGeometryVector(linearVelocity.x - angularVelocity * offsetY,
+                                      linearVelocity.y + angularVelocity * offsetX),
                 settings.spacing * settings.spacing,
                 Vector2(),
                 pressureScale
@@ -136,15 +155,15 @@ void AppendCircleSamples(
     PublishSamples(generated, particles);
 }
 
-bool IsInsideConvex(
-    const std::vector<Vector2>& vertices,
-    const Vector2& position,
-    bool counterClockwise
-) {
+bool IsInsideConvex(const std::vector<Vector2>& vertices, double x, double y,
+                    bool counterClockwise, std::size_t sourceEdge) {
     for (std::size_t index = 0; index < vertices.size(); ++index) {
-        const Vector2 edge = vertices[(index + 1) % vertices.size()]
-            - vertices[index];
-        const float side = edge.cross(position - vertices[index]);
+        // Sampling constructs points on this edge plus an inward normal offset.
+        // Re-evaluating that same plane can lose surface samples to cancellation.
+        if (index == sourceEdge) {
+            continue;
+        }
+        const double side = EdgeSide(vertices[index], vertices[(index + 1) % vertices.size()], x, y);
         if ((counterClockwise && side < -BoundaryTolerance)
             || (!counterClockwise && side > BoundaryTolerance)) {
             return false;
@@ -172,8 +191,9 @@ void AppendPolygonSamples(
     for (const auto& vertex : vertices) {
         FiniteVector(vertex);
     }
-    const bool counterClockwise = SignedDoubleArea(vertices) > 0.0;
-    const Matrix2x2 rotation = Matrix2x2::rotation(orientation);
+    const bool counterClockwise = CounterClockwise(vertices);
+    const double cosine = std::cos(static_cast<double>(orientation));
+    const double sine = std::sin(static_cast<double>(orientation));
     const int layerCount = CheckedGrid::Extent(settings.supportRadius, settings.spacing);
     std::vector<int> edgeCounts;
     for (std::size_t edgeIndex = 0; edgeIndex < vertices.size(); ++edgeIndex) {
@@ -196,30 +216,30 @@ void AppendPolygonSamples(
     std::vector<FluidBoundaryParticle> generated;
     for (std::size_t edgeIndex = 0; edgeIndex < vertices.size(); ++edgeIndex) {
         const Vector2 start = vertices[edgeIndex];
-        const Vector2 edge = vertices[(edgeIndex + 1) % vertices.size()] - start;
+        const Vector2 end = vertices[(edgeIndex + 1) % vertices.size()];
+        const double edgeX = static_cast<double>(end.x) - start.x;
+        const double edgeY = static_cast<double>(end.y) - start.y;
+        const double length = std::hypot(edgeX, edgeY);
+        const double inwardX = (counterClockwise ? -edgeY : edgeY) / length;
+        const double inwardY = (counterClockwise ? edgeX : -edgeX) / length;
         const int sampleCount = edgeCounts[edgeIndex];
-        const Vector2 inward = counterClockwise
-            ? Vector2(-edge.y, edge.x).normalized()
-            : Vector2(edge.y, -edge.x).normalized();
         for (int layer = 0; layer < layerCount; ++layer) {
-            const Vector2 layerOffset = inward
-                * (static_cast<float>(layer) * settings.spacing
-                    * (sampleInside ? 1.0f : -1.0f));
+            const double layerDistance = static_cast<double>(layer) * settings.spacing
+                * (sampleInside ? 1.0 : -1.0);
             for (int index = 0; index < sampleCount; ++index) {
-                const float parameter = (static_cast<float>(index) + 0.5f)
-                    / static_cast<float>(sampleCount);
-                const Vector2 localPoint = start + edge * parameter + layerOffset;
-                if (sampleInside
-                    && !IsInsideConvex(vertices, localPoint, counterClockwise)) {
+                const double parameter = (static_cast<double>(index) + 0.5) / sampleCount;
+                const double localX = start.x + edgeX * parameter + inwardX * layerDistance;
+                const double localY = start.y + edgeY * parameter + inwardY * layerDistance;
+                if (sampleInside && !IsInsideConvex(vertices, localX, localY, counterClockwise, edgeIndex)) {
                     continue;
                 }
-                const Vector2 worldOffset = rotation * localPoint;
+                const double offsetX = cosine * localX - sine * localY;
+                const double offsetY = sine * localX + cosine * localY;
                 generated.push_back({
-                    position + worldOffset,
-                    linearVelocity + Vector2::cross(angularVelocity, worldOffset),
-                    settings.spacing * settings.spacing,
-                    Vector2(),
-                    pressureScale
+                    CheckedGeometryVector(position.x + offsetX, position.y + offsetY),
+                    CheckedGeometryVector(linearVelocity.x - angularVelocity * offsetY,
+                                          linearVelocity.y + angularVelocity * offsetX),
+                    settings.spacing * settings.spacing, Vector2(), pressureScale
                 });
             }
         }
@@ -279,9 +299,11 @@ FluidCircleContainer::FluidCircleContainer(
 }
 
 bool FluidCircleContainer::contains(const Vector2& position) const {
-    const float permittedRadius = radius - settings.particleRadius;
-    return (position - center).magnitudeSquared()
-        <= permittedRadius * permittedRadius + BoundaryTolerance;
+    FiniteVector(position);
+    const double permittedRadius = static_cast<double>(radius) - settings.particleRadius;
+    const double dx = static_cast<double>(position.x) - center.x;
+    const double dy = static_cast<double>(position.y) - center.y;
+    return dx * dx + dy * dy <= permittedRadius * permittedRadius + BoundaryTolerance;
 }
 
 void FluidCircleContainer::appendBoundaryParticles(
@@ -307,19 +329,29 @@ void FluidCircleContainer::appendBoundaryParticles(
 FluidBoundaryCorrection FluidCircleContainer::enforce(
     FluidParticle& particle
 ) const {
-    const Vector2 offset = particle.position - center;
-    const float distance = offset.magnitude();
-    const float permittedRadius = radius - settings.particleRadius;
+    FiniteVector(particle.position);
+    FiniteVector(particle.velocity);
+    const double dx = static_cast<double>(particle.position.x) - center.x;
+    const double dy = static_cast<double>(particle.position.y) - center.y;
+    const double distance = std::hypot(dx, dy);
+    const double permittedRadius = static_cast<double>(radius) - settings.particleRadius;
     if (distance <= permittedRadius) {
         return FluidBoundaryCorrection{};
     }
 
-    const Vector2 outwardNormal = distance > 0.0f
-        ? offset / distance
-        : Vector2(1.0f, 0.0f);
-    const float penetration = distance - permittedRadius;
-    particle.position = center + outwardNormal * permittedRadius;
-    RemoveOutwardVelocity(particle, outwardNormal, settings);
+    const double normalX = dx / distance;
+    const double normalY = dy / distance;
+    const float penetration = CheckedGeometryFloat(distance - permittedRadius);
+    FluidParticle projected = particle;
+    projected.position = Vector2(
+        RoundInward(center.x + normalX * permittedRadius, -normalX),
+        RoundInward(center.y + normalY * permittedRadius, -normalY)
+    );
+    RemoveOutwardVelocity(projected, normalX, normalY, settings);
+    if (!contains(projected.position)) {
+        throw std::runtime_error("Fluid circle boundary projection is not representable.");
+    }
+    particle = projected;
     return FluidBoundaryCorrection{true, penetration};
 }
 
@@ -329,54 +361,30 @@ FluidConvexPolygonContainer::FluidConvexPolygonContainer(
 ) : vertices(std::move(containerVertices)),
     settings(boundarySettings) {
     settings.Validate();
-    if (vertices.size() < 3) {
-        throw std::invalid_argument(
-            "Fluid polygon container requires at least three vertices."
-        );
-    }
-    for (const Vector2& vertex : vertices) {
-        if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
-            throw std::invalid_argument(
-                "Fluid polygon vertices must be finite."
-            );
-        }
-    }
-    const double area = SignedDoubleArea(vertices);
-    if (std::abs(area) <= BoundaryTolerance) {
-        throw std::invalid_argument(
-            "Fluid polygon container must have nonzero area."
-        );
-    }
-    if (area < 0.0f) {
+    // Reuse the rigid shape's global half-plane validation. It rejects stars,
+    // repeated/collinear vertices and concavity without a unit-dependent cutoff.
+    const Polygon validatedOutline(vertices);
+    if (!CounterClockwise(vertices)) {
         std::reverse(vertices.begin(), vertices.end());
     }
-
     inwardNormals.reserve(vertices.size());
     for (std::size_t index = 0; index < vertices.size(); ++index) {
-        const Vector2 edge = vertices[(index + 1) % vertices.size()]
-            - vertices[index];
-        if (edge.magnitudeSquared() <= BoundaryTolerance * BoundaryTolerance) {
-            throw std::invalid_argument(
-                "Fluid polygon edges must be non-degenerate."
-            );
-        }
-        inwardNormals.push_back(Vector2(-edge.y, edge.x).normalized());
-
-        const Vector2 nextEdge = vertices[(index + 2) % vertices.size()]
-            - vertices[(index + 1) % vertices.size()];
-        if (edge.cross(nextEdge) <= BoundaryTolerance) {
-            throw std::invalid_argument(
-                "Fluid polygon container must be strictly convex."
-            );
-        }
+        const auto& start = vertices[index];
+        const auto& end = vertices[(index + 1) % vertices.size()];
+        const double dx = static_cast<double>(end.x) - start.x;
+        const double dy = static_cast<double>(end.y) - start.y;
+        const double length = std::hypot(dx, dy);
+        inwardNormals.emplace_back(-dy / length, dx / length);
     }
 }
 
 bool FluidConvexPolygonContainer::contains(const Vector2& position) const {
+    FiniteVector(position);
     for (std::size_t index = 0; index < vertices.size(); ++index) {
-        const float distance = (position - vertices[index]).dot(
-            inwardNormals[index]
-        );
+        const double distance = (static_cast<double>(position.x) - vertices[index].x)
+                * inwardNormals[index].first
+            + (static_cast<double>(position.y) - vertices[index].y)
+                * inwardNormals[index].second;
         if (distance + BoundaryTolerance < settings.particleRadius) {
             return false;
         }
@@ -408,15 +416,19 @@ void FluidConvexPolygonContainer::appendBoundaryParticles(
 FluidBoundaryCorrection FluidConvexPolygonContainer::enforce(
     FluidParticle& particle
 ) const {
+    FiniteVector(particle.position);
+    FiniteVector(particle.velocity);
+    FluidParticle projected = particle;
     FluidBoundaryCorrection result;
     const std::size_t maximumPasses = vertices.size() * 2;
     for (std::size_t pass = 0; pass < maximumPasses; ++pass) {
-        float minimumDistance = std::numeric_limits<float>::max();
+        double minimumDistance = std::numeric_limits<double>::max();
         std::size_t edgeIndex = 0;
         for (std::size_t index = 0; index < vertices.size(); ++index) {
-            const float distance = (particle.position - vertices[index]).dot(
-                inwardNormals[index]
-            );
+            const double distance = (static_cast<double>(projected.position.x) - vertices[index].x)
+                    * inwardNormals[index].first
+                + (static_cast<double>(projected.position.y) - vertices[index].y)
+                    * inwardNormals[index].second;
             if (distance < minimumDistance) {
                 minimumDistance = distance;
                 edgeIndex = index;
@@ -425,23 +437,22 @@ FluidBoundaryCorrection FluidConvexPolygonContainer::enforce(
         if (minimumDistance + BoundaryTolerance >= settings.particleRadius) {
             break;
         }
-
-        const float penetration = settings.particleRadius - minimumDistance;
-        particle.position = particle.position
-            + inwardNormals[edgeIndex] * penetration;
-        RemoveOutwardVelocity(
-            particle,
-            inwardNormals[edgeIndex] * -1.0f,
-            settings
+        const double penetration = settings.particleRadius - minimumDistance;
+        const auto& normal = inwardNormals[edgeIndex];
+        projected.position = Vector2(
+            RoundInward(projected.position.x + normal.first * penetration, normal.first),
+            RoundInward(projected.position.y + normal.second * penetration, normal.second)
         );
+        RemoveOutwardVelocity(projected, -normal.first, -normal.second, settings);
         result.corrected = true;
-        result.penetration = std::max(result.penetration, penetration);
+        result.penetration = std::max(result.penetration, CheckedGeometryFloat(penetration));
     }
-    if (!contains(particle.position)) {
+    if (!contains(projected.position)) {
         throw std::runtime_error(
             "Fluid polygon boundary could not project particle into its valid region."
         );
     }
+    particle = projected;
     return result;
 }
 

@@ -33,9 +33,23 @@ solver.step(particles, frameTime, tank);
 ```
 
 Polygon input may use clockwise or counter-clockwise winding. Construction
-normalizes winding, rejects degenerate or concave geometry, and precomputes one
-inward unit normal per edge. Corner projection iterates the most violated plane
-until the particle satisfies every half-space including its configured radius.
+uses the rigid `Polygon` validator: every nonincident vertex must lie strictly
+on the same side of every edge. This rejects self-intersecting stars, repeated
+vertices, collinear turns and concavity at any representable coordinate scale.
+Winding is normalized and inward unit normals use double differences and
+`hypot`, avoiding squared-float overflow on large finite edges. Corner projection
+iterates the most violated plane until the particle satisfies every half-space
+including its configured radius.
+
+Containment, projection, sample generation and boundary velocity response use
+double intermediates while particle state remains float. Projections round
+toward the interior when the nearest float would violate the permitted region.
+Nonfinite query state throws `std::invalid_argument`; derived coordinates,
+velocities or correction depths outside the float range throw
+`std::overflow_error`. An unsuccessful or unrepresentable projection preserves
+the original particle. A polygon with no representable permitted center still
+fails projection explicitly. The particle-radius offsets, `1e-6` boundary
+tolerance, restitution/friction rules and sampling work budgets are unchanged.
 
 Circle containers constrain particle centers to `containerRadius -
 particleRadius`. Both boundary types expose `contains()` for validation and

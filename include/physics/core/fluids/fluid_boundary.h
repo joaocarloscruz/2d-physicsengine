@@ -4,6 +4,7 @@
 #include "fluid_particle.h"
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace PhysicsEngine {
@@ -92,7 +93,7 @@ public:
 
 private:
     std::vector<Vector2> vertices;
-    std::vector<Vector2> inwardNormals;
+    std::vector<std::pair<double, double>> inwardNormals;
     FluidBoundarySettings settings;
 };
 
