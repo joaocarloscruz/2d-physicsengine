@@ -161,6 +161,8 @@ if(EMSCRIPTEN)
         "--js-library=${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/embind_boundary.js")
     if(PHYSICS_WASM_BOUNDARY_TEST_PROBES)
         target_sources(physics_engine_wasm PRIVATE tests/wasm_boundary_probe.cpp)
+        target_link_options(physics_engine_wasm PRIVATE
+            "-sEXPORTED_FUNCTIONS=['_emscripten_stack_get_current']")
     endif()
     target_compile_options(physics_engine_wasm PRIVATE -fexceptions)
     target_link_options(physics_engine_wasm PRIVATE

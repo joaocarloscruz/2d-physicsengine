@@ -1,19 +1,10 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const createModule = require('./physics_engine.js');
 
 (async () => {
-    let exports;
-    const physics = await createModule({instantiateWasm(imports, receive) {
-        const module = new WebAssembly.Module(fs.readFileSync(path.join(__dirname, 'physics_engine.wasm')));
-        const instance = new WebAssembly.Instance(module, imports);
-        exports = instance.exports;
-        receive(instance, module);
-        return instance.exports;
-    }});
+    const physics = await createModule();
     assert.equal(typeof physics.boundaryTestStats, 'function', 'configure PHYSICS_WASM_BOUNDARY_TEST_PROBES=ON');
-    const stack = () => exports.emscripten_stack_get_current();
+    const stack = () => physics._emscripten_stack_get_current();
     const probe = new physics.BoundaryTestProbe({number: 1});
     const ordinary = new Error('original JavaScript getter failure');
     const badGetter = {get number() { throw ordinary; }};
