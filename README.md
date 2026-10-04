@@ -1,9 +1,10 @@
 # 2D Physics Engine
 
-A C++17 rigid-body and particle simulation library with a WebAssembly API.
+A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
+The rigid-body and particle interfaces also have a WebAssembly API.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
-distance/revolute joints, simulation islands, optional sleeping, a DFSPH solver,
-and CSV/JSON exports. The native library has no third-party runtime dependency
+distance/revolute joints with motors and angular stops, simulation islands, optional
+sleeping, a DFSPH solver, deformable networks, and CSV/JSON exports. The native library has no third-party runtime dependency
 beyond the C++ runtime. Catch2 is vendored for tests; the separate visualizer uses SFML.
 
 ## Build and test
@@ -57,7 +58,7 @@ target_link_libraries(my_app PRIVATE PhysicsEngine::Engine)
 
 The same target is available through `add_subdirectory`. Use `BUILD_SHARED_LIBS=OFF`
 for static builds, `BUILD_TESTING=OFF` for library-only builds, and
-`PHYSICS_BUILD_EXAMPLES=OFF` to omit the experiment. Shared-library consumers must
+`PHYSICS_BUILD_EXAMPLES=OFF` to omit the examples. Shared-library consumers must
 make the installed library and their compiler's runtime available to the loader.
 
 ## Reproduce experiments
@@ -73,12 +74,16 @@ and two DFSPH tolerances, reporting density errors, compression rates, iteration
 and elapsed time. This benchmark is a free-surface compressing patch, not a general
 claim of superiority across all fluid scenes.
 
+`softbody_rope` runs a pinned ten-link elastic rope with gravity and axial damping,
+then prints energy, strain and substep diagnostics. It requires no renderer.
+
 ## Documentation
 
 - [Architecture, units and numerical limits](docs/architecture.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
+- [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)
@@ -87,3 +92,5 @@ claim of superiority across all fluid scenes.
 
 The library is experimental. Tests cover its documented operating cases; see each
 feature's limitations before using it as a reference for a new physical regime.
+The [coverage and validation roadmap](https://github.com/joaocarloscruz/2d-physicsengine/issues/52)
+tracks the next capabilities and unresolved numerical work.
