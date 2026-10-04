@@ -52,6 +52,23 @@ jobs:
         if: always()
         shell: bash
         run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          log = Path('build/Testing/Temporary/LastTest.log')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('## Native test outcome\n\n')
+              if log.exists():
+                  lines = [line for line in log.read_text(encoding='utf-8', errors='replace').splitlines()
+                           if line.startswith(('test cases:', 'assertions:', 'All tests passed'))]
+                  summary.write('```text\n' + '\n'.join(lines) + '\n```\n\n' if lines else
+                                'No Catch2 result summary was produced; inspect the test logs.\n\n')
+                  if any('failed as expected' in line for line in lines):
+                      summary.write('Expected failures are unresolved physical targets, not validated behavior. '
+                                    'See [WCSPH consistency and hydrostatic work](https://github.com/joaocarloscruz/2d-physicsengine/issues/44).\n\n')
+              else:
+                  summary.write('Native tests did not produce a CTest log.\n\n')
+          PY
           if [[ -f build/numerical-validation-fast.json ]]; then
             echo '## Fast numerical validation' >> "$GITHUB_STEP_SUMMARY"
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
