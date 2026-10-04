@@ -211,7 +211,7 @@ if(EMSCRIPTEN)
     # Harness edits must be visible even when the module needs no relink.
     # Explicit outputs also let incremental builds restore a missing asset.
     set(WASM_ASSET_OUTPUTS)
-    foreach(asset IN ITEMS index.html smoke.js smoke-test.cjs boundary-stress.cjs handle-lifetime-tests.cjs elastic-wave-tests.cjs electrostatic-tests.cjs)
+    foreach(asset IN ITEMS index.html smoke.js smoke-test.cjs boundary-stress.cjs handle-lifetime-tests.cjs elastic-wave-tests.cjs electrostatic-tests.cjs maxwell-ohmic-tests.cjs)
         set(asset_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/${asset}")
         set(asset_output "${WASM_OUTPUT_DIRECTORY}/${asset}")
         add_custom_command(OUTPUT "${asset_output}"

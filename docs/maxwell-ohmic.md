@@ -208,3 +208,18 @@ nine explicitly retained fluid expected failures remain unchanged. Temporal
 controls cover all three damping regimes on anisotropic and two-cell grids;
 spatial refinement covers both axes and an oblique continuum mode. These are
 bounded homogeneous controls, not conductor/interface validation.
+
+## Browser parity
+
+The WASM owner exposes the same `stepOhmic` and all 15 return fields as plain
+owning JavaScript values; fields/configuration/legacy diagnostics retain their
+existing layouts. See [the browser API and lifetime rules](webassembly.md).
+Emscripten 6.0.3 / Node 22.16.0 optimized and ASan/UBSan builds passed the full
+smoke plus exception-boundary stress. The focused Ohmic controls include 12
+independent damped-mode/heat temporal sequences, three continuum refinements,
+split-stage accounting, 200 fixed-h Q checks, nonzero div-H preservation, magnetic
+means/electric-mean decay, exact zero-conductivity budget/snapshots, extreme
+products and retained copies/replay. Each probes-enabled run also passed 1,000
+Ohmic stress batches / 14,000 rejected invocations with unchanged snapshots,
+stack, live heap and native uncaught-exception count. Probes-off production
+passed the full physical smoke and exported none of the test helpers.

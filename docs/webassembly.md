@@ -434,8 +434,9 @@ limits](wave-membranes.md) for the supported numerical regime.
 
 ## Periodic TMz Maxwell fields
 
-`MaxwellGrid` owns a standalone homogeneous, lossless, source-free periodic TMz
-grid. `new physics.MaxwellGrid()` uses the complete default configuration below;
+`MaxwellGrid` owns a standalone homogeneous periodic TMz grid. Its default
+`step` is lossless; the explicit `stepOhmic` adds homogeneous scalar conductivity.
+`new physics.MaxwellGrid()` uses the complete default configuration below;
 the configured constructor requires every field. Configuration stays immutable.
 Counts arrive as JavaScript numbers and must be positive finite integers within
 the native hard ceilings before conversion: 262144 cells, 1000000 substeps and
@@ -489,10 +490,39 @@ and previous actual substep/count/cell visits. Physical energy oscillates.
 strict physical CFL and coefficient representability requirements. Compare
 the same h before/after a run; changing h changes this quadratic form.
 
+`stepOhmic(duration, conductivity)` takes finite nonnegative seconds and S/m and
+returns an owning plain `MaxwellOhmicStepDiagnostics` object. It exposes all
+native work fields: conductivity, duration, start/end time, initial/final physical
+energy, `exactJouleEnergy`, `representedElectricEnergyLoss`,
+`wavePhysicalEnergyChange`, `modifiedEnergyDissipation`,
+`decayStorageEnergyChange`, `physicalBalanceResidual`, substep/count/cell visits.
+It adds no configuration fields or persistent heat account. Positive conductivity
+uses `N*(8*S+1)` bounded visits and exact-decay/wave/exact-decay splitting;
+zero conductivity delegates to the original lossless path with identical fields,
+diagnostics and `N*(3*S+1)` budget. Zero duration validates both scalars and is a
+complete owner no-op. Invalid scalars, work/range/clock failure or late arithmetic
+failure throws an ordinary JavaScript Error with all owner snapshots preserved.
+
+```js
+const grid = new physics.MaxwellGrid();
+const report = grid.stepOhmic(.1, .8); // Explicit 0.8 S/m, no thermal feedback.
+grid.delete();
+console.log(report.exactJouleEnergy); // Copy survives deletion; no delete().
+```
+
+`exactJouleEnergy` is analytic **decay-subflow** work from represented pre-decay
+fields, not exact unsplit-PDE work at finite h. Physical wave energy defect and
+fixed-h modified-Q decay loss are separate quantities. The represented loss and
+storage discrepancy also include energy-measurement roundoff. Tiny decrements
+may report positive analytic work with unchanged rounded fields; no balancing
+correction hides that observation. See [the Ohmic derivation, stage accounts,
+strict-CFL contraction and finite-range restrictions](maxwell-ohmic.md).
+
 Delete the grid exactly once when finished. It is independent of Engine/World;
-there are no charge/current sources, particle coupling, interfaces, absorbing
-boundaries, conductors or 3D components. See [the native equations, invariant,
-resource accounting and representability limits](maxwell-grids.md).
+there are no imposed charge/current sources, particle coupling, material
+interfaces, absorbing boundaries, finite-conductor geometry or 3D components.
+See [the native equations, invariant, resource accounting and representability
+limits](maxwell-grids.md).
 
 ## Owned plane-strain elastic waves
 

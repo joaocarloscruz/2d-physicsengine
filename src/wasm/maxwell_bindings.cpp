@@ -135,6 +135,23 @@ EMSCRIPTEN_BINDINGS(maxwell_grid) {
         .field("lastSubstep", &MaxwellGridDiagnostics::lastSubstep)
         .field("lastSubsteps", &MaxwellGridDiagnostics::lastSubsteps)
         .field("lastCellVisits", &MaxwellGridDiagnostics::lastCellVisits);
+    value_object<MaxwellOhmicStepDiagnostics>("MaxwellOhmicStepDiagnostics")
+        .field("conductivity", &MaxwellOhmicStepDiagnostics::conductivity)
+        .field("duration", &MaxwellOhmicStepDiagnostics::duration)
+        .field("startTime", &MaxwellOhmicStepDiagnostics::startTime)
+        .field("endTime", &MaxwellOhmicStepDiagnostics::endTime)
+        .field("initialPhysicalEnergy", &MaxwellOhmicStepDiagnostics::initialPhysicalEnergy)
+        .field("finalPhysicalEnergy", &MaxwellOhmicStepDiagnostics::finalPhysicalEnergy)
+        .field("exactJouleEnergy", &MaxwellOhmicStepDiagnostics::exactJouleEnergy)
+        .field("representedElectricEnergyLoss",
+               &MaxwellOhmicStepDiagnostics::representedElectricEnergyLoss)
+        .field("wavePhysicalEnergyChange", &MaxwellOhmicStepDiagnostics::wavePhysicalEnergyChange)
+        .field("modifiedEnergyDissipation", &MaxwellOhmicStepDiagnostics::modifiedEnergyDissipation)
+        .field("decayStorageEnergyChange", &MaxwellOhmicStepDiagnostics::decayStorageEnergyChange)
+        .field("physicalBalanceResidual", &MaxwellOhmicStepDiagnostics::physicalBalanceResidual)
+        .field("substep", &MaxwellOhmicStepDiagnostics::substep)
+        .field("substeps", &MaxwellOhmicStepDiagnostics::substeps)
+        .field("cellVisits", &MaxwellOhmicStepDiagnostics::cellVisits);
     class_<MaxwellGrid>("MaxwellGrid")
         .constructor(&CreateDefault, allow_raw_pointers())
         .constructor(&CreateConfigured, allow_raw_pointers())
@@ -148,5 +165,6 @@ EMSCRIPTEN_BINDINGS(maxwell_grid) {
         .function("getStableTimeStep", &MaxwellGrid::getStableTimeStep)
         .function("getModifiedEnergy", &MaxwellGrid::getModifiedEnergy)
         .function("setState", &SetState)
-        .function("step", &MaxwellGrid::step);
+        .function("step", &MaxwellGrid::step)
+        .function("stepOhmic", &MaxwellGrid::stepOhmic);
 }
