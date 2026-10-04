@@ -52,3 +52,34 @@ offset local frames, huge common translations, and thin rectangles. A separate
 interval SAT grid checks rotated classification outside a `0.002` normalized
 boundary margin. Rotated thin contact-plane checks include an explicit bound for
 the final float coordinate conversion, separate from the geometry allowance.
+
+## Conservative broad-phase bounds
+
+`RigidBody::GetAABB()` rounds circle extents and transformed polygon bounds
+outward when converting them to float. Rounded intermediate sums also retain
+their error direction using TwoSum; polygon products use an FMA residual to
+enclose the transform in double intervals. The rotation basis itself uses the
+ordinary double `sin`/`cos` results, not a correctly rounded interval libm.
+This keeps a small shape from collapsing to a zero-width box at a large common
+translation, even when its extent is below double spacing at that position.
+
+For example, radius-one circles at x=1e20, y=-.75/+.75 previously produced
+min.x=max.x=x and no World contact, despite their half-unit overlap. Outward
+bounds now let both broad phases retain the candidate; a World regression also
+checks the analytical equal-mass elastic exchange of their vertical velocities.
+Translated unit boxes, rotated vertex containment and every input permutation
+of the three-body fixture are covered independently.
+
+Exactly representable bounds are retained. `AABB::IsOverlapping` still uses
+strict inequalities, so exactly representable edge-touching boxes remain
+non-overlapping. Outward rounding can admit additional candidates; narrow phase
+still decides physical contact. Bounds beyond finite float range throw
+`std::overflow_error`; invalid consumed transforms or shape data throw
+`std::invalid_argument`. Circle orientation is irrelevant and is not consumed.
+Bounds construction checks finite vertices but does not replace the polygon
+convexity validation performed by narrow phase.
+
+This preserves candidates, not arbitrary large-coordinate dynamics. Float
+contact points, local anchors and pose changes can still lose small offsets.
+Uniform-grid coordinate and work limits remain in force; the large-translation
+tests choose a correspondingly large cell size instead of bypassing those limits.

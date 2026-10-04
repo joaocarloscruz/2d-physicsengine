@@ -1,7 +1,6 @@
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
 #include "physics/math/vector2.h"
-#include "physics/math/matrix2x2.h"
 #include <stdexcept>
 #include <cmath>
 #include <limits> // Required for std::numeric_limits
@@ -19,6 +18,42 @@ namespace PhysicsEngine {
             return static_cast<float>(value);
         }
         Vector2 CheckedVector(double x, double y) { return {CheckedFloat(x), CheckedFloat(y)}; }
+        struct BoundsInterval { double lower, upper; };
+        double DirectedSum(double a, double b, bool upper) {
+            const double sum = a + b;
+            // TwoSum retains an offset even when it is smaller than a double
+            // ulp at the body's position. Simply doing the addition in double
+            // would still collapse a unit shape at x=1e30.
+            const double recoveredB = sum - a;
+            const double error = (a - (sum - recoveredB)) + (b - recoveredB);
+            if ((upper && error > 0) || (!upper && error < 0))
+                return std::nextafter(sum, upper ? std::numeric_limits<double>::infinity()
+                                                : -std::numeric_limits<double>::infinity());
+            return sum;
+        }
+        BoundsInterval AddBounds(BoundsInterval a, BoundsInterval b) {
+            return {DirectedSum(a.lower, b.lower, false), DirectedSum(a.upper, b.upper, true)};
+        }
+        BoundsInterval ProductBounds(double a, double b) {
+            const double product = a * b;
+            if (a != 0 && b != 0 && std::abs(product) < std::numeric_limits<double>::min())
+                return {std::nextafter(product, -std::numeric_limits<double>::infinity()),
+                        std::nextafter(product, std::numeric_limits<double>::infinity())};
+            const double error = std::fma(a, b, -product);
+            return {error < 0 ? std::nextafter(product, -std::numeric_limits<double>::infinity())
+                             : product,
+                    error > 0 ? std::nextafter(product, std::numeric_limits<double>::infinity())
+                             : product};
+        }
+        float StoreBound(double value, bool upper) {
+            float result = CheckedFloat(value);
+            if ((upper && result < value) || (!upper && result > value))
+                result = std::nextafter(result, upper ? std::numeric_limits<float>::infinity()
+                                                      : -std::numeric_limits<float>::infinity());
+            if (!std::isfinite(result))
+                throw std::overflow_error("RigidBody bounds exceed finite float range.");
+            return result;
+        }
         void ValidateInverseProperties(const RigidBody& body) {
             if (!std::isfinite(body.inverseMass) || body.inverseMass <= 0 ||
                 !std::isfinite(body.inverseInertia) || body.inverseInertia <= 0)
@@ -226,28 +261,38 @@ namespace PhysicsEngine {
     // ----- Getters ---
 
     AABB RigidBody::GetAABB() const {
+        ValidateFinite(position);
+        if (!shape) throw std::invalid_argument("RigidBody bounds require a shape.");
         if (shape->type == ShapeType::CIRCLE) {
-            const Circle* circle = static_cast<const Circle*>(shape.get());
-            Vector2 min = position - Vector2(circle->GetRadius(), circle->GetRadius());
-            Vector2 max = position + Vector2(circle->GetRadius(), circle->GetRadius());
-            return { min, max };
+            const auto* circle = dynamic_cast<const Circle*>(shape.get());
+            const double radius = circle ? circle->GetRadius() : 0;
+            if (!std::isfinite(radius) || radius <= 0)
+                throw std::invalid_argument("RigidBody bounds require a valid circle.");
+            return {{StoreBound(DirectedSum(position.x, -radius, false), false),
+                     StoreBound(DirectedSum(position.y, -radius, false), false)},
+                    {StoreBound(DirectedSum(position.x, radius, true), true),
+                     StoreBound(DirectedSum(position.y, radius, true), true)}};
         } else if (shape->type == ShapeType::POLYGON) {
-            const Polygon* poly = static_cast<const Polygon*>(shape.get());
-
-            Matrix2x2 rot = Matrix2x2::rotation(orientation);
-            Vector2 min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-            Vector2 max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-
-            for (const auto& v : poly->getVertices()) {
-                Vector2 worldVertex = position + rot * v;
-                min.x = std::min(min.x, worldVertex.x);
-                min.y = std::min(min.y, worldVertex.y);
-                max.x = std::max(max.x, worldVertex.x);
-                max.y = std::max(max.y, worldVertex.y);
+            const auto* polygon = dynamic_cast<const Polygon*>(shape.get());
+            if (!polygon || polygon->getVertices().size() < 3)
+                throw std::invalid_argument("RigidBody bounds require a valid polygon.");
+            ValidateFinite(orientation);
+            const double cosine = std::cos(double(orientation)), sine = std::sin(double(orientation));
+            double minX = std::numeric_limits<double>::infinity(), minY = minX;
+            double maxX = -minX, maxY = -minY;
+            for (const auto& vertex : polygon->getVertices()) {
+                ValidateFinite(vertex);
+                const auto x = AddBounds({position.x, position.x},
+                    AddBounds(ProductBounds(cosine, vertex.x), ProductBounds(-sine, vertex.y)));
+                const auto y = AddBounds({position.y, position.y},
+                    AddBounds(ProductBounds(sine, vertex.x), ProductBounds(cosine, vertex.y)));
+                minX = std::min(minX, x.lower); minY = std::min(minY, y.lower);
+                maxX = std::max(maxX, x.upper); maxY = std::max(maxY, y.upper);
             }
-            return { min, max };
+            return {{StoreBound(minX, false), StoreBound(minY, false)},
+                    {StoreBound(maxX, true), StoreBound(maxY, true)}};
         }
-        return { PhysicsEngine::Vector2(0, 0), PhysicsEngine::Vector2(0, 0) };
+        throw std::invalid_argument("RigidBody bounds require a supported shape.");
     }
 
     float RigidBody::GetMass() const {

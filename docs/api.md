@@ -70,6 +70,11 @@ wake state. Integration uses double intermediates and a stable speed norm for
 optional velocity caps. This does not roll back other bodies already advanced by
 a failing `World::step`; contact and joint solvers are also separate operations.
 
+`RigidBody::GetAABB()` returns outward-rounded finite float bounds for supported
+shapes. It rejects invalid consumed geometry/transforms and throws on bounds
+outside finite float range. This prevents rounded extents from hiding broad-phase
+candidates; see [bounds and remaining coordinate limits](polygon-manifold-numerics.md#conservative-broad-phase-bounds).
+
 Contact effective masses, restitution bias and cached normal/tangent impulses
 use double precision. A physical contact impulse may exceed float range while
 its resulting body velocities remain representable. Lever arms, point velocities,
