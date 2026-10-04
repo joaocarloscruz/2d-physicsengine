@@ -49,6 +49,15 @@ int main() {
     PhysicsEngine::PeriodicMacGridConfig macConfig;
     macConfig.columns=2; macConfig.rows=2; macConfig.spacingX=.25; macConfig.spacingY=.5;
     PhysicsEngine::PeriodicMacGrid mac(macConfig);
+    PhysicsEngine::MaxwellGridConfig maxwellConfig;
+    maxwellConfig.columns=2; maxwellConfig.rows=2;
+    PhysicsEngine::MaxwellGrid maxwell(maxwellConfig);
+    auto fields=maxwell.getState();
+    fields.ez.assign(4,1); fields.hx.assign(4,2); fields.hy.assign(4,-3);
+    maxwell.setState(fields); maxwell.step(.01);
+    if(maxwell.getState().ez!=fields.ez || maxwell.getState().hx!=fields.hx
+        ||maxwell.getState().hy!=fields.hy ||maxwell.getDiagnostics().lastCellVisits!=16
+        ||std::abs(maxwell.getDiagnostics().totalEnergy-28)>1e-12) return 1;
     PhysicsEngine::MacVelocityState macState; macState.xFaces={1,-1,1,-1}; macState.yFaces.assign(4,.5);
     mac.setVelocities(macState);
     const auto projection=mac.project();

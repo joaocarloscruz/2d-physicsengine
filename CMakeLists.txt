@@ -40,6 +40,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/softbody.cpp
     ${PHYSICS_SRC_DIR}/core/thermal_network.cpp
     ${PHYSICS_SRC_DIR}/core/wave_membrane.cpp
+    ${PHYSICS_SRC_DIR}/core/maxwell_grid.cpp
     ${PHYSICS_SRC_DIR}/core/state_export.cpp
     ${PHYSICS_SRC_DIR}/core/spatial_queries.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
@@ -116,12 +117,15 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(mac_projection_demo PRIVATE PhysicsEngine::Engine)
         add_executable(mac_diffusion_demo examples/mac_diffusion_demo.cpp)
         target_link_libraries(mac_diffusion_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(maxwell_grid_demo examples/maxwell_grid_demo.cpp)
+        target_link_libraries(maxwell_grid_demo PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
             add_test(NAME gravity_binary_smoke COMMAND gravity_binary)
             add_test(NAME thermal_network_smoke COMMAND thermal_network_demo)
             add_test(NAME wave_membrane_smoke COMMAND wave_membrane_demo)
             add_test(NAME mac_projection_smoke COMMAND mac_projection_demo)
             add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
+            add_test(NAME maxwell_grid_smoke COMMAND maxwell_grid_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
@@ -207,6 +211,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
         ${TESTS_SRC_DIR}/test_wave_membrane.cpp
+        ${TESTS_SRC_DIR}/test_maxwell_grid.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
         ${TESTS_SRC_DIR}/test_fluid_viscosity.cpp
         ${TESTS_SRC_DIR}/test_state_export.cpp

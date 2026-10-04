@@ -18,3 +18,4 @@
 #include "physics/core/spatial_queries.h"
 #include "physics/core/prismatic_joint.h"
 #include "physics/core/wave_membrane.h"
+#include "physics/core/maxwell_grid.h"

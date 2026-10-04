@@ -23,6 +23,11 @@ with double face velocities, a zero-mean pressure gauge, bounded iterative work,
 and transactional publication after checking actual final divergence. Its
 snapshots are owning copies; this is not a complete Eulerian fluid step.
 
+`MaxwellGrid` and its configuration/state/diagnostic types support independent
+[periodic homogeneous TMz electromagnetic fields](maxwell-grids.md), with
+synchronous double fields, strict CFL/work bounds, a fixed-step modified energy
+and transactional publication. There is no charge or particle-field coupling.
+
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
 
