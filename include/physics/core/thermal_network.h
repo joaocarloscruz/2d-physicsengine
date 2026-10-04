@@ -21,12 +21,19 @@ struct ThermalLink {
     double conductance; // W/K, nonnegative.
 };
 
+struct ThermalRadiationLink {
+    std::size_t first;
+    std::size_t second;
+    double coefficient; // W/K^4, supplied effective reciprocal surface coupling.
+};
+
 struct ThermalNetworkConfig {
     double maxSubstep = 0.01;
     double safetyFactor = 0.9; // (0,1], h*sum(G)/C <= safetyFactor.
     std::size_t maxSubsteps = 4096;
     std::size_t maxNodes = 100000;
-    std::size_t maxLinks = 300000;
+    std::size_t maxLinks = 300000; // Shared by conductive and radiative links.
+    static constexpr std::size_t MaximumRadiativeVisits = 100000000;
 };
 
 struct ThermalDiagnostics {
@@ -38,15 +45,18 @@ struct ThermalDiagnostics {
     double lastExternalEnergy = 0.0;
     double lastReservoirHeat = 0.0;
     std::size_t lastSubsteps = 0;
+    std::size_t lastRadiativeVisits = 0; // Adaptive-path node/link sweep budget.
 };
 
 // Standalone lumped heat-capacity graph, explicit Euler. Append-only indexes.
-// No automatic mechanical coupling, radiation, phase changes or fluid advection.
+// Optional Stefan-Boltzmann links; no automatic geometry/view factors,
+// mechanical coupling, phase changes or fluid advection.
 class ThermalNetwork {
 public:
     explicit ThermalNetwork(const ThermalNetworkConfig& config = {});
     std::size_t addNode(double temperature, double heatCapacity, bool fixed = false);
     std::size_t addLink(std::size_t first, std::size_t second, double conductance);
+    std::size_t addRadiationLink(std::size_t first, std::size_t second, double coefficient);
     void setTemperature(std::size_t index, double temperature);
     void setFixed(std::size_t index, bool fixed);
     void applyPower(std::size_t index, double power);
@@ -56,6 +66,7 @@ public:
     const ThermalNetworkConfig& getConfig() const noexcept { return config_; }
     const std::vector<ThermalNode>& getNodes() const noexcept { return nodes_; }
     const std::vector<ThermalLink>& getLinks() const noexcept { return links_; }
+    const std::vector<ThermalRadiationLink>& getRadiationLinks() const noexcept { return radiationLinks_; }
     ThermalDiagnostics getDiagnostics() const;
     // Failures preserve temperatures, loads and all accounting. Zero dt keeps
     // queued powers; a successful positive dt consumes them, including fixed nodes.
@@ -66,11 +77,15 @@ private:
     std::vector<ThermalNode> nodes_;
     std::vector<ThermalLink> links_;
     std::set<std::pair<std::size_t, std::size_t>> linkPairs_;
+    std::vector<ThermalRadiationLink> radiationLinks_;
+    std::set<std::pair<std::size_t, std::size_t>> radiationPairs_;
     double totalExternalEnergy_ = 0.0;
     double totalReservoirHeat_ = 0.0;
     double lastExternalEnergy_ = 0.0;
     double lastReservoirHeat_ = 0.0;
     std::size_t lastSubsteps_ = 0;
+    std::size_t lastRadiativeVisits_ = 0;
+    void stepRadiative(double dt);
 };
 
 } // namespace PhysicsEngine

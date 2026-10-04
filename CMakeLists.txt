@@ -115,6 +115,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
         target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(thermal_radiation_demo examples/thermal_radiation_demo.cpp)
+        target_link_libraries(thermal_radiation_demo PRIVATE PhysicsEngine::Engine)
         add_executable(gravity_binary examples/gravity_binary.cpp)
         target_link_libraries(gravity_binary PRIVATE PhysicsEngine::Engine)
         add_executable(wave_membrane_demo examples/wave_membrane_demo.cpp)
@@ -128,6 +130,7 @@ if(NOT EMSCRIPTEN)
         if(BUILD_TESTING)
             add_test(NAME gravity_binary_smoke COMMAND gravity_binary)
             add_test(NAME thermal_network_smoke COMMAND thermal_network_demo)
+            add_test(NAME thermal_radiation_smoke COMMAND thermal_radiation_demo)
             add_test(NAME wave_membrane_smoke COMMAND wave_membrane_demo)
             add_test(NAME mac_projection_smoke COMMAND mac_projection_demo)
             add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
@@ -233,6 +236,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
+        ${TESTS_SRC_DIR}/test_thermal_radiation.cpp
         ${TESTS_SRC_DIR}/test_wave_membrane.cpp
         ${TESTS_SRC_DIR}/test_maxwell_grid.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp

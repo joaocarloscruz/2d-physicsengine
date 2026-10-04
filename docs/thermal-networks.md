@@ -1,10 +1,11 @@
-# Thermal conduction networks
+# Thermal conduction and radiation networks
 
 `ThermalNetwork`, exposed by `physics/physics.h`, is a standalone graph of lumped
 heat capacities. It solves
 
 ```
-C_i * dT_i/dt = sum_j G_ij * (T_j - T_i) + P_i
+C_i * dT_i/dt = sum_j G_ij * (T_j - T_i)
+              + sum_j kappa_ij * (T_j^4 - T_i^4) + P_i
 ```
 
 Temperature T is absolute Kelvin and must be nonnegative. Heat capacity C is in
@@ -13,13 +14,16 @@ Conductance G is in W/K and must be finite and nonnegative. External power P is
 in watts; positive power heats, negative power cools. Every node uses double
 precision. Nodes and undirected links have stable, append-only indexes and const
 state observers; self-links, missing endpoints and duplicate links are rejected.
-Zero-conductance links and disconnected nodes are allowed.
+Zero-coefficient links and disconnected nodes are allowed. Conductive and
+radiative links have separate append-only indexes and duplicate-pair checks;
+both mechanisms may connect the same pair. Their combined count is bounded by
+`maxLinks`, including zero-coefficient links.
 
-This is a conduction foundation rather than a complete thermodynamic model.
 There is no automatic coupling to rigid bodies, soft bodies, particles, fluids
-or `World`, and no radiation, convection, fluid advection, latent heat, phase
-changes, temperature-dependent capacities, mechanical work or WASM binding.
-Applications choose their own mapping from objects to nodes and conductances.
+or `World`, and no convection, fluid advection, latent heat, phase changes,
+temperature-dependent capacities or mechanical work. Native and owned WASM APIs
+are available. Applications supply nodes and effective exchange coefficients;
+the engine does not calculate geometry, view factors or radiation transport.
 
 ## Example
 
@@ -52,7 +56,7 @@ power and historical accounting. Heat capacities and links are immutable.
 
 The integrator is first-order explicit Euler, using old temperatures for all
 equal and opposite link transfers in each substep. It partitions the outer
-timestep uniformly and chooses
+timestep uniformly when there are no radiative links and chooses
 
 ```
 h <= min(maxSubstep, safetyFactor * C_i / sum_j G_ij)
@@ -84,6 +88,72 @@ This conduction bound controls stability, rather than prescribing accuracy;
 refine the timestep for accuracy. Tests verify analytic two-node exponential
 relaxation and first-order convergence. Work is O(nodes + links) per substep.
 
+## Reciprocal radiative exchange
+
+`addRadiationLink(first, second, coefficient)` supplies an effective nonnegative
+`kappa` in W/K^4. A link contributes `kappa*(T_b^4-T_a^4)` watts to its first
+node and the exact opposite transfer to its second. For a gray body facing a
+large black enclosure, the model uses `kappa=emissivity*sigma*area`. The rounded
+SI [Stefan–Boltzmann constant](https://physics.nist.gov/cuu/Constants/Table/allascii.txt) is
+`sigma=5.670374419e-8 W/(m^2 K^4)`; see NASA's
+[radiation law](https://asd.gsfc.nasa.gov/archive/mwmw/mmw_bbody.html).
+General surfaces require reciprocal view-factor and emissivity treatment before
+supplying this effective coefficient. An arbitrary graph of such links does not
+automatically model multiple reflections, participating media, spectral effects,
+finite light travel time, or an electromagnetic field. Coefficients are constant.
+
+The positive secant conductance is
+
+```
+G_rad = kappa*(T_a+T_b)*(T_a^2+T_b^2)
+      <= 4*kappa*max(T_a,T_b)^3.
+```
+
+When radiative links are present, each substep recomputes the combined conductive
+and radiative row-rate bound from the current staged temperatures. The selected
+interval obeys `h*sum_j(G_ij+G_rad_bound_ij)/C_i <= safetyFactor`, with directed
+rounding and a degree-dependent margin. This permits a convex update without
+external loads and prevents earlier queued heating from invalidating a frozen
+radiative bound. The bound is conservative even for equal temperatures, where
+the actual exchange is zero. Fixed nodes do not restrict stability, but their
+exchanges and queued power are still accounted. No temperature is clipped.
+
+This nonlinear path uses adaptive, generally unequal intervals; it retains the
+outer call's constant queued power. The represented interval is checked after
+time addition, so it cannot round above the physical bound. Insufficient time
+resolution, `maxSubsteps`, or the hard `MaximumRadiativeVisits=100000000` budget
+rejects the whole call, even after earlier staged substeps succeeded. The work
+charge per substep is `6*nodes + 2*(conductiveLinks+radiativeLinks)`, including
+scratch initialization, rate reduction, load/update passes and edge visits.
+Copies and final accounting are separately bounded by this topology. Successful
+calls report `lastRadiativeVisits`; it is zero for conduction-only and zero-time
+calls. Zero time retains queued powers and resets last-call values as before.
+
+Transfers factor the temperature difference as
+`(T_b-T_a)*T_high^3*(1+r)*(1+r^2)`, where `r=T_low/T_high`, then scale all factors
+with binary exponents. This avoids intermediate fourth-power overflow or
+underflow and cancellation between nearly equal fourth powers. Complete
+unrepresentable rates, transfers, temperatures or ledgers still reject the call;
+subnormal transfers may round to zero. A finite input alone is not sufficient
+to guarantee a representable step. State storage and accumulation introduce
+roundoff; conservation is checked to that precision, not repaired by rescaling.
+
+For cooling into a fixed zero-K reservoir the independent solution is
+`T(t)=T0/(1+3*kappa*T0^3*t/C)^(1/3)`. The `thermal_radiation_demo` prints
+temperatures, errors, refinement ratios and energy residuals for three timesteps.
+Tests also cover pair/mixed-graph energy, stationary equilibrium, maximum
+principle, load-induced stiffness changes, reservoir work, deterministic replay,
+range failures and late rollback. These are lumped temperature tests; no spatial
+continuum convergence is implied.
+
+```cpp
+ThermalNetwork radiator;
+radiator.addNode(500, 20);       // 20 J/K body.
+radiator.addNode(0, 1, true);    // Ideal cold enclosure, fixed at 0 K.
+radiator.addRadiationLink(0, 1, .8 * 5.670374419e-8 * .02);
+radiator.step(.1);
+```
+
 ## Energy accounting
 
 `totalEnergy` is `sum(C*T)` in joules and includes the constant finite reference
@@ -103,7 +173,7 @@ measurements, the budget is
 change(totalEnergy) = change(totalExternalEnergy) + change(totalReservoirHeat)
 ```
 
-up to roundoff. Pair conduction conserves isolated energy. Direct temperature
+up to roundoff. Pair conduction and radiation conserve isolated energy. Direct temperature
 setters and adding nodes change stored energy outside the integration ledger;
 they are caller-controlled edits, not heat inputs recorded by `step`. Pinning or
 unpinning does not change stored energy. Last-call external/reservoir energies

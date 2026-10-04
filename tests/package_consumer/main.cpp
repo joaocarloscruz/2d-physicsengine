@@ -38,6 +38,12 @@ int main() {
     thermal.addNode(300, 2);
     thermal.applyPower(0, 4);
     thermal.step(0.5);
+    PhysicsEngine::ThermalNetwork radiation;
+    radiation.addNode(300,2); radiation.addNode(300,1,true);
+    radiation.addRadiationLink(0,1,1e-8); radiation.step(.01);
+    if(radiation.getNodes()[0].temperature!=300 || radiation.getRadiationLinks().size()!=1
+        ||radiation.getDiagnostics().totalEnergy!=900
+        ||radiation.getDiagnostics().lastRadiativeVisits!=14) return 1;
     PhysicsEngine::NBodyGravity gravity;
     gravity.addParticle({}, {2, 0});
     gravity.step(0.25);

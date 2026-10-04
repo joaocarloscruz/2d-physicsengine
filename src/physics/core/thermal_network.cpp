@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <initializer_list>
 #include <stdexcept>
 
 namespace PhysicsEngine {
@@ -30,6 +31,69 @@ double heatTransfer(double h, double conductance, double difference) {
     const double mg = std::frexp(conductance, &eg);
     const double mt = std::frexp(difference, &et);
     return checked(std::scalbn((mh * mg) * mt, eh + eg + et));
+}
+// Keep complete products representable even when T^4 or an intermediate
+// power/rate is outside the double range. At most eight factors are used.
+double scaledProduct(std::initializer_list<double> factors, double divisor = 1.0) {
+    double mantissa = 1.0;
+    int exponent = 0;
+    for (double value : factors) {
+        if (value == 0) return 0;
+        int e;
+        mantissa *= std::frexp(value, &e);
+        exponent += e;
+    }
+    int e;
+    mantissa /= std::frexp(divisor, &e);
+    return checked(std::scalbn(mantissa, exponent - e));
+}
+double radiationTransfer(double h, double coefficient, double a, double b) {
+    if (a == b || coefficient == 0) return 0;
+    const double high = std::max(a, b), ratio = std::min(a, b) / high;
+    // (b^4-a^4) = (b-a)*high^3*(1+ratio)*(1+ratio^2).
+    return scaledProduct({h, coefficient, b-a, high, high, high,
+                          1+ratio, 1+ratio*ratio});
+}
+
+double radiativeSubstep(const std::vector<ThermalNode>& nodes,
+                       const std::vector<ThermalLink>& links,
+                       const std::vector<ThermalRadiationLink>& radiation,
+                       const ThermalNetworkConfig& config) {
+    std::vector<double> rates(nodes.size(), 0);
+    std::vector<std::size_t> degree(nodes.size(), 0);
+    const double infinity = std::numeric_limits<double>::infinity();
+    auto add = [&](std::size_t index, double rate) {
+        // Margin includes exponent-product rounding and a possibly underflowed
+        // positive rate. Summation is directed outward as well.
+        rate = checked(std::nextafter(checked(rate * (1+16*std::numeric_limits<double>::epsilon())), infinity));
+        rates[index] = checked(std::nextafter(checked(rates[index] + rate), infinity));
+        ++degree[index];
+    };
+    for (const auto& link : links) {
+        if (link.conductance == 0) continue;
+        for (const auto i : {link.first, link.second})
+            if (!nodes[i].fixed) add(i, checked(link.conductance / nodes[i].heatCapacity));
+    }
+    for (const auto& link : radiation) {
+        const double high = std::max(nodes[link.first].temperature, nodes[link.second].temperature);
+        if (link.coefficient == 0 || high == 0) continue;
+        // The nonnegative secant conductance is <= 4*kappa*max(Ta,Tb)^3.
+        // Recomputed from the current staged temperatures before every Euler
+        // substep, so queued heating cannot invalidate a frozen rate bound.
+        for (const auto i : {link.first, link.second})
+            if (!nodes[i].fixed)
+                add(i, scaledProduct({4, link.coefficient, high, high, high}, nodes[i].heatCapacity));
+    }
+    double limit = config.maxSubstep;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (rates[i] == 0) continue;
+        const double allowance = 16*std::numeric_limits<double>::epsilon()*(double(degree[i])+1);
+        if (allowance >= .5) throw std::runtime_error("Thermal graph exceeds bound precision");
+        const double bound = std::nextafter((config.safetyFactor/rates[i])*(1-allowance), 0.0);
+        limit = std::min(limit, bound);
+    }
+    if (!(limit > 0)) throw std::runtime_error("Thermal radiative timestep underflow");
+    return limit;
 }
 double totalEnergy(const std::vector<ThermalNode>& nodes) {
     double result = 0.0;
@@ -87,11 +151,24 @@ std::size_t ThermalNetwork::addLink(std::size_t first, std::size_t second, doubl
         throw std::invalid_argument("Invalid thermal conductance link");
     const auto pair = std::minmax(first, second);
     if (linkPairs_.count(pair)) throw std::invalid_argument("Duplicate thermal link");
-    if (links_.size() >= config_.maxLinks) throw std::length_error("Thermal link budget exceeded");
+    if (links_.size() >= config_.maxLinks - radiationLinks_.size()) throw std::length_error("Thermal link budget exceeded");
     const auto inserted = linkPairs_.insert(pair);
     try { links_.push_back({first, second, conductance}); }
     catch (...) { linkPairs_.erase(inserted.first); throw; }
     return links_.size() - 1;
+}
+std::size_t ThermalNetwork::addRadiationLink(std::size_t first, std::size_t second, double coefficient) {
+    if (first >= nodes_.size() || second >= nodes_.size()) throw std::out_of_range("Thermal radiation node index");
+    if (first == second || !std::isfinite(coefficient) || coefficient < 0)
+        throw std::invalid_argument("Invalid thermal radiation link");
+    const auto pair = std::minmax(first, second);
+    if (radiationPairs_.count(pair)) throw std::invalid_argument("Duplicate thermal radiation link");
+    if (radiationLinks_.size() >= config_.maxLinks - links_.size())
+        throw std::length_error("Thermal link budget exceeded");
+    const auto inserted = radiationPairs_.insert(pair);
+    try { radiationLinks_.push_back({first, second, coefficient}); }
+    catch (...) { radiationPairs_.erase(inserted.first); throw; }
+    return radiationLinks_.size()-1;
 }
 void ThermalNetwork::setTemperature(std::size_t index, double temperature) {
     auto& node = nodes_.at(index);
@@ -110,7 +187,8 @@ void ThermalNetwork::clearPowers() noexcept {
 void ThermalNetwork::clearPowers(std::size_t index) { nodes_.at(index).externalPower = 0.0; }
 void ThermalNetwork::setConfig(const ThermalNetworkConfig& config) {
     validateConfig(config);
-    if (nodes_.size() > config.maxNodes || links_.size() > config.maxLinks)
+    if (nodes_.size() > config.maxNodes || links_.size() > config.maxLinks ||
+        radiationLinks_.size() > config.maxLinks - links_.size())
         throw std::length_error("Thermal configuration excludes existing topology");
     config_ = config;
 }
@@ -119,7 +197,12 @@ void ThermalNetwork::step(double dt) {
     if (!std::isfinite(dt) || dt < 0.0) throw std::invalid_argument("Invalid thermal timestep");
     if (dt == 0.0 || nodes_.empty()) {
         lastSubsteps_ = 0;
+        lastRadiativeVisits_ = 0;
         lastExternalEnergy_ = lastReservoirHeat_ = 0.0;
+        return;
+    }
+    if (!radiationLinks_.empty()) {
+        stepRadiative(dt);
         return;
     }
     const double conductionLimit = conductionSubstep(nodes_, links_, config_);
@@ -185,6 +268,72 @@ void ThermalNetwork::step(double dt) {
     lastExternalEnergy_ = externalEnergy;
     lastReservoirHeat_ = reservoirHeat;
     lastSubsteps_ = substeps;
+    lastRadiativeVisits_ = 0;
+}
+
+void ThermalNetwork::stepRadiative(double dt) {
+    // Six charged node sweeps cover scratch initialization, rate reduction,
+    // queued loads and updates; both kinds of edge are visited for bounds and
+    // transfers. Copies and final diagnostics are bounded by this same topology.
+    constexpr auto budget = ThermalNetworkConfig::MaximumRadiativeVisits;
+    if (nodes_.size() > budget/6 || links_.size() > budget/2 || radiationLinks_.size() > budget/2)
+        throw std::runtime_error("Thermal radiative work budget exceeded");
+    const std::size_t visits = 6*nodes_.size() + 2*links_.size() + 2*radiationLinks_.size();
+    if (visits > budget) throw std::runtime_error("Thermal radiative work budget exceeded");
+    auto state = nodes_;
+    std::vector<double> heat(state.size());
+    double elapsed = 0, externalEnergy = 0, reservoirHeat = 0;
+    std::size_t substeps = 0, work = 0;
+    while (elapsed < dt) {
+        if (substeps >= config_.maxSubsteps) throw std::runtime_error("Thermal substep budget exceeded");
+        if (visits > budget-work) throw std::runtime_error("Thermal radiative work budget exceeded");
+        work += visits;
+        const double limit = radiativeSubstep(state, links_, radiationLinks_, config_);
+        const double desired = std::min(dt-elapsed, limit);
+        double next = elapsed + desired;
+        if (next-elapsed > limit) next = std::nextafter(next, elapsed);
+        if (!(next > elapsed) || next > dt || !std::isfinite(next))
+            throw std::runtime_error("Thermal radiative time resolution exhausted");
+        const double h = next-elapsed;
+        for (std::size_t i = 0; i < state.size(); ++i) {
+            heat[i] = checked(state[i].externalPower*h);
+            externalEnergy = checked(externalEnergy+heat[i]);
+        }
+        auto transfer = [&](std::size_t a, std::size_t b, double energy) {
+            heat[a] = checked(heat[a]+energy);
+            heat[b] = checked(heat[b]-energy);
+        };
+        for (const auto& link : links_)
+            transfer(link.first, link.second, heatTransfer(h, link.conductance,
+                state[link.second].temperature-state[link.first].temperature));
+        for (const auto& link : radiationLinks_)
+            transfer(link.first, link.second, radiationTransfer(h, link.coefficient,
+                state[link.first].temperature, state[link.second].temperature));
+        for (std::size_t i = 0; i < state.size(); ++i) {
+            if (state[i].fixed) {
+                reservoirHeat = checked(reservoirHeat-heat[i]);
+                state[i].reservoirHeat = checked(state[i].reservoirHeat-heat[i]);
+            } else {
+                const double temperature = checked(state[i].temperature+checked(heat[i]/state[i].heatCapacity));
+                if (temperature < 0) throw std::runtime_error("Thermal external cooling crossed zero Kelvin");
+                checked(state[i].heatCapacity*temperature);
+                state[i].temperature = temperature;
+            }
+        }
+        elapsed = next;
+        ++substeps;
+    }
+    totalEnergy(state);
+    const double nextExternal = checked(totalExternalEnergy_+externalEnergy);
+    const double nextReservoir = checked(totalReservoirHeat_+reservoirHeat);
+    for (auto& node : state) node.externalPower = 0;
+    nodes_.swap(state);
+    totalExternalEnergy_ = nextExternal;
+    totalReservoirHeat_ = nextReservoir;
+    lastExternalEnergy_ = externalEnergy;
+    lastReservoirHeat_ = reservoirHeat;
+    lastSubsteps_ = substeps;
+    lastRadiativeVisits_ = work;
 }
 
 ThermalDiagnostics ThermalNetwork::getDiagnostics() const {
@@ -202,6 +351,7 @@ ThermalDiagnostics ThermalNetwork::getDiagnostics() const {
     result.lastExternalEnergy = lastExternalEnergy_;
     result.lastReservoirHeat = lastReservoirHeat_;
     result.lastSubsteps = lastSubsteps_;
+    result.lastRadiativeVisits = lastRadiativeVisits_;
     return result;
 }
 } // namespace PhysicsEngine
