@@ -96,3 +96,13 @@ target at the tested resolution (`h/dx = 2.5`, `c = 40 m/s`, `dt = 0.001 s`).
 The uninitialized summation-density cases remain explicit characterization
 failures: they are useful controls and must not be reinterpreted as supported
 hydrostatic initial conditions.
+
+## Consistency diagnosis (2026-10-04)
+
+The [reproducible consistency diagnostic](fluid-consistency-diagnostic.md)
+separates density quadrature, the pressure-gradient first moment, timestep
+refinement, neighbor refinement and supported continuity initialization.
+Fixed h/dx spatial refinement preserves the nominal density bias; mass
+calibration does not fix pressure-gradient consistency. All nine current
+expected-failing targets remain unchanged. The diagnostic includes concrete
+operator/conservation requirements for the next opt-in formulation experiment.

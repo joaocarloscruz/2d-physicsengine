@@ -91,6 +91,7 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)
+- [WCSPH consistency diagnostic and formulation plan](docs/fluid-consistency-diagnostic.md)
 - [WCSPH and boundaries](docs/wcsph-solver.md)
 - [Fluid–rigid coupling](docs/fluid-rigid-coupling.md)
 

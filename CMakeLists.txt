@@ -188,6 +188,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
         ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
         ${TESTS_SRC_DIR}/test_fluid_physics_validation.cpp
+        ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
@@ -217,6 +218,8 @@ elseif(BUILD_TESTING)
     target_link_libraries(fluid_benchmark PRIVATE Engine)
     add_executable(fluid_solver_comparison benchmarks/fluid_solver_comparison.cpp)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
+    add_executable(fluid_consistency_diagnostic benchmarks/fluid_consistency_diagnostic.cpp)
+    target_link_libraries(fluid_consistency_diagnostic PRIVATE Engine)
 
     enable_testing()
     add_test(NAME engine_tests COMMAND engine_tests_runner)
@@ -239,5 +242,11 @@ elseif(BUILD_TESTING)
     )
     set_tests_properties(fluid_benchmark_smoke PROPERTIES
         LABELS "fast;performance"
+    )
+    add_test(NAME fluid_consistency_diagnostic_smoke
+        COMMAND fluid_consistency_diagnostic --quick
+            --output ${CMAKE_BINARY_DIR}/fluid-consistency-quick.json)
+    set_tests_properties(fluid_consistency_diagnostic_smoke PROPERTIES
+        LABELS "fast;numerical;diagnostic"
     )
 endif()
