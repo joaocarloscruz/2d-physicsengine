@@ -238,3 +238,45 @@ No old thresholds were widened and no difficult fixtures were removed. The
 remaining friction/position/manifold coupling and tall-stack limits require
 separate work; the [normal block derivation](contact-solver.md#coupled-two-point-normal-impulses)
 states its conditioning and approximate fallback explicitly.
+
+## Integration-order control for incline creep
+
+`contact_integration_diagnostic` isolates displacement that occurs before the
+velocity constraints run. It uses a 15-degree 20x1 static floor and a unit box
+of mass 1, both with friction 1 and restitution 0. Position correction, warming,
+sleeping, CCD and velocity caps are disabled; velocity tolerance is zero and
+64 solver iterations bring the post-solve velocities close to zero. Three
+two-second runs use 120, 240 and 480 steps, for a bounded total of 840 World
+steps. This artificial control permits penetration to accumulate; it is not
+a production resting-contact setup or a replacement for the benchmark matrix.
+
+For a body starting each step at rest, the current force integrator has already
+advanced its position by `0.5*g*dt^2` before a contact impulse can stop its
+velocity. Projected downhill, the accumulated term is
+`0.5*g*sin(theta)*N*dt^2 = 0.5*g*sin(theta)*T*dt`. Thus a near-zero post-solve
+velocity does not imply a stationary position. The tool also sums the measured
+old-velocity contribution `sum(v_old_downhill*dt)` and reports the remaining
+displacement separately. That remainder includes float position storage and
+does not presume an unmeasured friction force.
+
+On solver revision `0666abe`, Windows Release Clang 23.1.1:
+
+| Steps | Measured downhill displacement | Force-integration term | Peak post-solve speed |
+| ---: | ---: | ---: | ---: |
+| 120 | .0423169950 | .0423169212 | 3.01e-16 |
+| 240 | .0211575719 | .0211584606 | 1.55e-16 |
+| 480 | .0105778603 | .0105792303 | 7.82e-17 |
+
+The ideal static-equilibrium displacement remains zero. These observations
+localize an O(dt) integration-order contribution; they do not explain away
+every #85 friction/stack regression. Changing normal/tangent impulse coupling
+alone cannot remove displacement already applied during integration. Any
+integration change must also retain ballistic accuracy, impact timing, CCD,
+loads, joints and existing event semantics. Follow-up work is tracked in
+[issue #91](https://github.com/joaocarloscruz/2d-physicsengine/issues/91).
+
+Build with `BUILD_TESTING=ON` and run `contact_integration_diagnostic` (or `.exe`
+on Windows). It prints deterministic JSON with the stored float dt/gravity/angle,
+all three displacement terms and peak velocity/rotation. A successful exit and
+the CTest smoke entry confirm bounded finite execution, not physical acceptance;
+the tool does not require future implementations to preserve today's drift.
