@@ -101,6 +101,7 @@ else()
     # --- Native Test Executable
     add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
+        ${TESTS_SRC_DIR}/test_collision_events.cpp
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_math.cpp
         ${TESTS_SRC_DIR}/test_rigidbody.cpp

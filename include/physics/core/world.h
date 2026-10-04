@@ -25,19 +25,6 @@ struct ForceRegistration {
     std::unique_ptr<IForceGenerator> generator;
 };
 
-struct ContactKey {
-    std::uint64_t first;
-    std::uint64_t second;
-
-    static ContactKey From(const RigidBody* bodyA, const RigidBody* bodyB);
-    bool contains(std::uint64_t bodyId) const;
-    bool operator==(const ContactKey& other) const;
-};
-
-struct ContactKeyHash {
-    std::size_t operator()(const ContactKey& key) const;
-};
-
 class World {
 public:
     World();
@@ -47,7 +34,6 @@ public:
     void addBody(RigidBodyPtr body);
     void removeBody(RigidBodyPtr body);
     void clearBodies();
-
     void addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator);
     void addUniversalForce(std::unique_ptr<IForceGenerator> generator);
 
@@ -74,6 +60,33 @@ public:
     const SimulationStatistics& getLastStepStatistics() const;
 
 private:
+    struct ContactKey {
+        std::uint64_t first;
+        std::uint64_t second;
+
+        static ContactKey From(const RigidBody* bodyA, const RigidBody* bodyB);
+        bool contains(std::uint64_t bodyId) const;
+        bool operator==(const ContactKey& other) const;
+    };
+
+    struct ContactKeyHash {
+        std::size_t operator()(const ContactKey& key) const;
+    };
+
+    enum class EventPhase { Begin, Persist, End };
+    struct PendingEvent {
+        EventPhase phase;
+        CollisionEvent event;
+        CollisionManifold manifold;
+        RigidBodyPtr bodyA;
+        RigidBodyPtr bodyB;
+    };
+    void dispatchEvents();
+    void endContacts(std::uint64_t bodyId);
+    std::unordered_map<ContactKey, PendingEvent, ContactKeyHash> contactEvents;
+    std::vector<PendingEvent> pendingEvents;
+    bool dispatchingEvents = false;
+    bool stepping = false;
     std::vector<RigidBodyPtr> bodies;
     std::vector<ForceRegistration> forceRegistry;
     std::vector<std::unique_ptr<IForceGenerator>> universalForceRegistry;

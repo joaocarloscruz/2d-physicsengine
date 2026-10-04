@@ -9,21 +9,21 @@
 
 namespace PhysicsEngine {
 
-ContactKey ContactKey::From(const RigidBody* bodyA, const RigidBody* bodyB) {
+World::ContactKey World::ContactKey::From(const RigidBody* bodyA, const RigidBody* bodyB) {
     const std::uint64_t idA = bodyA->GetId();
     const std::uint64_t idB = bodyB->GetId();
     return idA < idB ? ContactKey{idA, idB} : ContactKey{idB, idA};
 }
 
-bool ContactKey::contains(std::uint64_t bodyId) const {
+bool World::ContactKey::contains(std::uint64_t bodyId) const {
     return first == bodyId || second == bodyId;
 }
 
-bool ContactKey::operator==(const ContactKey& other) const {
+bool World::ContactKey::operator==(const ContactKey& other) const {
     return first == other.first && second == other.second;
 }
 
-std::size_t ContactKeyHash::operator()(const ContactKey& key) const {
+std::size_t World::ContactKeyHash::operator()(const ContactKey& key) const {
     const std::size_t firstHash = std::hash<std::uint64_t>{}(key.first);
     const std::size_t secondHash = std::hash<std::uint64_t>{}(key.second);
     return firstHash ^ (secondHash << 1);
@@ -49,7 +49,8 @@ World::World(const SimulationConfig& config)
 World::~World() {}
 
 void World::addBody(RigidBodyPtr body) {
-    if (body) {
+    if (!body) throw std::invalid_argument("Body cannot be null.");
+    if (body && std::find(bodies.begin(), bodies.end(), body) == bodies.end()) {
         bodies.push_back(body);
     }
 }
@@ -71,26 +72,39 @@ void World::removeBody(RigidBodyPtr body) {
                 ++it;
             }
         }
+        potentialCollisions.erase(std::remove_if(potentialCollisions.begin(),
+            potentialCollisions.end(), [&body](const CollisionPair& pair) {
+                return pair.first == body || pair.second == body;
+            }), potentialCollisions.end());
+        endContacts(bodyId);
     }
+    dispatchEvents();
 }
 
 void World::clearBodies() {
+    for (const auto& body : bodies) {
+        endContacts(body->GetId());
+    }
     bodies.clear();
     forceRegistry.clear();
     universalForceRegistry.clear();
     potentialCollisions.clear();
     contactCache.clear();
+    dispatchEvents();
 }
 
 void World::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
+    if (!body || !generator) throw std::invalid_argument("Force registration requires a body and generator.");
     this->forceRegistry.push_back({body, std::move(generator)});
 }
 
 void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
+    if (!generator) throw std::invalid_argument("Universal force requires a generator.");
     this->universalForceRegistry.push_back(std::move(generator));
 }
 
 void World::addParticleSystem(ParticleSystemPtr system) {
+    if (!system) throw std::invalid_argument("Particle system cannot be null.");
     if (system) {
         particleSystems.push_back(std::move(system));
     }
@@ -108,7 +122,9 @@ void World::clearParticleSystems() {
 }
 
 void World::addCollisionListener(ICollisionListener* listener) {
-    if (listener) {
+    if (!listener) throw std::invalid_argument("Collision listener cannot be null.");
+    if (listener && std::find(collisionListeners.begin(), collisionListeners.end(),
+            listener) == collisionListeners.end()) {
         collisionListeners.push_back(listener);
     }
 }
@@ -121,6 +137,7 @@ void World::removeCollisionListener(ICollisionListener* listener) {
 }
 
 void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
+    if (!bp) throw std::invalid_argument("Broad phase cannot be null.");
     if (bp) {
         broadPhase = std::move(bp);
     }
@@ -136,9 +153,17 @@ void World::step() {
 }
 
 void World::step(float deltaTime) {
+    if (stepping || dispatchingEvents) {
+        throw std::logic_error("World::step cannot be called from a collision callback.");
+    }
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
         throw std::invalid_argument("World delta time must be finite and non-negative.");
     }
+    struct StepGuard {
+        bool& flag;
+        explicit StepGuard(bool& flag) : flag(flag) { flag = true; }
+        ~StepGuard() { flag = false; }
+    } guard(stepping);
     SimulationStatistics statistics;
     potentialCollisions.clear();
     std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
@@ -231,12 +256,16 @@ void World::step(float deltaTime) {
             contact->second,
             simulationConfig
         ));
-        if (!inserted) {
-            CollisionResolver::WarmStart(constraints.back());
-        }
-        for (ICollisionListener* listener : collisionListeners) {
-            listener->onCollision(manifold);
-        }
+        if (!inserted) CollisionResolver::WarmStart(constraints.back());
+        PendingEvent event;
+        event.phase = contactEvents.count(key) ? EventPhase::Persist : EventPhase::Begin;
+        event.event = {key.first, key.second, manifold.normal, manifold.penetration,
+            manifold.contacts, manifold.contactCount};
+        event.manifold = manifold;
+        event.bodyA = pair.first;
+        event.bodyB = pair.second;
+        contactEvents.insert_or_assign(key, event);
+        pendingEvents.push_back(event);
     }
 
     for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
@@ -265,6 +294,60 @@ void World::step(float deltaTime) {
     }
     statistics.activeContactCount = static_cast<std::uint32_t>(contactCache.size());
     lastStepStatistics = statistics;
+    for (auto it = contactEvents.begin(); it != contactEvents.end();) {
+        if (activeContacts.count(it->first) == 0) {
+            it->second.phase = EventPhase::End;
+            pendingEvents.push_back(it->second);
+            it = contactEvents.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    dispatchEvents();
+}
+
+void World::endContacts(std::uint64_t bodyId) {
+    for (auto it = contactEvents.begin(); it != contactEvents.end();) {
+        if (it->first.contains(bodyId)) {
+            it->second.phase = EventPhase::End;
+            pendingEvents.push_back(it->second);
+            it = contactEvents.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void World::dispatchEvents() {
+    if (dispatchingEvents) return;
+    dispatchingEvents = true;
+    try {
+        for (std::size_t i = 0; i < pendingEvents.size(); ++i) {
+            // Copy before calling user code: callbacks may append end events.
+            const PendingEvent event = pendingEvents[i];
+            const auto listeners = collisionListeners;
+            for (ICollisionListener* listener : listeners) {
+                if (std::find(collisionListeners.begin(), collisionListeners.end(),
+                        listener) == collisionListeners.end()) continue;
+                switch (event.phase) {
+                case EventPhase::Begin: listener->onCollisionBegin(event.event); break;
+                case EventPhase::Persist: listener->onCollisionPersist(event.event); break;
+                case EventPhase::End: listener->onCollisionEnd(event.event); break;
+                }
+                if (event.phase != EventPhase::End &&
+                    std::find(collisionListeners.begin(), collisionListeners.end(),
+                        listener) != collisionListeners.end()) {
+                    listener->onCollision(event.manifold);
+                }
+            }
+        }
+    } catch (...) {
+        pendingEvents.clear();
+        dispatchingEvents = false;
+        throw;
+    }
+    pendingEvents.clear();
+    dispatchingEvents = false;
 }
 
 const std::vector<RigidBodyPtr>& World::getBodies() const {
