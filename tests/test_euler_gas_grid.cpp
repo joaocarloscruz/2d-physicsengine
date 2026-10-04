@@ -218,7 +218,7 @@ double SimpleWaveError(std::size_t nx) {
     double error = 0;
     for (std::size_t i = 0; i < nx; ++i) {
         const auto exact = Average(i * g.spacingX, (i + 1) * g.spacingX,
-                                   [](double x) { return SimpleWave(x, duration); });
+                                   [duration](double x) { return SimpleWave(x, duration); });
         for (std::size_t a = 0; a < 4; ++a)
             error += std::abs(At(actual, i)[a] - exact[a]);
     }
