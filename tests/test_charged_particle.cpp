@@ -14,6 +14,26 @@ void sameState(const ChargedParticle& a, const ChargedParticle& b, double tolera
     REQUIRE(a.getVelocity().x == Catch::Approx(b.getVelocity().x).epsilon(0).margin(tolerance));
     REQUIRE(a.getVelocity().y == Catch::Approx(b.getVelocity().y).epsilon(0).margin(tolerance));
 }
+Vector2d electricDisplacementReference(double t, double magneticSign) {
+    // Independent alternating Taylor sums for 1-cos(t) and t-sin(t), using
+    // term recurrences rather than the integrator's factored Horner coefficients.
+    // For |t|<=0.0100001, six terms leave remainders <1.2e-39 and <8e-43.
+    // Fewer than 40 rounded operations per sum give a gamma_40 error bound
+    // <2.3e-19 here, below the unchanged absolute 1e-18 test margin. This
+    // requires only double precision, including on MSVC where long double=double.
+    const double t2 = t * t;
+    double cosineTerm = t2 / 2;
+    double sineTerm = t2 * t / 6;
+    double cosineDefect = cosineTerm;
+    double sineDefect = sineTerm;
+    for (unsigned n = 2; n <= 6; ++n) {
+        cosineTerm *= -t2 / ((2 * n - 1) * (2 * n));
+        sineTerm *= -t2 / ((2 * n) * (2 * n + 1));
+        cosineDefect += cosineTerm;
+        sineDefect += sineTerm;
+    }
+    return {cosineDefect, -magneticSign * sineDefect};
+}
 }
 
 TEST_CASE("A charged particle accelerates analytically in a uniform electric field", "[electromagnetic]") {
@@ -97,14 +117,14 @@ TEST_CASE("Weak magnetic fields approach electric acceleration without cancellat
         electric.step(0.4, {{2, -4}, 0});
         sameState(p, electric, 4e-8);
     }
-    // Compare series and trigonometric branches to independent long-double
+    // Compare series and trigonometric branches to independent convergent-series
     // formulas for a particle initially at rest in a purely X electric field.
     for (const double theta : {0.0099999, 0.01, 0.0100001, -0.01}) {
         ChargedParticle p({}, {}, 1, 1);
         p.step(theta > 0 ? theta : -theta, {{1, 0}, theta > 0 ? 1.0 : -1.0});
-        const long double t = std::abs(theta), w = theta > 0 ? 1 : -1;
-        REQUIRE(p.getPosition().x == Catch::Approx(double(1 - std::cos(t))).epsilon(0).margin(1e-18));
-        REQUIRE(p.getPosition().y == Catch::Approx(double(-w * (t - std::sin(t)))).epsilon(0).margin(1e-18));
+        const auto reference = electricDisplacementReference(std::abs(theta), theta > 0 ? 1 : -1);
+        REQUIRE(p.getPosition().x == Catch::Approx(reference.x).epsilon(0).margin(1e-18));
+        REQUIRE(p.getPosition().y == Catch::Approx(reference.y).epsilon(0).margin(1e-18));
     }
 }
 
@@ -153,8 +173,8 @@ TEST_CASE("Charged-particle subnormal gyro coefficients preserve representable r
     const double theta = std::numeric_limits<double>::denorm_min();
     ChargedParticle forced({}, {}, 1, 1);
     forced.step(1, {{1e6, 0}, theta});
-    const double vy = double(-static_cast<long double>(theta) * 1e6L / 2);
-    const double y = double(-static_cast<long double>(theta) * 1e6L / 6);
+    const double vy = -theta * 500000.0;
+    const double y = -theta * (1000000.0 / 6);
     REQUIRE(forced.getVelocity().y == Catch::Approx(vy).epsilon(0).margin(2 * theta));
     REQUIRE(forced.getPosition().y == Catch::Approx(y).epsilon(0).margin(2 * theta));
     ChargedParticle magnetic({}, {0, 1e6}, 1, 1);
@@ -182,8 +202,8 @@ TEST_CASE("Charged-particle underflowing phase or electric impulse can have fini
     const double tiny = std::numeric_limits<double>::denorm_min();
     ChargedParticle magnetic({}, {0, 1e6}, 1, 1);
     magnetic.step(0.5, {{}, tiny}); // theta=tiny/2 itself rounds to zero.
-    const double vx = double(static_cast<long double>(tiny) * 1e6L / 2);
-    const double x = double(static_cast<long double>(tiny) * 1e6L / 8);
+    const double vx = tiny * 500000.0;
+    const double x = tiny * 125000.0;
     REQUIRE(magnetic.getVelocity().x == Catch::Approx(vx).epsilon(0).margin(2 * tiny));
     REQUIRE(magnetic.getPosition().x == Catch::Approx(x).epsilon(0).margin(2 * tiny));
     ChargedParticle electric({}, {}, 1, tiny);
