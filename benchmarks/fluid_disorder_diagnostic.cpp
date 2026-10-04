@@ -9,7 +9,8 @@ using namespace PhysicsEngine;
 using namespace FluidDisorder;
 namespace {
 const char *Name(Family f) {
-    return f == Family::Poly6Spiky ? "legacy" : "cubic";
+    ValidateFamily(f);
+    return f == Family::Poly6Spiky ? "legacy" : (f == Family::CubicSpline ? "cubic" : "wendland-c2");
 }
 double Separation(const std::vector<FluidParticle> &p) {
     double value = 1e100;
@@ -107,7 +108,7 @@ void Run(std::ostream &out, const char *label, Family family, bool clamp, int st
     finalSystem.clamp = clamp;
     const double finalInternal = Build(finalSystem).internalEnergy;
     const double finalKinetic = Kinetic(particles);
-    if (label == std::string("original-caller-mass") && clamp)
+    if (label == std::string("original-caller-mass") && clamp && family != Family::WendlandC2)
         for (std::size_t i = 0; i < particles.size(); ++i)
             if (!(particles[i].position == disturbed[i].position) ||
                 !(particles[i].velocity == Vector2{}))
@@ -170,29 +171,33 @@ void Work(std::ostream &out, Family family) {
 } // namespace
 int main(int argc, char **argv) {
     try {
-        bool quick = false;
+        bool quick = false, includeWendland = false;
         std::string path = "fluid-disorder.json";
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--quick")
                 quick = true;
+            else if (arg == "--include-wendland")
+                includeWendland = true;
             else if (arg == "--output" && i + 1 < argc)
                 path = argv[++i];
             else
                 throw std::invalid_argument(
-                    "Usage: fluid_disorder_diagnostic [--quick] [--output report.json]");
+                    "Usage: fluid_disorder_diagnostic [--quick] [--include-wendland] [--output report.json]");
         }
+        std::vector<Family> families{Family::Poly6Spiky, Family::CubicSpline};
+        if (includeWendland) families.push_back(Family::WendlandC2);
         std::ofstream out(path);
         if (!out)
             throw std::runtime_error("Cannot open disorder report");
         out << std::setprecision(17)
             << "{\"scope\":\"diagnostic only; no production "
-               "correction\",\"baseCommit\":\"355fe2b\",\"quick\":"
+               "correction\",\"fixtureBaseCommit\":\"355fe2b\",\"quick\":"
             << (quick ? "true" : "false")
             << ",\"trajectoryEnergyAndSeparationSamples\":\"initial and eight equally spaced "
                "outer-step endpoints\",\n\"bulkRows\":[\n";
         bool first = true;
-        for (auto family : {Family::Poly6Spiky, Family::CubicSpline})
+        for (auto family : families)
             for (double ratio : {2., 2.5, 4., 8.})
                 for (double dx : {.1, .05, .025}) {
                     const auto row = LatticeRow(dx, dx * ratio, .02, family);
@@ -219,7 +224,7 @@ int main(int argc, char **argv) {
                 }
         out << "],\n\"sameInputTrajectories\":[\n";
         first = true;
-        for (auto family : {Family::Poly6Spiky, Family::CubicSpline})
+        for (auto family : families)
             for (bool clamp : {true, false})
                 for (int steps :
                      quick ? std::vector<int>{96, 192} : std::vector<int>{48, 96, 192, 384}) {
@@ -231,7 +236,7 @@ int main(int argc, char **argv) {
         out << "],\n\"separateControls\":[\n";
         first = true;
         if (!quick)
-            for (auto family : {Family::Poly6Spiky, Family::CubicSpline}) {
+            for (auto family : families) {
                 for (bool clamp : {true, false}) {
                     if (!first)
                         out << ",\n";
@@ -248,6 +253,7 @@ int main(int argc, char **argv) {
         Work(out, Family::Poly6Spiky);
         out << ",\n";
         Work(out, Family::CubicSpline);
+        if (includeWendland) { out << ",\n"; Work(out, Family::WendlandC2); }
         out << "]}\n";
         if (!out)
             throw std::runtime_error("Cannot write disorder report");

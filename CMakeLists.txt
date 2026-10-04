@@ -377,6 +377,10 @@ elseif(BUILD_TESTING)
     add_test(NAME fluid_disorder_diagnostic_smoke
         COMMAND fluid_disorder_diagnostic --quick --output ${CMAKE_BINARY_DIR}/fluid-disorder-quick.json)
     set_tests_properties(fluid_disorder_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
+    add_test(NAME fluid_wendland_diagnostic_smoke
+        COMMAND fluid_disorder_diagnostic --quick --include-wendland
+            --output ${CMAKE_BINARY_DIR}/fluid-wendland-quick.json)
+    set_tests_properties(fluid_wendland_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
     add_test(NAME fluid_cubic_diagnostic_smoke
         COMMAND fluid_consistency_diagnostic --quick --family cubic
             --output ${CMAKE_BINARY_DIR}/fluid-cubic-quick.json)
