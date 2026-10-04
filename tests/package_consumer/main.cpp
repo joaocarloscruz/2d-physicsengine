@@ -9,6 +9,8 @@ int main() {
     auto support = std::make_shared<PhysicsEngine::RigidBody>(PhysicsEngine::Circle(1), PhysicsEngine::Material{}, PhysicsEngine::Vector2{}, true);
     PhysicsEngine::PrismaticJoint slider(support, body);
     if (std::abs(slider.getTranslation() - 1) > 1e-6) return 1;
+    slider.setMotor(true, 2, 4); slider.setLimits(true, -1, 3);
+    if (!slider.isMotorEnabled() || !slider.areLimitsEnabled() || slider.getMotorForce() != 0) return 1;
     PhysicsEngine::ChargedParticle charge({}, {1, 0}, 1, 1);
     charge.step(0.5, {{}, 2});
     PhysicsEngine::SoftBody soft;

@@ -65,6 +65,23 @@ Impulse SolveBase(const Geometry& g, double p, double angle) {
     result.angular=(angle-g.kpa*result.transverse)/g.kaa;
     return result;
 }
+Impulse SolveAxial(const Geometry& g, double p, double angle, double axial) {
+    const double weight=g.ia*g.ib/g.kaa, ds=g.sa-g.sb, dx=g.aa-g.ab;
+    const double kp=g.m+weight*ds*ds, kx=g.m+weight*dx*dx, cross=weight*ds*dx;
+    // Stable determinant after eliminating the angle row. This form avoids
+    // cancellation of long lever terms in kp*kx-cross*cross.
+    const double determinant=g.m*(g.m+weight*(ds*ds+dx*dx));
+    const double rp=p-g.kpa*angle/g.kaa, rx=axial-g.kax*angle/g.kaa;
+    Impulse result;
+    result.transverse=(kx*rp-cross*rx)/determinant;
+    result.axial=(kp*rx-cross*rp)/determinant;
+    result.angular=(angle-g.kpa*result.transverse-g.kax*result.axial)/g.kaa;
+    return result;
+}
+Impulse FixedAxial(const Geometry& g, double p, double angle, double axial) {
+    auto result=SolveBase(g,p-g.kpx*axial,angle-g.kax*axial);
+    result.axial=axial; return result;
+}
 void Apply(RigidBody& a, RigidBody& b, const Geometry& g, Impulse j, bool position) {
     const D2 p=g.n*j.transverse+g.e*j.axial;
     const D2 va=position ? D2{a.position.x,a.position.y} : D2{a.velocity.x,a.velocity.y};
@@ -109,13 +126,57 @@ double PrismaticJoint::getAngle() const {
 }
 void PrismaticJoint::solveVelocity() {
     const Geometry g(*a,*b,localA,localB,{axisX,axisY});
+    auto solve=[&](double target, double& total, double lower, double upper) {
+        const double p=-g.speed(*a,*b,false), angle=double(a->angularVelocity)-b->angularVelocity;
+        const auto candidate=SolveAxial(g,p,angle,target-g.speed(*a,*b,true));
+        const double next=std::clamp(total+candidate.axial,lower,upper), actual=next-total;
+        const auto j=FixedAxial(g,p,angle,actual);
+        Apply(*a,*b,g,j,false); total=next;
+    };
+    if (motorEnabled && maxMotorForce>0 && stepDuration>0) {
+        const double cap=double(maxMotorForce)*stepDuration;
+        solve(motorSpeed,motorImpulse,-cap,cap);
+    }
+    if (limitsEnabled) {
+        const double x=g.e.dot(g.d), infinity=std::numeric_limits<double>::infinity();
+        if (lowerLimit==upperLimit) {
+            solve(0,lowerImpulse,-infinity,infinity); return;
+        }
+        if (stepDuration>0 || x<=lowerLimit)
+            solve(stepDuration>0 ? -std::max(x-lowerLimit,0.0)/stepDuration : 0,
+                lowerImpulse,0,infinity);
+        if (stepDuration>0 || x>=upperLimit)
+            solve(stepDuration>0 ? std::max(double(upperLimit)-x,0.0)/stepDuration : 0,
+                upperImpulse,-infinity,0);
+    }
     Apply(*a,*b,g,SolveBase(g,-g.speed(*a,*b,false),double(a->angularVelocity)-b->angularVelocity),false);
 }
 bool PrismaticJoint::solvePosition(float tolerance, float maxCorrection) {
     const Geometry g(*a,*b,localA,localB,{axisX,axisY});
     const double error=g.n.dot(g.d), angle=getAngle();
-    Apply(*a,*b,g,SolveBase(g,-std::clamp(error,-double(maxCorrection),double(maxCorrection)),
-        -std::clamp(angle,-0.2,0.2)),true);
-    return std::abs(error)<=tolerance && std::abs(angle)<=0.005;
+    const double p=-std::clamp(error,-double(maxCorrection),double(maxCorrection));
+    const double w=-std::clamp(angle,-0.2,0.2), x=g.e.dot(g.d);
+    const double travel=limitsEnabled ? x-std::clamp(x,double(lowerLimit),double(upperLimit)) : 0;
+    const bool stop=limitsEnabled && (travel!=0 || lowerLimit==upperLimit);
+    Apply(*a,*b,g,stop ? SolveAxial(g,p,w,-std::clamp(travel,-double(maxCorrection),double(maxCorrection)))
+        : SolveBase(g,p,w),true);
+    return std::abs(error)<=tolerance && std::abs(angle)<=0.005 && std::abs(travel)<=tolerance;
 }
+void PrismaticJoint::setMotor(bool enabled, float speed, float maxForce) {
+    if (!std::isfinite(speed) || !std::isfinite(maxForce) || maxForce<0)
+        throw std::invalid_argument("Prismatic motor requires finite speed and nonnegative finite force");
+    if (motorEnabled!=enabled || motorSpeed!=speed || maxMotorForce!=maxForce) { a->Wake(); b->Wake(); }
+    motorEnabled=enabled; motorSpeed=speed; maxMotorForce=maxForce;
+}
+void PrismaticJoint::setLimits(bool enabled, float lower, float upper) {
+    if (!std::isfinite(lower) || !std::isfinite(upper) || lower>upper)
+        throw std::invalid_argument("Prismatic limits must be finite and ordered");
+    if (limitsEnabled!=enabled || lowerLimit!=lower || upperLimit!=upper) { a->Wake(); b->Wake(); }
+    limitsEnabled=enabled; lowerLimit=lower; upperLimit=upper;
+}
+double PrismaticJoint::getMotorForce() const { return stepDuration>0 ? motorImpulse/stepDuration : 0; }
+void PrismaticJoint::prepareStep(float dt) {
+    stepDuration=dt; motorImpulse=lowerImpulse=upperImpulse=0;
+}
+bool PrismaticJoint::preventsSleeping() const { return motorEnabled && maxMotorForce>0 && motorSpeed!=0; }
 }
