@@ -74,17 +74,20 @@ namespace PhysicsEngine {
 
     void RigidBody::ApplyForce(const Vector2& f) {
         ValidateFinite(f);
+        if (!applyingAutomaticForces && f.magnitudeSquared() > 0) Wake();
         force = force + f; 
     }
 
     void RigidBody::ApplyTorque(float t) {
         ValidateFinite(t);
+        if (!applyingAutomaticForces && t != 0) Wake();
         torque += t; 
     }
 
     void RigidBody::ApplyImpulse(const Vector2& impulse, const Vector2& contactVector) {
         ValidateFinite(impulse); ValidateFinite(contactVector);
         if (isStatic) return;
+        if (impulse.magnitudeSquared() > 0) Wake();
 
         velocity = velocity + impulse * inverseMass;
         angularVelocity = angularVelocity + inverseInertia * contactVector.cross(impulse);
@@ -146,21 +149,27 @@ namespace PhysicsEngine {
 
     void RigidBody::SetVelocity(const Vector2& v) {
         ValidateFinite(v);
+        Wake();
         velocity = v;
     }
 
     void RigidBody::SetAngularVelocity(float w) {
         ValidateFinite(w);
+        Wake();
         angularVelocity = w;
     }
 
     void RigidBody::SetPosition(const Vector2& p) {
         ValidateFinite(p);
+        contactWakeRequested = true;
+        Wake();
         position = p;
     }
 
     void RigidBody::SetOrientation(float o) {
         ValidateFinite(o);
+        contactWakeRequested = true;
+        Wake();
         orientation = o;
     }
 
@@ -170,16 +179,19 @@ namespace PhysicsEngine {
         }
         if (isStatic) return;
         mass = m;
+        Wake();
         inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
         inertia = shape->GetInertia(mass);
         inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
     }
 
     void RigidBody::SetCollisionCategoryBits(std::uint32_t bits) {
+        Wake(); contactWakeRequested = true;
         collisionCategoryBits = bits;
     }
 
     void RigidBody::SetCollisionMaskBits(std::uint32_t bits) {
+        Wake(); contactWakeRequested = true;
         collisionMaskBits = bits;
     }
 

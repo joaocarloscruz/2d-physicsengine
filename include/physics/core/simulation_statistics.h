@@ -14,6 +14,10 @@ struct SimulationStatistics {
     std::uint32_t solverIterationCount = 0;
     std::uint32_t activeContactCount = 0;
     std::uint32_t fluidIterationCount = 0;
+    std::uint32_t islandCount = 0;
+    std::uint32_t solvedIslandCount = 0;
+    std::uint32_t sleepingBodyCount = 0;
+    std::uint32_t solvedConstraintCount = 0;
 };
 
 }

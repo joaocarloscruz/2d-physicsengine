@@ -1,11 +1,13 @@
 #include "physics/core/world.h"
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
+#include "physics/math/matrix2x2.h"
 #include <utility>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <unordered_set>
+#include <numeric>
 
 namespace PhysicsEngine {
 
@@ -56,6 +58,14 @@ void World::addBody(RigidBodyPtr body) {
 }
 
 void World::removeBody(RigidBodyPtr body) {
+    for (const auto& joint : joints) {
+        if (joint->getBodyA() == body || joint->getBodyB() == body) {
+            joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
+        }
+    }
+    joints.erase(std::remove_if(joints.begin(), joints.end(), [&body](const JointPtr& joint) {
+        return joint->getBodyA() == body || joint->getBodyB() == body;
+    }), joints.end());
     bodies.erase(std::remove(bodies.begin(), bodies.end(), body), bodies.end());
 
     forceRegistry.erase(std::remove_if(forceRegistry.begin(), forceRegistry.end(), 
@@ -82,6 +92,7 @@ void World::removeBody(RigidBodyPtr body) {
 }
 
 void World::clearBodies() {
+    joints.clear();
     for (const auto& body : bodies) {
         endContacts(body->GetId());
     }
@@ -95,11 +106,13 @@ void World::clearBodies() {
 
 void World::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
     if (!body || !generator) throw std::invalid_argument("Force registration requires a body and generator.");
+    body->Wake();
     this->forceRegistry.push_back({body, std::move(generator)});
 }
 
 void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
     if (!generator) throw std::invalid_argument("Universal force requires a generator.");
+    for (const auto& body : bodies) body->Wake();
     this->universalForceRegistry.push_back(std::move(generator));
 }
 
@@ -146,6 +159,7 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
 void World::setSimulationConfig(const SimulationConfig& config) {
     config.Validate();
     simulationConfig = config;
+    for (const auto& body : bodies) body->Wake();
 }
 
 void World::step() {
@@ -173,28 +187,40 @@ void World::step(float deltaTime) {
         system->step(deltaTime);
     }
 
-    for (auto& registration : forceRegistry) {
-        registration.generator->applyForce(registration.body.get());
-    }
-
-    for (auto& generator : universalForceRegistry) {
-        for (auto& body : bodies) {
-            generator->applyForce(body.get());
+    std::vector<ContactConstraint> previousConstraints;
+    for (const auto& entry : contactEvents) {
+        const auto& event = entry.second;
+        if (event.bodyA->contactWakeRequested || event.bodyB->contactWakeRequested) {
+            event.bodyA->Wake(); event.bodyB->Wake();
         }
     }
+    for (const auto& joint : joints) {
+        if (joint->getBodyA()->contactWakeRequested || joint->getBodyB()->contactWakeRequested) {
+            joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
+        }
+    }
+    for (const auto& body : bodies) body->contactWakeRequested = false;
+    auto previousIslands = buildIslands(previousConstraints, true);
+    for (auto& island : previousIslands) wakeIsland(island);
+    auto applyAutomaticForce = [](RigidBody& body, IForceGenerator& generator) {
+        if (!body.IsAwake()) return;
+        body.applyingAutomaticForces = true;
+        try { generator.applyForce(&body); }
+        catch (...) { body.applyingAutomaticForces = false; throw; }
+        body.applyingAutomaticForces = false;
+    };
+    for (auto& registration : forceRegistry)
+        applyAutomaticForce(*registration.body, *registration.generator);
+    for (auto& generator : universalForceRegistry)
+        for (auto& body : bodies) applyAutomaticForce(*body, *generator);
 
     // Integrate velocities and positions
     for (RigidBodyPtr& body : bodies) {
-        if (!body->IsStatic()) {
+        if (body->IsAwake()) {
             ++statistics.integratedBodyCount;
             body->Integrate(deltaTime, simulationConfig);
 
-            while (body->GetOrientation() > M_PI) {
-                body->SetOrientation(body->GetOrientation() - 2.0f * M_PI);
-            }
-            while (body->GetOrientation() < -M_PI) {
-                body->SetOrientation(body->GetOrientation() + 2.0f * M_PI);
-            }
+            body->orientation = std::remainder(body->orientation, 6.283185307179586f);
         }
     }
 
@@ -256,7 +282,6 @@ void World::step(float deltaTime) {
             contact->second,
             simulationConfig
         ));
-        if (!inserted) CollisionResolver::WarmStart(constraints.back());
         PendingEvent event;
         event.phase = contactEvents.count(key) ? EventPhase::Persist : EventPhase::Begin;
         event.event = {key.first, key.second, manifold.normal, manifold.penetration,
@@ -268,20 +293,47 @@ void World::step(float deltaTime) {
         pendingEvents.push_back(event);
     }
 
-    for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
-        ++statistics.solverIterationCount;
-        for (ContactConstraint& constraint : constraints) {
-            CollisionResolver::SolveVelocity(constraint);
+    auto islands = buildIslands(constraints);
+    statistics.islandCount = static_cast<std::uint32_t>(islands.size());
+    statistics.solverIterationCount = simulationConfig.solverIterations;
+    for (auto& island : islands) {
+        wakeIsland(island);
+        if (!island.bodies.front()->IsAwake()) {
+            statistics.sleepingBodyCount += static_cast<std::uint32_t>(island.bodies.size());
+            continue;
         }
-    }
-    for (int iter = 0; iter < simulationConfig.solverIterations; ++iter) {
-        bool positionsSolved = true;
-        for (ContactConstraint& constraint : constraints) {
-            positionsSolved = CollisionResolver::SolvePosition(constraint)
-                && positionsSolved;
+        ++statistics.solvedIslandCount;
+        statistics.solvedConstraintCount += static_cast<std::uint32_t>(island.contacts.size()+island.joints.size());
+        for (auto* constraint : island.contacts) CollisionResolver::WarmStart(*constraint);
+        for (int iter=0; iter<simulationConfig.solverIterations; ++iter) {
+            for (auto* constraint : island.contacts) CollisionResolver::SolveVelocity(*constraint);
+            for (const auto& joint : island.joints) joint->solveVelocity();
         }
-        if (positionsSolved) {
-            break;
+        for (int iter=0; iter<simulationConfig.solverIterations; ++iter) {
+            bool solved = true;
+            for (auto* constraint : island.contacts)
+                solved = CollisionResolver::SolvePosition(*constraint) && solved;
+            for (const auto& joint : island.joints)
+                solved = joint->solvePosition(simulationConfig.penetrationSlop,
+                    simulationConfig.maxPositionCorrection) && solved;
+            if (solved) break;
+        }
+        if (simulationConfig.enableSleeping && deltaTime > 0) {
+            bool canSleep = true;
+            for (auto* body : island.bodies) {
+                const float specificEnergy = 0.5f*(body->velocity.magnitudeSquared()
+                    + body->inertia*body->inverseMass*body->angularVelocity*body->angularVelocity);
+                if (specificEnergy <= simulationConfig.sleepEnergyThreshold) body->sleepTime += deltaTime;
+                else body->sleepTime = 0;
+                canSleep = canSleep && body->sleepTime >= simulationConfig.sleepTimeThreshold;
+            }
+            if (canSleep) {
+                for (auto* body : island.bodies) {
+                    body->awake = false; body->velocity = {}; body->angularVelocity = 0;
+                    body->force = {}; body->torque = 0;
+                }
+                statistics.sleepingBodyCount += static_cast<std::uint32_t>(island.bodies.size());
+            }
         }
     }
 
@@ -309,6 +361,7 @@ void World::step(float deltaTime) {
 void World::endContacts(std::uint64_t bodyId) {
     for (auto it = contactEvents.begin(); it != contactEvents.end();) {
         if (it->first.contains(bodyId)) {
+            it->second.bodyA->Wake(); it->second.bodyB->Wake();
             it->second.phase = EventPhase::End;
             pendingEvents.push_back(it->second);
             it = contactEvents.erase(it);
@@ -348,6 +401,69 @@ void World::dispatchEvents() {
     }
     pendingEvents.clear();
     dispatchingEvents = false;
+}
+
+void World::addJoint(JointPtr joint) {
+    if (!joint) throw std::invalid_argument("Joint cannot be null.");
+    for (const auto& body : {joint->getBodyA(), joint->getBodyB()}) {
+        if (std::find(bodies.begin(), bodies.end(), body) == bodies.end())
+            throw std::invalid_argument("Joint bodies must belong to this world.");
+    }
+    if (std::find(joints.begin(), joints.end(), joint) == joints.end()) {
+        joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
+        joints.push_back(std::move(joint));
+    }
+}
+
+void World::removeJoint(const JointPtr& joint) {
+    if (std::find(joints.begin(), joints.end(), joint) != joints.end()) {
+        joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
+        joints.erase(std::remove(joints.begin(), joints.end(), joint), joints.end());
+    }
+}
+
+std::vector<World::Island> World::buildIslands(std::vector<ContactConstraint>& constraints, bool previousContacts) {
+    std::unordered_map<RigidBody*, std::size_t> indices;
+    std::vector<RigidBody*> dynamicBodies;
+    for (const auto& body : bodies) if (!body->IsStatic()) {
+        indices[body.get()] = dynamicBodies.size(); dynamicBodies.push_back(body.get());
+    }
+    std::vector<std::size_t> parents(dynamicBodies.size());
+    std::iota(parents.begin(), parents.end(), 0);
+    auto root = [&](std::size_t i) {
+        while (parents[i] != i) { parents[i] = parents[parents[i]]; i = parents[i]; }
+        return i;
+    };
+    auto connect = [&](RigidBody* a, RigidBody* b) {
+        if (indices.count(a) && indices.count(b)) parents[root(indices.at(b))] = root(indices.at(a));
+    };
+    for (auto& c : constraints) connect(c.bodyA, c.bodyB);
+    for (const auto& joint : joints) connect(joint->getBodyA().get(), joint->getBodyB().get());
+    if (previousContacts) for (const auto& entry : contactEvents)
+        connect(entry.second.bodyA.get(), entry.second.bodyB.get());
+    std::unordered_map<std::size_t, std::size_t> islandIndex;
+    std::vector<Island> result;
+    for (std::size_t i=0; i<dynamicBodies.size(); ++i) {
+        const auto r = root(i);
+        auto [it, inserted] = islandIndex.emplace(r, result.size());
+        if (inserted) result.emplace_back();
+        result[it->second].bodies.push_back(dynamicBodies[i]);
+    }
+    auto islandFor = [&](RigidBody* a, RigidBody* b) -> Island& {
+        const auto index = indices.at(a->IsStatic() ? b : a);
+        return result[islandIndex.at(root(index))];
+    };
+    for (auto& c : constraints) if (!c.bodyA->IsStatic() || !c.bodyB->IsStatic())
+        islandFor(c.bodyA, c.bodyB).contacts.push_back(&c);
+    for (const auto& joint : joints)
+        islandFor(joint->getBodyA().get(), joint->getBodyB().get()).joints.push_back(joint);
+    return result;
+}
+
+void World::wakeIsland(Island& island) {
+    const bool wake = !simulationConfig.enableSleeping || std::any_of(island.bodies.begin(),
+        island.bodies.end(), [](const RigidBody* body) { return body->IsAwake(); });
+    if (wake) for (auto* body : island.bodies) if (!body->IsAwake()) body->Wake();
 }
 
 const std::vector<RigidBodyPtr>& World::getBodies() const {

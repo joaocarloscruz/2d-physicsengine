@@ -6,6 +6,10 @@
 namespace PhysicsEngine {
 
 void SimulationConfig::Validate() const {
+    if (!std::isfinite(sleepEnergyThreshold) || sleepEnergyThreshold < 0 ||
+        !std::isfinite(sleepTimeThreshold) || sleepTimeThreshold <= 0) {
+        throw std::invalid_argument("Sleep thresholds must be finite, energy non-negative and time positive.");
+    }
     if (!std::isfinite(fixedTimeStep) || fixedTimeStep <= 0.0f) {
         throw std::invalid_argument("Fixed timestep must be positive and finite.");
     }

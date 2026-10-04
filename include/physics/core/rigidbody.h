@@ -63,6 +63,8 @@ namespace PhysicsEngine {
         bool CanCollideWith(const RigidBody& other) const;
 
         bool IsStatic() const;
+        bool IsAwake() const { return !isStatic && awake; }
+        void Wake() { if (!isStatic) { awake = true; sleepTime = 0; } }
 
         // setters
 
@@ -83,6 +85,10 @@ namespace PhysicsEngine {
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;
+        bool awake = true;
+        float sleepTime = 0;
+        bool applyingAutomaticForces = false;
+        bool contactWakeRequested = false;
         std::uint32_t collisionCategoryBits = 0x00000001u;
         std::uint32_t collisionMaskBits = 0xFFFFFFFFu;
     };
