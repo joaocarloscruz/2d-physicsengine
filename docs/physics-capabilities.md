@@ -12,6 +12,7 @@ trajectory or plausible animation does not establish accuracy for a new scene.
 | [WCSPH](wcsph-solver.md) | Summation or continuity density, pressure, viscosity, sampled containers, explicit rigid coupling | [Consistency](fluid-consistency-diagnostic.md), [kernel](cubic-kernel-experiments.md) and [wall](fluid-wall-audit.md) diagnostics, coupling momentum tests | Nine legacy [physical targets](https://github.com/joaocarloscruz/2d-physicsengine/issues/44) remain expected failures; disorder and wall quadrature are unresolved |
 | [DFSPH](dfsph-solver.md) | Fluid-only free-surface compression/divergence projection with bounded iterations | Independently measured predicted compression, achieved residuals and WCSPH comparison | Expansion and surface underdensity remain; no container or rigid-body coupling |
 | [Periodic MAC grid](periodic-mac-projection.md) | Double face velocities, periodic pressure projection and [implicit constant viscosity](periodic-mac-diffusion.md) | Discrete Fourier modes, temporal/spatial refinement, means, pressure gauge, actual stored residuals and energy/dissipation identities | Separate projection/diffusion operations; no advection, obstacles or free surface |
+| [Scalar transport](periodic-scalar-transport.md) | Conservative periodic cell-average density transport with frozen MAC face velocities | Independent donor matrices and Fourier modes, first-order refinement, mass, positivity and CFL checks | First-order numerical diffusion; no velocity advection, automatic pressure projection, obstacles or complete fluid timestep |
 | [Soft bodies](soft-bodies.md) | Mass-spring networks, axial damping, fixed anchors and external loads | Oscillator phase/refinement, momentum, damping and bounded step tests | Spring networks are not calibrated continuum solids; no self-contact, tearing or fluid coupling |
 | [Thermal networks](thermal-networks.md) | Lumped heat capacities, conduction, reciprocal Stefan–Boltzmann exchange, queued power and fixed-temperature reservoirs | Analytical exponential/radiative cooling, first-order refinement, maximum principle and energy accounting | Caller-supplied exchange coefficients; no geometry/view-factor solver, spectral transport, moving heat transport, phase change or automatic mechanical coupling |
 | [Charged particles](electromagnetic-particles.md) | Nonrelativistic planar motion in prescribed uniform electric and magnetic fields | Cyclotron radius/handedness, crossed-field drift, work and step composition | Fields do not respond to particles; no relativistic dynamics or particle-field coupling |
@@ -23,7 +24,7 @@ Native APIs are installed through `PhysicsEngine::Engine` and the
 `physics/physics.h` entry point. Rigid bodies/joints, particles, soft bodies,
 thermal networks, charged particles, gravity, waves, MAC projection/viscosity,
 Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
-SPH solvers and rigid-fluid coupling currently require the native API. Binding
+SPH solvers, rigid-fluid coupling and scalar transport currently require the native API. Binding
 coverage does not imply all native observers or internal details are exposed.
 The [WASM exception boundary](wasm-exception-boundary.md) preserves resources
 across repeated validation failures and uses a pinned SDK with stress checks.

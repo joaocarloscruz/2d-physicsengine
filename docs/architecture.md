@@ -115,6 +115,17 @@ See [scalar waves](wave-membranes.md) for layout, forcing and convergence.
 Both modules own independent state. They do not automatically exchange loads
 with World, fluids, thermal graphs or deformable bodies.
 
+## Conservative scalar transport
+
+`PeriodicScalarTransport` owns cell-average scalar density and copied periodic
+MAC face velocities. Paired donor-cell fluxes conserve the scalar integral;
+a local outflow CFL bound preserves nonnegative input, with stored-state checks
+before transactional publication. The frozen advector can be compressible,
+in which case uniform density and the old maximum need not be preserved.
+The first-order scheme introduces numerical diffusion. It does not advect
+velocity or automatically compose pressure, viscosity and forcing into a fluid
+step. See [transport equations, work bounds and refinement](periodic-scalar-transport.md).
+
 ## Limits
 
 Only circles and convex nondegenerate polygons are supported. Polygon vertices

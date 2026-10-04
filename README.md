@@ -3,7 +3,7 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
-viscosity, and periodic TMz electromagnetic fields.
+viscosity, conservative scalar transport, and periodic TMz electromagnetic fields.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, waves, periodic projection/viscosity, Maxwell fields
 and owned spatial query results;
@@ -96,6 +96,8 @@ a periodic grid projection. `mac_diffusion_demo` measures implicit viscosity,
 its achieved velocity residual and dissipation. `maxwell_grid_demo` compares
 oscillating physical field energy with the fixed-step modified invariant and
 reports magnetic divergence. These are separate bounded operations/models.
+`scalar_transport_demo` measures conservative donor-cell transport and its
+first-order numerical diffusion under a frozen periodic face-velocity field.
 `rigid_contact_benchmark --quick` measures resting
 contacts, stacks, friction and isolated impacts against physical oracles; its
 finite output includes substantial stack drift in difficult configurations.
