@@ -173,8 +173,10 @@ MacProjectionDiagnostics PeriodicMacGrid::project(const MacProjectionConfig& opt
     d.divergencePotentialInnerProduct=Checked(energyScale*Dot(final,staged.potential,work));
     d.residualEnergyBound=Checked(Checked(energyScale*n)*d.finalDivergenceRms*Rms(staged.potential,work));
     d.storageEnergyError=Checked(d.finalKineticEnergy-d.initialKineticEnergy-d.divergencePotentialInnerProduct+d.correctionKineticEnergy);
-    d.roundoffEnergyAllowance=Checked(128*std::numeric_limits<double>::epsilon()*
-        std::max({1.0,d.initialKineticEnergy,d.finalKineticEnergy,d.correctionKineticEnergy}));
+    // Scale-aware diagnostic guard, including ordinary N-term summation error.
+    // This is not a rigorous bound on every intermediate floating-point operation.
+    d.roundoffEnergyAllowance=Checked((16*static_cast<double>(n)+128)*std::numeric_limits<double>::epsilon()*
+        std::max({d.initialKineticEnergy,d.finalKineticEnergy,d.correctionKineticEnergy}));
     if(d.finalKineticEnergy>d.initialKineticEnergy+d.residualEnergyBound+d.roundoffEnergyAllowance)
         throw std::runtime_error("MAC projection energy exceeds its residual bound.");
     d.cellVisits=work.count;

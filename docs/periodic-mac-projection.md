@@ -131,8 +131,11 @@ The diagnostics expose initial/final/correction energies, both pairings, and
 `storageEnergyError`, the discrepancy in the first identity using the actual
 stored velocity correction. `residualEnergyBound` is
 ρV N * finalDivergenceRms * potentialRms, the Cauchy-Schwarz bound on the
-residual pairing. `roundoffEnergyAllowance` is 128 machine epsilons times the
-largest of one and the three energies. Publication rejects energy above
+residual pairing. `roundoffEnergyAllowance` is (16N+128) machine epsilons times
+the largest of the three energies, with zero allowance for zero energies and
+no absolute physical-unit floor. It is a scale-aware heuristic guard sized for
+ordinary N-term summation, not a rigorous bound on every floating-point
+intermediate. Publication rejects energy above
 `initialEnergy + residualEnergyBound + roundoffEnergyAllowance`.
 
 An exact projection is orthogonal and decreases kinetic energy by the

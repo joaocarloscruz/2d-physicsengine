@@ -186,3 +186,12 @@ TEST_CASE("MAC rejects unattainable stored velocity accuracy and pressure overfl
     REQUIRE_THROWS_AS(pressureGrid.project(options),std::runtime_error);
     REQUIRE(Difference(tiny,pressureGrid.velocities())==0);
 }
+TEST_CASE("MAC energy roundoff guard has no absolute physical unit floor", "[mac][conservation]") {
+    PeriodicMacGridConfig c; c.columns=11; c.rows=9; PeriodicMacGrid small(c),large(c);
+    const auto v=Mixed(c); small.setVelocities(v); large.setVelocities(v);
+    MacProjectionConfig low,high; low.density=1e-8; high.density=1e8;
+    const auto a=small.project(low),b=large.project(high);
+    REQUIRE(a.roundoffEnergyAllowance/a.initialKineticEnergy==Catch::Approx(b.roundoffEnergyAllowance/b.initialKineticEnergy).epsilon(1e-14));
+    REQUIRE(b.roundoffEnergyAllowance/a.roundoffEnergyAllowance==Catch::Approx(1e16).epsilon(1e-14));
+    PeriodicMacGrid zero(c); REQUIRE(zero.project().roundoffEnergyAllowance==0);
+}
