@@ -3,7 +3,7 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction, prescribed-field charged particles,
 planar Newtonian gravity and scalar membrane waves. WebAssembly exposes rigid
-bodies, particles, soft bodies, thermal networks, charged particles and gravity;
+bodies, particles, soft bodies, thermal networks, charged particles, gravity and waves;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
 distance, revolute and prismatic joints with drives and stops, simulation islands,
@@ -92,7 +92,7 @@ examples run without graphics and are included in the CTest smoke checks.
 - [Polygon centroids and rigid-body setup](docs/polygon-centering.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
-- [Native point and finite ray queries](docs/spatial-queries.md)
+- [Native point, ray, circle overlap and circle sweep queries](docs/spatial-queries.md)
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [Charged particles in prescribed electromagnetic fields](docs/electromagnetic-particles.md)
