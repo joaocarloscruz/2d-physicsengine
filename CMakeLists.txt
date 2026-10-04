@@ -263,6 +263,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
         ${TESTS_SRC_DIR}/test_fluid_disorder.cpp
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
+        ${TESTS_SRC_DIR}/test_fluid_diagnostic_inputs.cpp
         ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
         ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
         ${TESTS_SRC_DIR}/test_planar_reflected_operator.cpp

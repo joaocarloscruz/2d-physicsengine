@@ -106,3 +106,22 @@ DFSPH retains its existing free-surface projection and has no boundary solver.
 This selector is an experimental formulation choice, not a guarantee of
 hydrostatic equilibrium, disorder healing or freedom from pairing/tensile
 instabilities. See the [consistency diagnostic](fluid-consistency-diagnostic.md).
+
+## Public diagnostic input checks
+
+`MeasureFluidDiagnostics` validates the finite position and velocity and positive
+finite mass, density, rest density and smoothing length that its measurement
+consumes. It checks both indices before accessing a supplied pair, including
+empty particle arrays. Bad fields or additional-rate shapes throw
+`std::invalid_argument`; out-of-range indices throw `std::out_of_range`.
+Nonfinite intermediate differences, rates, accumulation or normalized summaries
+throw `std::overflow_error` instead of returning a misleading finite maximum.
+Inputs are never mutated, including when an error follows earlier valid pairs.
+
+The finite-input float arithmetic and ordering are retained. A caller-supplied
+pair list is accumulated as written: repeated pairs count repeatedly, reversed
+pairs represent the same interaction, and self pairs contribute zero. Producing
+a complete, nonduplicated neighbor set remains the caller's responsibility.
+Unused pressure, force, viscosity, volume and cached density-rate fields are not
+validated by this observer. These checks do not change the comparison operator
+or make it a true derivative of summation density.
