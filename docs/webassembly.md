@@ -79,7 +79,7 @@ insufficient work budget. Every failed state update or step retains the state,
 clock and previous report. Delete each grid handle once; copied config, arrays,
 primitives and reports remain valid after deletion. The Node suite independently
 checks convex flux splitting, anisotropic/two-cell grids, exact translating
-contact cell averages and Sod Riemann averages, refinement, conservation,
+contact cell averages, nonlinear simple waves on both axes, Sod Riemann averages, refinement, conservation,
 positivity, budget/range/clock rollback, deterministic replay and lifetime stress.
 
 ## Owned periodic electrostatic grids

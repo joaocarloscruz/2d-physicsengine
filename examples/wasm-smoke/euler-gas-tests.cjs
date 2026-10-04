@@ -202,6 +202,64 @@ function average(left, right, fn) {
     });
     return value;
 }
+// Isentropic right-moving simple wave before characteristic crossing. With
+// p=rho^gamma and fixed u-2c/(gamma-1), the characteristic speed is
+// c0+(gamma+1)*u/2. This reference never calls the discrete flux operator.
+function simpleWave(x, time) {
+    const gamma = 1.4, amplitude = .04, c0 = Math.sqrt(gamma);
+    assert.ok(amplitude * 2 * Math.PI * (gamma + 1) / 2 * time < 1);
+    let lo = -amplitude, hi = amplitude;
+    for (let iteration = 0; iteration < 70; ++iteration) {
+        const u = (lo + hi) / 2;
+        const residual = u - amplitude *
+                                 Math.sin(2 * Math.PI * (x - (c0 + (gamma + 1) / 2 * u) * time));
+        if (residual > 0)
+            hi = u;
+        else
+            lo = u;
+    }
+    const u = (lo + hi) / 2, sound = c0 + (gamma - 1) / 2 * u;
+    const density = (sound / c0) ** (2 / (gamma - 1));
+    return conserved(density, u, 0, density ** gamma, gamma);
+}
+function simpleWaveError(p, count, vertical) {
+    const c = {
+        ...config,
+        columns : vertical ? 2 : count,
+        rows : vertical ? count : 2,
+        spacingX : vertical ? .5 : 1 / count,
+        spacingY : vertical ? 1 / count : .5
+    };
+    const g = new p.PeriodicEulerGasGrid(c), s = g.state(), duration = .2;
+    const rotate = q => vertical ? [ q[0], q[2], q[1], q[3] ] : q;
+    const index = (i, transverse) => vertical ? transverse + 2 * i : i + count * transverse;
+    try {
+        for (let i = 0; i < count; ++i) {
+            const q = rotate(average(i / count, (i + 1) / count, x => simpleWave(x, 0)));
+            for (let transverse = 0; transverse < 2; ++transverse)
+                put(s, index(i, transverse), q);
+        }
+        g.setState(s);
+        const d = g.step(duration), actual = g.state();
+        audit(s, actual, d, c);
+        let error = 0, quadratureDifference = 0;
+        for (let i = 0; i < count; ++i) {
+            const left = i / count, right = (i + 1) / count, middle = (left + right) / 2;
+            const exact = rotate(average(left, right, x => simpleWave(x, duration)));
+            const a = average(left, middle, x => simpleWave(x, duration));
+            const b = average(middle, right, x => simpleWave(x, duration));
+            const refined = rotate(a.map((q, k) => (q + b[k]) / 2));
+            for (let component = 0; component < 4; ++component) {
+                error += Math.abs(cell(actual, index(i, 0))[component] - exact[component]) / count;
+                quadratureDifference += Math.abs(refined[component] - exact[component]) / count;
+            }
+        }
+        assert.ok(quadratureDifference < error / 10000);
+        return error;
+    } finally {
+        g.delete();
+    }
+}
 function shock(p, nx, length) {
     const c = {...config, columns : nx, rows : 2, spacingX : length / nx, spacingY : .5},
           g = new p.PeriodicEulerGasGrid(c), s = g.state(), t = .12, center = length / 2,
@@ -303,6 +361,13 @@ function smoke(p) {
     const errors = [ 32, 64, 128 ].map(n => contact(p, n));
     assert.ok(errors[1] < .7 * errors[0] && errors[2] < .65 * errors[1] &&
               errors[1] / errors[2] > 1.65);
+    const waves = [ false, true ].map(
+        vertical => [32, 64, 128].map(n => simpleWaveError(p, n, vertical)));
+    for (const sequence of waves) {
+        assert.ok(sequence[0] / sequence[1] > 1.8 && sequence[1] / sequence[2] > 1.8);
+        assert.ok(sequence[2] < .001);
+    }
+    waves[0].forEach((error, i) => close(error, waves[1][i], 2e-13));
     const shocks = [ 128, 256, 512 ].map(n => shock(p, n, 2));
     assert.ok(shocks[1].error < .8 * shocks[0].error && shocks[2].error < .8 * shocks[1].error &&
               shocks[2].error < .08);
@@ -410,7 +475,8 @@ function smoke(p) {
     validation.delete();
     console.log(
         `PASS: owned Euler gas; independent split-state/two-axis/two-cell updates, contact RMS ${
-            JSON.stringify(errors)}, exact Sod errors ${
+            JSON.stringify(errors)}, nonlinear-wave L1 by axis ${
+            JSON.stringify(waves)}, exact Sod errors ${
             JSON.stringify(shocks.map(x => x.error))}, image difference ${
             difference}, physical summaries/positivity/range/budgets/clock/ownership/replay`);
 }

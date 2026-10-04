@@ -152,7 +152,7 @@ physical propagation speed alone does not isolate a diffusive numerical stencil.
 Rusanov diffusion visibly damps contacts and smears shocks; refinement reduces
 these errors. These are local optimized native measurements (gamma=1.4), not
 hosted CI claims. The owned JavaScript suite also checks independent split-state,
-contact and Sod oracles through the WASM solver:
+contact, nonlinear simple-wave and Sod oracles through the WASM solver:
 
 | Comparison | Resolutions | Conserved error or density RMS |
 | --- | --- | --- |
