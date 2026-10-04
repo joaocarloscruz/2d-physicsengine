@@ -29,9 +29,9 @@ TEST_CASE("Cyclotron motion has the correct radius period and charge handedness"
     for (const double sign : {-1.0, 1.0}) {
         ChargedParticle p({}, {2, 0}, 3, sign * 6);
         p.step(pi / 8, {{}, 2}); // |omega|=4, a quarter revolution.
-        REQUIRE(p.getPosition().x == Catch::Approx(0.5).margin(1e-14));
-        REQUIRE(p.getPosition().y == Catch::Approx(-sign * 0.5).margin(1e-14));
-        REQUIRE(p.getVelocity().x == Catch::Approx(0).margin(1e-14));
+        REQUIRE(p.getPosition().x == Catch::Approx(0.5).epsilon(0).margin(1e-14));
+        REQUIRE(p.getPosition().y == Catch::Approx(-sign * 0.5).epsilon(0).margin(1e-14));
+        REQUIRE(p.getVelocity().x == Catch::Approx(0).epsilon(0).margin(1e-14));
         REQUIRE(p.getVelocity().y == Catch::Approx(-sign * 2));
         p.step(3 * pi / 8, {{}, 2});
         sameState(p, ChargedParticle({}, {2, 0}, 3, sign * 6));
@@ -45,9 +45,9 @@ TEST_CASE("Magnetic motion preserves kinetic energy over many gyroperiods", "[el
     REQUIRE(p.getKineticEnergy() == Catch::Approx(initialEnergy).epsilon(2e-12));
     const double omega = -22.0 / 7;
     REQUIRE(p.getPosition().x + p.getVelocity().y / omega
-        == Catch::Approx(1 - 4 / omega).margin(2e-12));
+        == Catch::Approx(1 - 4 / omega).epsilon(0).margin(2e-12));
     REQUIRE(p.getPosition().y - p.getVelocity().x / omega
-        == Catch::Approx(2 - 3 / omega).margin(2e-12));
+        == Catch::Approx(2 - 3 / omega).epsilon(0).margin(2e-12));
 }
 
 TEST_CASE("Crossed fields produce charge-independent electric cross magnetic drift", "[electromagnetic]") {
@@ -74,7 +74,7 @@ TEST_CASE("Electric work matches kinetic energy change with magnetic deflection"
     const double before = p.getKineticEnergy();
     p.step(0.7, {{2, 5}, -3});
     const double work = -2 * (2 * (p.getPosition().x + 1) + 5 * (p.getPosition().y - 2));
-    REQUIRE(p.getKineticEnergy() - before == Catch::Approx(work).margin(1e-12));
+    REQUIRE(p.getKineticEnergy() - before == Catch::Approx(work).epsilon(0).margin(1e-12));
 }
 
 TEST_CASE("Constant field evolution composes across steps and reverses under time reversal", "[electromagnetic]") {
@@ -103,8 +103,8 @@ TEST_CASE("Weak magnetic fields approach electric acceleration without cancellat
         ChargedParticle p({}, {}, 1, 1);
         p.step(theta > 0 ? theta : -theta, {{1, 0}, theta > 0 ? 1.0 : -1.0});
         const long double t = std::abs(theta), w = theta > 0 ? 1 : -1;
-        REQUIRE(p.getPosition().x == Catch::Approx(double(1 - std::cos(t))).margin(1e-18));
-        REQUIRE(p.getPosition().y == Catch::Approx(double(-w * (t - std::sin(t)))).margin(1e-18));
+        REQUIRE(p.getPosition().x == Catch::Approx(double(1 - std::cos(t))).epsilon(0).margin(1e-18));
+        REQUIRE(p.getPosition().y == Catch::Approx(double(-w * (t - std::sin(t)))).epsilon(0).margin(1e-18));
     }
 }
 
@@ -147,4 +147,76 @@ TEST_CASE("Charged-particle validation and overflow preserve state", "[electroma
     sameState(p, before, 0);
     p.step(0, {{1e308, 0}, 1e308});
     sameState(p, before, 0);
+}
+
+TEST_CASE("Charged-particle subnormal gyro coefficients preserve representable response", "[electromagnetic]") {
+    const double theta = std::numeric_limits<double>::denorm_min();
+    ChargedParticle forced({}, {}, 1, 1);
+    forced.step(1, {{1e6, 0}, theta});
+    const double vy = double(-static_cast<long double>(theta) * 1e6L / 2);
+    const double y = double(-static_cast<long double>(theta) * 1e6L / 6);
+    REQUIRE(forced.getVelocity().y == Catch::Approx(vy).epsilon(0).margin(2 * theta));
+    REQUIRE(forced.getPosition().y == Catch::Approx(y).epsilon(0).margin(2 * theta));
+    ChargedParticle magnetic({}, {0, 1e6}, 1, 1);
+    magnetic.step(1, {{}, theta});
+    REQUIRE(magnetic.getPosition().x == Catch::Approx(-vy).epsilon(0).margin(2 * theta));
+}
+
+TEST_CASE("Charged-particle large gyro coefficients preserve finite tiny displacement", "[electromagnetic]") {
+    const double theta = 1e160;
+    ChargedParticle forced({}, {}, 1, 1);
+    forced.step(1, {{1e8, 0}, theta});
+    // Rearrange the independent exact formula so neither theta^2 nor its
+    // reciprocal is formed: a finite ~1e-312 displacement must not vanish.
+    const double x = ((1 - std::cos(theta)) / theta) * (1e8 / theta);
+    REQUIRE(x > 0);
+    REQUIRE(forced.getPosition().x == Catch::Approx(x).epsilon(0).margin(4 * std::numeric_limits<double>::denorm_min()));
+}
+
+TEST_CASE("Charged-particle kinetic energy combines subnormal component contributions", "[electromagnetic]") {
+    ChargedParticle p({}, {1, 1}, std::numeric_limits<double>::denorm_min(), 0);
+    REQUIRE(p.getKineticEnergy() == std::numeric_limits<double>::denorm_min());
+}
+
+TEST_CASE("Charged-particle underflowing phase or electric impulse can have finite integrated response", "[electromagnetic]") {
+    const double tiny = std::numeric_limits<double>::denorm_min();
+    ChargedParticle magnetic({}, {0, 1e6}, 1, 1);
+    magnetic.step(0.5, {{}, tiny}); // theta=tiny/2 itself rounds to zero.
+    const double vx = double(static_cast<long double>(tiny) * 1e6L / 2);
+    const double x = double(static_cast<long double>(tiny) * 1e6L / 8);
+    REQUIRE(magnetic.getVelocity().x == Catch::Approx(vx).epsilon(0).margin(2 * tiny));
+    REQUIRE(magnetic.getPosition().x == Catch::Approx(x).epsilon(0).margin(2 * tiny));
+    ChargedParticle electric({}, {}, 1, tiny);
+    electric.step(1e200, {{tiny, 0}, 0});
+    const double qdt = tiny * 1e200;
+    const double displacement = 0.5 * qdt * qdt;
+    REQUIRE(displacement > 0);
+    REQUIRE(electric.getPosition().x == Catch::Approx(displacement).epsilon(2e-15));
+    REQUIRE(electric.getVelocity().x == 0); // Actual final speed is unrepresentable.
+}
+
+TEST_CASE("Charged-particle constant field semigroup holds across coefficient branches", "[electromagnetic]") {
+    for (const double theta : {-128.0, -0.01, -0.0099999, -1e-14, 0.0, 1e-14, 0.0099999, 0.01, 128.0}) {
+        CAPTURE(theta);
+        ChargedParticle whole({-1, 2}, {3, -4}, 1, 1);
+        auto partitioned = whole;
+        const UniformElectromagneticField field{{2, -3}, theta};
+        whole.step(1, field);
+        for (int i = 0; i < 16; ++i) partitioned.step(1.0 / 16, field);
+        sameState(whole, partitioned, 1e-12);
+        const double work = 2 * (whole.getPosition().x + 1) - 3 * (whole.getPosition().y - 2);
+        REQUIRE(whole.getKineticEnergy() - 12.5 == Catch::Approx(work).epsilon(0).margin(2e-13));
+    }
+}
+
+TEST_CASE("Charged-particle complete scaled response preserves work at extreme fields", "[electromagnetic]") {
+    ChargedParticle p({}, {}, 1e-200, 1e-200);
+    REQUIRE_NOTHROW(p.step(1e100, {{1e300, 0}, 1e100}));
+    // q*E*dt/m is unrepresentable, but magnetic deflection keeps velocity,
+    // displacement and energy finite. Test work independently of the enormous
+    // gyro phase, whose rounding precludes a meaningful absolute phase claim.
+    const double work = (1e-200 * 1e300) * p.getPosition().x;
+    REQUIRE(std::isfinite(work));
+    REQUIRE(p.getKineticEnergy() == Catch::Approx(work).epsilon(2e-14));
+    REQUIRE(p.getPosition().y == Catch::Approx(-1e300).epsilon(2e-14));
 }

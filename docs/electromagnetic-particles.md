@@ -45,7 +45,12 @@ B(theta) = (theta-sin(theta))/theta^2
 Small-angle series avoid cancellation. Their limits are `sinc=1`, `cosc=0`,
 `A=1/2`, `B=0`, recovering constant electric acceleration continuously. Exponent
 scaling evaluates products such as `q*B*dt/m` without overflowing a premature
-`q/m`. No iterative solver or timestep-dependent truncation error is introduced
+`q/m`. Complete response terms are scaled before final rounding; tiny gyro
+coefficients, an underflowing electric velocity increment, or an underflowing
+phase can still produce representable position or transverse-velocity changes.
+Kinetic energy combines normalized velocity components before rounding, retaining
+a representable total when individual component energies would underflow.
+No iterative solver or timestep-dependent truncation error is introduced
 for a truly constant field, apart from finite series and floating-point rounding.
 Changing fields between calls gives a piecewise-constant approximation; spatially
 varying fields require a different integrator.
