@@ -207,3 +207,129 @@ TEST_CASE("A slow motor wakes its island and keeps driving below the sleep thres
     for (int i = 0; i < 30; ++i) world.step(0.01f);
     REQUIRE_FALSE(b->IsAwake()); REQUIRE_FALSE(c->IsAwake());
 }
+
+TEST_CASE("Angular stops hold against motors and allow travel back into range", "[joints][limits][motor]") {
+    for (const float direction : {-1.0f, 1.0f}) {
+        World world;
+        auto a = Body({}, true), b = Body({});
+        b->SetMass(1);
+        world.addBody(a); world.addBody(b);
+        auto joint = std::make_shared<RevoluteJoint>(a, b);
+        joint->setLimits(true, -0.4f, 0.7f);
+        joint->setMotor(true, direction * 2, 1);
+        world.addJoint(joint);
+        for (int i = 0; i < 600; ++i) {
+            world.step(1.0f / 120);
+            REQUIRE(joint->getAngle() >= -0.40001);
+            REQUIRE(joint->getAngle() <= 0.70001);
+            REQUIRE(std::abs(joint->getMotorTorque()) <= 1.00001);
+        }
+        REQUIRE(joint->getAngle() == Catch::Approx(direction < 0 ? -0.4 : 0.7).margin(1e-5));
+        REQUIRE(b->angularVelocity == Catch::Approx(0).margin(1e-5));
+        joint->setMotor(true, -direction, 1);
+        for (int i = 0; i < 12; ++i) world.step(1.0f / 120);
+        REQUIRE(b->angularVelocity == Catch::Approx(-direction));
+        REQUIRE(joint->getAngle() > -0.4 + 0.05);
+        REQUIRE(joint->getAngle() < 0.7 - 0.05);
+    }
+}
+
+TEST_CASE("An equal-angle stop conserves angular momentum while locking relative rotation", "[joints][limits]") {
+    World world;
+    auto a = Body({}), b = Body({});
+    a->SetMass(1); b->SetMass(3);
+    a->SetAngularVelocity(4);
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    joint->setLimits(true, 0.3f, 0.3f);
+    world.addJoint(joint);
+    world.step(0);
+    REQUIRE(a->angularVelocity == Catch::Approx(1));
+    REQUIRE(b->angularVelocity == Catch::Approx(1));
+    REQUIRE(joint->getAngle() == Catch::Approx(0.3));
+    const float momentum = a->inertia * 4;
+    for (int i = 0; i < 1200; ++i) world.step(1.0f / 120);
+    REQUIRE(joint->getAngle() == Catch::Approx(0.3).margin(1e-5));
+    REQUIRE(a->inertia * a->angularVelocity + b->inertia * b->angularVelocity == Catch::Approx(momentum));
+}
+
+TEST_CASE("Joint limits use a relative reference across body angle wrapping", "[joints][limits]") {
+    World world;
+    auto a = Body({}), b = Body({});
+    a->SetOrientation(2.9f); b->SetOrientation(-2.9f);
+    a->SetAngularVelocity(2); b->SetAngularVelocity(2);
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    joint->setLimits(true, -0.1f, 0.1f);
+    world.addJoint(joint);
+    REQUIRE(joint->getAngle() == Catch::Approx(0).margin(1e-7));
+    for (int i = 0; i < 1200; ++i) {
+        world.step(1.0f / 120);
+        REQUIRE(std::abs(joint->getAngle()) < 1e-4);
+    }
+}
+
+TEST_CASE("Limits preserve free motion inside their interval and validate before mutation", "[joints][limits][validation]") {
+    World world;
+    auto a = Body({}, true), b = Body({});
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    world.addJoint(joint);
+    REQUIRE_FALSE(joint->areLimitsEnabled());
+    joint->setLimits(true, -1, 1);
+    REQUIRE_THROWS_AS(joint->setLimits(false, 2, 1), std::invalid_argument);
+    REQUIRE_THROWS_AS(joint->setLimits(false, -4, 1), std::invalid_argument);
+    REQUIRE_THROWS_AS(joint->setLimits(false, -1, 4), std::invalid_argument);
+    REQUIRE_THROWS_AS(joint->setLimits(false, 0, std::numeric_limits<float>::quiet_NaN()), std::invalid_argument);
+    REQUIRE(joint->areLimitsEnabled());
+    REQUIRE(joint->getLowerLimit() == -1);
+    REQUIRE(joint->getUpperLimit() == 1);
+    b->SetAngularVelocity(1);
+    world.step(0);
+    REQUIRE(b->angularVelocity == 1);
+    world.step(0.1f);
+    REQUIRE(b->angularVelocity == 1);
+    REQUIRE(joint->getAngle() == Catch::Approx(0.1));
+    b->SetOrientation(1.3f);
+    world.step(0);
+    REQUIRE(joint->getAngle() == Catch::Approx(1));
+    REQUIRE(b->angularVelocity == 0);
+    b->SetAngularVelocity(-1);
+    world.step(0);
+    REQUIRE(b->angularVelocity == -1);
+    joint->setLimits(false, -1, 1);
+    b->SetOrientation(2);
+    world.step(0);
+    REQUIRE(joint->getAngle() == Catch::Approx(2));
+}
+
+TEST_CASE("Limited off-center hinges maintain both anchors and angle", "[joints][limits]") {
+    SimulationConfig config; config.solverIterations = 30;
+    World world(config);
+    auto a = Body({}, true), b = Body({1, 0});
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b, Vector2{}, Vector2(-1, 0));
+    joint->setLimits(true, -0.5f, 0.5f);
+    world.addJoint(joint);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2(0, -9.81f)));
+    for (int i = 0; i < 1200; ++i) {
+        world.step(1.0f / 120);
+        REQUIRE(std::abs(joint->getAngle()) <= 0.505);
+        REQUIRE((joint->getAnchorB() - joint->getAnchorA()).magnitude() < 0.005f);
+    }
+}
+
+TEST_CASE("Editing a stop wakes a sleeping articulation", "[joints][limits][sleep]") {
+    SimulationConfig config; config.enableSleeping = true; config.sleepTimeThreshold = 0.05f;
+    World world(config);
+    auto a = Body({}, true), b = Body({});
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    world.addJoint(joint);
+    for (int i = 0; i < 30; ++i) world.step(0.01f);
+    REQUIRE_FALSE(b->IsAwake());
+    joint->setLimits(true, 0.2f, 0.3f);
+    REQUIRE(b->IsAwake());
+    world.step(0.01f);
+    REQUIRE(joint->getAngle() == Catch::Approx(0.2));
+}

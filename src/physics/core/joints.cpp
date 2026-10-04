@@ -7,6 +7,13 @@
 
 namespace PhysicsEngine {
 namespace {
+constexpr double Pi = 3.14159265358979323846;
+constexpr double AngularTolerance = 0.005;
+constexpr double MaxAngularCorrection = 0.2;
+void ApplyAngularImpulse(RigidBody& a, RigidBody& b, double impulse) {
+    a.angularVelocity = static_cast<float>(a.angularVelocity - a.inverseInertia * impulse);
+    b.angularVelocity = static_cast<float>(b.angularVelocity + b.inverseInertia * impulse);
+}
 void Apply(RigidBody& a, RigidBody& b, Vector2 ra, Vector2 rb, Vector2 impulse, bool position) {
     if (position) {
         a.position = a.position-impulse*a.inverseMass;
@@ -32,6 +39,45 @@ Vector2 SolvePointMass(const RigidBody& a, const RigidBody& b, Vector2 ra, Vecto
     const float determinant = k11*k22-k12*k12;
     if (determinant <= 0) return {};
     return {(k22*rhs.x-k12*rhs.y)/determinant, (k11*rhs.y-k12*rhs.x)/determinant};
+}
+struct HingeImpulse { Vector2 linear; double angular; };
+HingeImpulse SolveHingeMass(const RigidBody& a, const RigidBody& b,
+    Vector2 ra, Vector2 rb, Vector2 rhs, double angularRhs) {
+    const double ia = a.inverseInertia, ib = b.inverseInertia;
+    const double k33 = ia + ib;
+    if (k33 <= 0) return {SolvePointMass(a, b, ra, rb, rhs), 0};
+    const double m = static_cast<double>(a.inverseMass) + b.inverseMass;
+    const double k13 = -ia * ra.y - ib * rb.y, k23 = ia * ra.x + ib * rb.x;
+    // Schur complement of the angular row. This avoids slow alternating
+    // corrections when the lever arm is much longer than the body's radius.
+    const double weight = ia * ib / k33;
+    const double dx = static_cast<double>(ra.x) - rb.x, dy = static_cast<double>(ra.y) - rb.y;
+    const double k11 = m + weight * dy * dy;
+    const double k22 = m + weight * dx * dx;
+    const double k12 = -weight * dx * dy;
+    const double x = rhs.x - k13 * angularRhs / k33, y = rhs.y - k23 * angularRhs / k33;
+    const double determinant = m * (m + weight * (dx * dx + dy * dy));
+    if (determinant <= 0) return {};
+    const double px = (k22 * x - k12 * y) / determinant;
+    const double py = (k11 * y - k12 * x) / determinant;
+    return {{static_cast<float>(px), static_cast<float>(py)}, (angularRhs - k13 * px - k23 * py) / k33};
+}
+void SolveAngularStop(RigidBody& a, RigidBody& b, Vector2 pa, Vector2 pb,
+    double targetSpeed, double& accumulated, bool lower) {
+    const Vector2 ra = pa - a.position, rb = pb - b.position;
+    const Vector2 rhs = (b.GetVelocityAtPoint(pb) - a.GetVelocityAtPoint(pa)) * -1;
+    const double speed = static_cast<double>(b.angularVelocity) - a.angularVelocity;
+    const auto candidate = SolveHingeMass(a, b, ra, rb, rhs, targetSpeed - speed);
+    const double next = lower ? std::max(accumulated + candidate.angular, 0.0)
+        : std::min(accumulated + candidate.angular, 0.0);
+    const double angular = next - accumulated;
+    accumulated = next;
+    const double k13 = -static_cast<double>(a.inverseInertia) * ra.y - static_cast<double>(b.inverseInertia) * rb.y;
+    const double k23 = static_cast<double>(a.inverseInertia) * ra.x + static_cast<double>(b.inverseInertia) * rb.x;
+    const Vector2 linear = angular == candidate.angular ? candidate.linear :
+        SolvePointMass(a, b, ra, rb, {static_cast<float>(rhs.x - k13 * angular), static_cast<float>(rhs.y - k23 * angular)});
+    Apply(a, b, ra, rb, linear, false);
+    ApplyAngularImpulse(a, b, angular);
 }
 }
 
@@ -71,7 +117,22 @@ bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
 }
 
 RevoluteJoint::RevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 la, Vector2 lb)
-    : IJoint(std::move(a), std::move(b), la, lb) {}
+    : IJoint(std::move(a), std::move(b), la, lb) {
+    referenceAngle = std::remainder(static_cast<double>(this->b->orientation) - this->a->orientation, 2 * Pi);
+}
+void RevoluteJoint::setLimits(bool enabled, float lowerAngle, float upperAngle) {
+    if (!std::isfinite(lowerAngle) || !std::isfinite(upperAngle) ||
+        lowerAngle > upperAngle || lowerAngle <= -Pi || upperAngle >= Pi)
+        throw std::invalid_argument("Joint limits must be ordered finite angles strictly between -pi and pi.");
+    if (limitsEnabled == enabled && lowerLimit == lowerAngle && upperLimit == upperAngle) return;
+    limitsEnabled = enabled;
+    lowerLimit = lowerAngle;
+    upperLimit = upperAngle;
+    a->Wake(); b->Wake();
+}
+double RevoluteJoint::getAngle() const {
+    return std::remainder(static_cast<double>(b->orientation) - a->orientation - referenceAngle, 2 * Pi);
+}
 void RevoluteJoint::setMotor(bool enabled, float speed, float maxTorque) {
     if (!std::isfinite(speed) || !std::isfinite(maxTorque) || maxTorque < 0)
         throw std::invalid_argument("Motor speed must be finite and maximum torque finite and non-negative.");
@@ -87,6 +148,8 @@ double RevoluteJoint::getMotorTorque() const {
 void RevoluteJoint::prepareStep(float deltaTime) {
     stepDuration = deltaTime;
     motorImpulse = 0;
+    lowerImpulse = 0;
+    upperImpulse = 0;
 }
 bool RevoluteJoint::preventsSleeping() const {
     return motorEnabled && maxMotorTorque > 0 && motorSpeed != 0;
@@ -99,8 +162,33 @@ void RevoluteJoint::solveVelocity() {
         const double nextImpulse = std::clamp(motorImpulse + (motorSpeed - speed) / angularMass, -cap, cap);
         const double impulse = nextImpulse - motorImpulse;
         motorImpulse = nextImpulse;
-        a->angularVelocity = static_cast<float>(a->angularVelocity - a->inverseInertia * impulse);
-        b->angularVelocity = static_cast<float>(b->angularVelocity + b->inverseInertia * impulse);
+        ApplyAngularImpulse(*a, *b, impulse);
+    }
+    if (limitsEnabled && angularMass > 0) {
+        const Vector2 pa = getAnchorA(), pb = getAnchorB();
+        if (lowerLimit == upperLimit) {
+            const Vector2 ra = pa - a->position, rb = pb - b->position;
+            const auto impulse = SolveHingeMass(*a, *b, ra, rb,
+                (b->GetVelocityAtPoint(pb) - a->GetVelocityAtPoint(pa)) * -1,
+                -(static_cast<double>(b->angularVelocity) - a->angularVelocity));
+            Apply(*a, *b, ra, rb, impulse.linear, false);
+            ApplyAngularImpulse(*a, *b, impulse.angular);
+        } else {
+            const double angle = getAngle();
+            const double lowerGap = angle - lowerLimit;
+            if (stepDuration > 0 || lowerGap <= 0) {
+                const double bias = stepDuration > 0 ? std::max(lowerGap, 0.0) / stepDuration : 0;
+                SolveAngularStop(*a, *b, pa, pb, -bias, lowerImpulse, true);
+            }
+            const double upperGap = upperLimit - angle;
+            if (stepDuration > 0 || upperGap <= 0) {
+                const double bias = stepDuration > 0 ? std::max(upperGap, 0.0) / stepDuration : 0;
+                SolveAngularStop(*a, *b, pa, pb, bias, upperImpulse, false);
+            }
+        }
+        // The block solve already enforces the point constraint. With zero dt
+        // and an inactive interval neither stop is solved, so solve the point below.
+        if (stepDuration > 0 || lowerLimit == upperLimit || getAngle() <= lowerLimit || getAngle() >= upperLimit) return;
     }
     const Vector2 pa = getAnchorA(), pb = getAnchorB();
     const Vector2 ra = pa-a->position, rb = pb-b->position;
@@ -113,7 +201,20 @@ bool RevoluteJoint::solvePosition(float tolerance, float maxCorrection) {
     Vector2 error = pb-pa;
     const float distance = error.magnitude();
     if (distance > maxCorrection) error = error*(maxCorrection/distance);
+    double angularError = 0;
+    if (limitsEnabled) {
+        const double angle = getAngle();
+        angularError = angle - std::clamp(angle, static_cast<double>(lowerLimit), static_cast<double>(upperLimit));
+        if (angularError != 0 || lowerLimit == upperLimit) {
+            const auto impulse = SolveHingeMass(*a, *b, ra, rb, error * -1,
+                -std::clamp(angularError, -MaxAngularCorrection, MaxAngularCorrection));
+            Apply(*a, *b, ra, rb, impulse.linear, true);
+            a->orientation = static_cast<float>(a->orientation - a->inverseInertia * impulse.angular);
+            b->orientation = static_cast<float>(b->orientation + b->inverseInertia * impulse.angular);
+            return distance <= tolerance && std::abs(angularError) <= AngularTolerance;
+        }
+    }
     Apply(*a, *b, ra, rb, SolvePointMass(*a, *b, ra, rb, error*-1), true);
-    return distance <= tolerance;
+    return distance <= tolerance && std::abs(angularError) <= AngularTolerance;
 }
 }

@@ -10,8 +10,8 @@ Removing a body removes its attached joints. Removing a joint wakes both endpoin
 Joint and contact velocity constraints share the iteration budget. Position
 projection corrects drift using the configured correction bound and tolerance.
 Distance constraints use scalar effective mass; revolute constraints solve a 2×2
-point-mass system including angular inertia. Limits and compliance are not yet
-implemented. Connected bodies still collide unless their collision masks exclude
+point-mass system including angular inertia. Compliance is not yet implemented.
+Connected bodies still collide unless their collision masks exclude
 each other. The tests include analytical momentum transfer and 3,000-step pendulums.
 
 ## Revolute speed motors
@@ -32,6 +32,28 @@ last step, including zero for a zero-duration or sleeping step. Impulses on A an
 are equal and opposite. The drive updates velocity in the constraint phase after
 pose integration, so driven motion converges with smaller fixed timesteps. As with
 contact impulses, configured integration speed caps do not cap solver impulses.
+
+## Revolute angular stops
+
+`joint->setLimits(true, lower, upper)` restricts the angle of B relative to A,
+measured from the joint's construction pose. `getAngle()` reports this principal
+angle in radians, wrapped to [-pi, pi]. Both limits must lie strictly between -pi
+and pi, with `lower <= upper`. Equal limits lock the relative angle; intervals
+that exclude zero are allowed and position projection brings the joint into range.
+Limits default to disabled; `setLimits(false, lower, upper)` restores free rotation.
+Changing limits wakes the endpoints. Motors and limits can be enabled together.
+
+Stops apply only inward angular impulses and allow immediate motion back into the
+interval. A speculative velocity bound limits travel toward each stop over the
+next step. Position projection uses a 0.005-radian convergence tolerance and a
+0.2-radian correction bound per iteration, independent of the linear contact
+tolerances. Active stops solve the anchor and angular constraints together in a
+3-by-3 effective-mass system; they share the global iteration budget.
+
+These are discrete principal-angle stops, not continuous multi-turn constraints.
+Use sufficiently small steps to avoid crossing the angle wrap or both stops in
+one step; extreme angular motion and initial errors can exceed the correction
+budget. Smaller steps and more iterations improve coupled off-center constraints.
 
 Dynamic contact/joint graphs form independent islands. Sharing the same static
 floor does not merge separate islands. Each awake island is solved independently.

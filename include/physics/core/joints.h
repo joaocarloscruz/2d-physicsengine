@@ -44,6 +44,12 @@ public:
     float getMotorSpeed() const { return motorSpeed; }
     float getMaxMotorTorque() const { return maxMotorTorque; }
     double getMotorTorque() const;
+    // Limits use the principal relative angle from the construction pose.
+    void setLimits(bool enabled, float lowerAngle, float upperAngle);
+    bool areLimitsEnabled() const { return limitsEnabled; }
+    float getLowerLimit() const { return lowerLimit; }
+    float getUpperLimit() const { return upperLimit; }
+    double getAngle() const;
 protected:
     void prepareStep(float deltaTime) override;
     bool preventsSleeping() const override;
@@ -55,5 +61,11 @@ private:
     float maxMotorTorque = 0;
     float stepDuration = 0;
     double motorImpulse = 0;
+    double referenceAngle = 0;
+    bool limitsEnabled = false;
+    float lowerLimit = 0;
+    float upperLimit = 0;
+    double lowerImpulse = 0;
+    double upperImpulse = 0;
 };
 }
