@@ -232,6 +232,34 @@ TEST_CASE("Radiative failures preserve queued loads topology and accounting",
     SameState(n, extreme);
 }
 
+TEST_CASE("Nearly equal radiating reservoirs retain the small physical temperature difference",
+          "[Thermal][radiation]") {
+    for (const double temperature : {1.0, 1e80}) {
+        ThermalNetworkConfig c;
+        c.maxSubstep = 1;
+        ThermalNetwork n(c);
+        const double hotter = std::nextafter(temperature, std::numeric_limits<double>::infinity());
+        const double coefficient = temperature == 1 ? 1 : 1e-240;
+        n.addNode(temperature, 1 / temperature, true);
+        n.addNode(hotter, 1 / temperature, true);
+        n.addRadiationLink(0, 1, coefficient);
+        // Independent divided difference uses normalized temperatures and the
+        // binomial identity (1+d)^4-1=d*(4+d*(6+d*(4+d))). No fourth-power
+        // subtraction or the implementation's low/high ratio is used.
+        const long double relative =
+            (static_cast<long double>(hotter) - temperature) / temperature;
+        const long double factor = relative * (4 + relative * (6 + relative * (4 + relative)));
+        const long double scale = temperature;
+        const double expected = static_cast<double>(
+            .5L * coefficient * scale * scale * scale * scale * factor);
+        n.step(.5);
+        REQUIRE(expected > 0);
+        REQUIRE(n.getNodes()[0].reservoirHeat == Catch::Approx(-expected).epsilon(3e-15));
+        REQUIRE(n.getNodes()[1].reservoirHeat == Catch::Approx(expected).epsilon(3e-15));
+        REQUIRE(n.getDiagnostics().lastReservoirHeat == 0);
+    }
+}
+
 TEST_CASE("Radiative links validate independent pairs and share the topology budget",
           "[Thermal][radiation]") {
     ThermalNetwork n;
