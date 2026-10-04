@@ -13,17 +13,24 @@ float ManifoldFloat(double value) {
 }
 
 PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody* a, RigidBody* b) {
+    if (!a || !b)
+        throw std::invalid_argument("Circle collision requires two circle bodies");
+    const auto* circleA = dynamic_cast<const Circle*>(a->shape.get());
+    const auto* circleB = dynamic_cast<const Circle*>(b->shape.get());
+    if (!circleA || !circleB)
+        throw std::invalid_argument("Circle collision requires two circle bodies");
+    const double radiusA = circleA->GetRadius(), radiusB = circleB->GetRadius();
+    if (!std::isfinite(radiusA) || !std::isfinite(radiusB) || radiusA <= 0 || radiusB <= 0)
+        throw std::invalid_argument("Circle contact radii must be positive and finite");
     CollisionManifold manifold;
     manifold.A = a;
     manifold.B = b;
-    const auto* circleA = static_cast<const Circle*>(a->shape.get());
-    const auto* circleB = static_cast<const Circle*>(b->shape.get());
     const double dx = double(b->position.x) - a->position.x;
     const double dy = double(b->position.y) - a->position.y;
     if (!std::isfinite(dx) || !std::isfinite(dy))
         throw std::invalid_argument("Circle contact positions must be finite");
     const double distance = std::hypot(dx, dy);
-    const double sumRadii = double(circleA->GetRadius()) + circleB->GetRadius();
+    const double sumRadii = radiusA + radiusB;
     if (distance >= sumRadii) return manifold;
 
     manifold.penetration = ManifoldFloat(sumRadii - distance);
@@ -35,8 +42,8 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
         manifold.normal = Vector2(ManifoldFloat(nx), ManifoldFloat(ny));
         // Retain the surface-of-A convention, checking the final stored point.
         manifold.contactPoint = Vector2(
-            ManifoldFloat(a->position.x + nx * circleA->GetRadius()),
-            ManifoldFloat(a->position.y + ny * circleA->GetRadius()));
+            ManifoldFloat(a->position.x + nx * radiusA),
+            ManifoldFloat(a->position.y + ny * radiusA));
     }
     manifold.hasCollision = true;
     manifold.contactCount = 1;

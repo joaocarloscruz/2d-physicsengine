@@ -8,6 +8,38 @@
 
 using namespace PhysicsEngine;
 
+namespace {
+class MalformedCircle : public Circle {
+public:
+    explicit MalformedCircle(float value) : Circle(1) { radius = value; }
+    std::unique_ptr<Shape> Clone() const override { return std::make_unique<MalformedCircle>(*this); }
+};
+}
+
+TEST_CASE("Circle geometry validates body types and derived radii before use", "[contact_numerics][circle_geometry]") {
+    RigidBody a(Circle(1), Material{}, {}, true);
+    RigidBody b(Polygon::MakeBox(1, 1), Material{}, {}, true);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(nullptr, &a), std::invalid_argument);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(&a, nullptr), std::invalid_argument);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(nullptr, nullptr), std::invalid_argument);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(&a, &b), std::invalid_argument);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(&b, &a), std::invalid_argument);
+    REQUIRE_THROWS_AS(CollisionCircleCircle(&b, &b), std::invalid_argument);
+    for (float radius : {0.f, -1.f, std::numeric_limits<float>::infinity(),
+                         std::numeric_limits<float>::quiet_NaN()}) {
+        RigidBody invalid(MalformedCircle(radius), Material{}, {}, true);
+        REQUIRE_THROWS_AS(CollisionCircleCircle(&a, &invalid), std::invalid_argument);
+        REQUIRE_THROWS_AS(CollisionCircleCircle(&invalid, &a), std::invalid_argument);
+    }
+    // Circle orientation has no effect on its contact geometry.
+    RigidBody c(Circle(1), Material{}, {1, 0}, true);
+    a.orientation = std::numeric_limits<float>::quiet_NaN();
+    const auto hit = CollisionCircleCircle(&a, &c);
+    REQUIRE(hit.hasCollision);
+    REQUIRE(hit.penetration == 1);
+    REQUIRE(hit.contactPoint.x == 1);
+}
+
 TEST_CASE("Elastic contacts retain effective mass across representable mass scales", "[contact_numerics]") {
     for (float mass : {5e-39f, 1e-20f, 1.0f, 1e20f}) {
         CAPTURE(mass);

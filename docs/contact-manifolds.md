@@ -24,6 +24,14 @@ and `CollisionManifold::penetration` is the maximum point penetration. New code
 should use `contactCount` and `contacts`. Circle-circle and circle-polygon
 collisions expose one contact through the same representation.
 
-Reversing the input bodies preserves contact positions and feature IDs while
+For polygon pairs, reversing the input bodies preserves contact positions and feature IDs while
 swapping `A`/`B` and reversing the normal. This makes contact caches and event
 consumers insensitive to broad-phase pair order.
+
+Circle pairs keep the surface-of-A contact convention, or A's center with a +X
+normal when centers coincide. Reversal therefore need not preserve their contact
+position or reverse the coincident fallback normal. The public circle helper
+rejects null bodies, non-circle shapes, invalid radii and nonfinite positions
+with `std::invalid_argument`; circle orientation is irrelevant. Geometry uses
+double intermediates and rejects unrepresentable float manifold output with
+`std::overflow_error`.
