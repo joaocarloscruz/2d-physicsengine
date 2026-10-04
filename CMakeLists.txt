@@ -161,6 +161,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_math.cpp
         ${TESTS_SRC_DIR}/test_rigidbody.cpp
         ${TESTS_SRC_DIR}/test_rigidbody_numerics.cpp
+        ${TESTS_SRC_DIR}/test_polygon_centering.cpp
         ${TESTS_SRC_DIR}/test_charged_particle.cpp
         ${TESTS_SRC_DIR}/test_world.cpp
         ${TESTS_SRC_DIR}/test_forces.cpp

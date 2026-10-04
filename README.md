@@ -81,6 +81,7 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 ## Documentation
 
 - [Architecture, units and numerical limits](docs/architecture.md)
+- [Polygon centroids and rigid-body setup](docs/polygon-centering.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
 - [Native point and finite ray queries](docs/spatial-queries.md)

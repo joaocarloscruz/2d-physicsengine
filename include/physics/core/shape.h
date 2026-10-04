@@ -7,6 +7,7 @@
 #include <algorithm> // For std::reverse if needed
 #include <stdexcept>
 #include <memory>
+#include <limits>
 #include "../math/vector2.h"
 
 namespace PhysicsEngine {
@@ -137,6 +138,46 @@ namespace PhysicsEngine {
         }
 
         const std::vector<Vector2>& getVertices() const { return vertices; }
+
+        // Uniform-area centroid in the original local frame. Triangulating
+        // relative to a stored vertex avoids subtracting large world moments.
+        Vector2 GetCentroid() const {
+            const auto& origin = vertices.front();
+            double twiceArea = 0, momentX = 0, momentY = 0;
+            for (size_t i = 1; i + 1 < vertices.size(); ++i) {
+                const double ax = static_cast<double>(vertices[i].x) - origin.x;
+                const double ay = static_cast<double>(vertices[i].y) - origin.y;
+                const double bx = static_cast<double>(vertices[i + 1].x) - origin.x;
+                const double by = static_cast<double>(vertices[i + 1].y) - origin.y;
+                const double cross = ax * by - ay * bx;
+                twiceArea += cross;
+                momentX += cross * (ax + bx);
+                momentY += cross * (ay + by);
+            }
+            const double x = origin.x + momentX / (3 * twiceArea);
+            const double y = origin.y + momentY / (3 * twiceArea);
+            const double maximum = std::numeric_limits<float>::max();
+            if (!std::isfinite(x) || !std::isfinite(y) || std::abs(x) > maximum || std::abs(y) > maximum)
+                throw std::overflow_error("Polygon centroid exceeds finite Vector2 range.");
+            return {static_cast<float>(x), static_cast<float>(y)};
+        }
+
+        // Preserve this outline and return a copy shifted by GetCentroid().
+        // Shape validation still applies after rounding the new float vertices.
+        Polygon Recentered() const {
+            const Vector2 center = GetCentroid();
+            std::vector<Vector2> shifted;
+            shifted.reserve(vertices.size());
+            const double maximum = std::numeric_limits<float>::max();
+            for (const auto& vertex : vertices) {
+                const double x = static_cast<double>(vertex.x) - center.x;
+                const double y = static_cast<double>(vertex.y) - center.y;
+                if (std::abs(x) > maximum || std::abs(y) > maximum)
+                    throw std::overflow_error("Recentered polygon exceeds finite Vector2 range.");
+                shifted.emplace_back(static_cast<float>(x), static_cast<float>(y));
+            }
+            return Polygon(shifted);
+        }
     };
 }
 

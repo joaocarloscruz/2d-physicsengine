@@ -1,6 +1,9 @@
 #include <physics/physics.h>
 #include <cmath>
 int main() {
+    const auto triangle = PhysicsEngine::Polygon::MakeTriangle({-2, 0}, {2, 0}, {0, 5});
+    if (std::abs(triangle.GetCentroid().y - 5.0 / 3.0) > 1e-6
+        || std::abs(triangle.Recentered().GetInertia(1) - 37.0 / 18.0) > 1e-6) return 1;
     PhysicsEngine::World world;
     auto body = std::make_shared<PhysicsEngine::RigidBody>(PhysicsEngine::Circle(1), PhysicsEngine::Material{});
     body->SetVelocity({2, 0}); world.addBody(body); world.step(0.5f);

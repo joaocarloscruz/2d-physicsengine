@@ -63,6 +63,8 @@ See [electromagnetic particles](electromagnetic-particles.md).
 
 Only circles and convex nondegenerate polygons are supported. Polygon vertices
 are local to the body origin; use centered shapes for the intended inertia model.
+`Polygon::GetCentroid()` and `Recentered()` support this explicit setup; see
+[polygon centering](polygon-centering.md) for preserving the world pose and anchors.
 The engine has no arbitrary mesh collision, implicit rigid integrator or
 multithreaded solver. Revolute joints support torque-limited motors and principal
 angle stops; large angular displacements still require small timesteps. Soft bodies
