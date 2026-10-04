@@ -56,8 +56,9 @@ to DFSPH without implementing and validating equivalent boundary handling.
 
 ## Kernel-family selection
 
-Set `config.kernelFamily = SphKernelFamily::CubicSpline` to opt into the
-matched cubic density weight and analytic pressure/divergence gradient.
+Set `config.kernelFamily` to `SphKernelFamily::CubicSpline` or
+`SphKernelFamily::WendlandC2` to opt into a
+[matched density weight and analytic pressure/divergence gradient](sph-kernels.md).
 `Poly6Spiky` remains the default; unknown enum values are rejected. No
 particle masses or rest densities are changed. The independent Muller
 viscosity operator and its existing diffusion bounds remain in use.

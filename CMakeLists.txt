@@ -270,6 +270,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
         ${TESTS_SRC_DIR}/test_fluid_diagnostic_inputs.cpp
         ${TESTS_SRC_DIR}/test_sph_variable_support.cpp
+        ${TESTS_SRC_DIR}/test_wendland_kernel.cpp
         ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
         ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
         ${TESTS_SRC_DIR}/test_planar_reflected_operator.cpp

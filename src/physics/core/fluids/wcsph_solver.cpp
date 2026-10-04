@@ -401,7 +401,7 @@ void WcsphSolver::prepareState(
             config.kernelFamily
         );
         Vector2 pressureForce;
-        if (config.kernelFamily == SphKernelFamily::CubicSpline
+        if (config.kernelFamily != SphKernelFamily::Poly6Spiky
             && config.densityMode == WcsphDensityMode::Summation
             && first.smoothingLength != second.smoothingLength) {
             // Fixed-h summation density differentiates each particle's own

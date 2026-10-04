@@ -37,8 +37,14 @@ struct Plane {
     }
 };
 constexpr double Pi=3.1415926535897932384626433832795;
+inline void ValidateFamily(PhysicsEngine::SphKernelFamily family) {
+    if (family != PhysicsEngine::SphKernelFamily::Poly6Spiky &&
+        family != PhysicsEngine::SphKernelFamily::CubicSpline)
+        throw std::invalid_argument("Planar reflection experiment supports legacy and cubic kernels only.");
+}
 // Independent double formulas preserve physical units and permit clean work tests.
 inline double Weight(Vec r,double h,PhysicsEngine::SphKernelFamily family) {
+    ValidateFamily(family);
     const double q=r.norm()/h;
     if(q>=1) return 0;
     if(family==PhysicsEngine::SphKernelFamily::Poly6Spiky) {
@@ -48,6 +54,7 @@ inline double Weight(Vec r,double h,PhysicsEngine::SphKernelFamily family) {
     return 40/(7*Pi*h*h)*(u<1?1-1.5*u*u+.75*u*u*u:.25*t*t*t);
 }
 inline Vec Gradient(Vec r,double h,PhysicsEngine::SphKernelFamily family) {
+    ValidateFamily(family);
     const double radius=r.norm(),q=radius/h;
     if(radius==0||q>=1) return {};
     double derivative;
@@ -68,7 +75,7 @@ struct Result {
 };
 inline Result Evaluate(const std::vector<Particle>& p,const Plane& plane,double h,
     PhysicsEngine::SphKernelFamily family) {
-    PhysicsEngine::SphKernels2D::ValidateFamily(family);
+    ValidateFamily(family);
     if(p.size()>1024) throw std::length_error("Planar experiment supports at most 1024 particles.");
     if(!Finite(plane.point)||!Finite(plane.normal)||!Finite(plane.center)||!Finite(plane.velocity)
         ||!std::isfinite(plane.angularVelocity)||std::abs(plane.normal.norm()-1)>1e-12

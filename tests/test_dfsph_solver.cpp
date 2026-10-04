@@ -26,7 +26,7 @@ Vector2 Momentum(const std::vector<FluidParticle>& particles) {
 }
 
 TEST_CASE("DFSPH reduces compression and divergence against WCSPH", "[dfsph]") {
-    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline, SphKernelFamily::WendlandC2);
     auto reference = CompressionPatch(1, family); auto projected = reference;
     WcsphConfig weak; weak.kernelFamily = family; weak.externalAcceleration = {}; weak.speedOfSound = GENERATE(5.0f, 20.0f);
     DfsphConfig strong; strong.kernelFamily = family; strong.externalAcceleration = {};
@@ -48,7 +48,7 @@ TEST_CASE("DFSPH reduces compression and divergence against WCSPH", "[dfsph]") {
 }
 
 TEST_CASE("DFSPH tighter tolerance improves the projection", "[dfsph]") {
-    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline, SphKernelFamily::WendlandC2);
     auto looseParticles = CompressionPatch(2, family), tightParticles = looseParticles;
     DfsphConfig loose; loose.kernelFamily = family; loose.externalAcceleration = {}; loose.divergenceTolerance = 0.1f;
     DfsphConfig tight = loose; tight.divergenceTolerance = 1e-4f;
@@ -59,7 +59,7 @@ TEST_CASE("DFSPH tighter tolerance improves the projection", "[dfsph]") {
 }
 
 TEST_CASE("DFSPH maintains finite state and momentum over repeated steps", "[dfsph]") {
-    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline, SphKernelFamily::WendlandC2);
     auto particles = CompressionPatch(1, family);
     for (auto& p : particles) p.velocity = p.velocity+Vector2(0.3f, -0.2f);
     const Vector2 before = Momentum(particles);
@@ -76,7 +76,7 @@ TEST_CASE("DFSPH maintains finite state and momentum over repeated steps", "[dfs
 }
 
 TEST_CASE("DFSPH validates inputs and exposes iteration limits", "[dfsph][validation]") {
-    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline, SphKernelFamily::WendlandC2);
     DfsphConfig config; config.kernelFamily = family; config.externalAcceleration = {}; config.maximumIterations = 1;
     config.densityTolerance = 1e-6f; config.divergenceTolerance = 1e-6f;
     DfsphSolver solver(0.25f, config);

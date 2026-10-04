@@ -7,7 +7,8 @@ namespace PhysicsEngine {
 
 enum class SphKernelFamily {
     Poly6Spiky, // Legacy poly6 density and spiky pressure derivative.
-    CubicSpline // Matched normalized cubic weight/gradient, full support h.
+    CubicSpline, // Matched normalized cubic weight/gradient, full support h.
+    WendlandC2 // Matched normalized 2D Wendland C2, full support h.
 };
 
 class SphKernels2D {

@@ -104,8 +104,9 @@ For measured scaling and reproduction commands, see
 
 ## Kernel-family selection
 
-Set `config.kernelFamily = SphKernelFamily::CubicSpline` to opt into the
-matched cubic scalar density weight and radial pressure/continuity gradient.
+Set `config.kernelFamily` to `SphKernelFamily::CubicSpline` or
+`SphKernelFamily::WendlandC2` to opt into a
+[matched scalar density weight and radial gradient](sph-kernels.md).
 The default `Poly6Spiky` retains existing dynamics. An unknown enum value is
 rejected during configuration validation. Support `h`, caller mass and rest
 density are unchanged; lattice mass calibration remains a caller choice.
@@ -114,11 +115,11 @@ independent of this selector; a changed computed density can still change its
 viscosity coefficient and resulting stable timestep.
 
 Diagnostics use the selected family's **common mean-support gradient**, even
-for heterogeneous cubic summation density. These rates are a comparison
+for heterogeneous matched summation density. These rates are a comparison
 operator, rather than the derivative of each particle's actual summation density.
 WCSPH additionally includes prepared
-wall mirror rates in its raw compression/divergence diagnostics, in both
-families; previously these diagnostics omitted walls. Density diffusion is
+wall mirror rates in its raw compression/divergence diagnostics, for each
+family; previously these diagnostics omitted walls. Density diffusion is
 excluded from that raw operator measurement. The legacy two-argument free
 `MeasureFluidDiagnostics` retains the legacy family with no wall rates.
 DFSPH retains its existing free-surface projection and has no boundary solver.

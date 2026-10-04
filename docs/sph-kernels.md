@@ -76,7 +76,8 @@ coincident particles.
 
 Existing two-argument calls retain the poly6-density/spiky-pressure behavior.
 Three-argument density, pressure weight and pressure gradient overloads accept
-`SphKernelFamily::Poly6Spiky` or `SphKernelFamily::CubicSpline`; unrecognized
+`SphKernelFamily::Poly6Spiky`, `SphKernelFamily::CubicSpline` or
+`SphKernelFamily::WendlandC2`; unrecognized
 values throw `std::invalid_argument`. The cubic family uses the same normalized
 2D scalar weight and its analytic radial derivative, with full support radius
 `h` (the conventional smoothing scale is `h/2`). With `u=2*r/h` and
@@ -92,3 +93,35 @@ infinite square-lattice density sum. It changes the caller's chosen initial
 mass if applied; it is never applied automatically and is not a correction
 for irregular particles or boundaries. `ViscosityLaplacian` remains the
 independent Muller operator with the existing diffusion stability bounds.
+
+## Optional Wendland C2 family
+
+`WendlandC2` uses the same scalar weight for density and pressure. With
+`q=r/h` and **full support radius** `h`, for `0<=q<1`:
+
+```
+W = 7/(pi*h^2) * (1-q)^4 * (1+4*q)
+dW/dr = -140/(pi*h^3) * q*(1-q)^3
+grad W = (dW/dr) * x/r
+```
+
+The gradient at coincidence and all values outside support are zero.
+Radial integration gives `integral W dA=1` and `integral r^2 W dA=5*h^2/36`.
+This convention uses twice the smoothing scale in the
+[PySPH Wendland C2 definition](https://pysph.readthedocs.io/en/main/_modules/pysph/base/kernels.html).
+The double evaluation and checked float output policy above applies unchanged.
+
+Both fluid solvers, their diagnostics and WCSPH sampled walls use the chosen
+family. Unequal fixed supports in summation WCSPH use the
+[per-particle pressure gradients](sph-fixed-support-pressure.md); continuity
+and comparison diagnostics keep their common mean-support gradient.
+The two-family reflected-source prototype explicitly rejects Wendland.
+
+Wendland kernels are motivated by research on
+[SPH pairing stability](https://arxiv.org/abs/1204.2471), which does not establish
+this engine's 2D free-surface or tensile stability. This is an explicit formulation
+choice; the default remains `Poly6Spiky`. Lattice calibration changes density
+bias for the chosen input but cannot prove disorder healing or wall consistency.
+The independent tests cover normalization, second moment, expanded polynomial
+and finite-difference gradients, scaling, calibration, solver/wall dispatch,
+fixed-support pressure work and existing DFSPH residual/momentum controls.

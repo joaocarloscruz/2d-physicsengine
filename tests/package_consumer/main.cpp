@@ -107,6 +107,9 @@ int main() {
         ||std::abs(transported.integratedScalarDrift)>transported.conservationRoundoffAllowance) return 1;
     if (std::abs(wave.getDisplacements()[0] - 0.5) > 1e-12
         || std::abs(wave.getDiagnostics().kineticEnergy - 8) > 1e-12) return 1;
+    const auto wendland=PhysicsEngine::SphKernelFamily::WendlandC2;
+    if(std::abs(PhysicsEngine::SphKernels2D::DensityWeight({.5f,0},1,wendland)
+        -21/(16*std::acos(-1.0)))>1e-7) return 1;
     return std::abs(body->position.x-1) < 1e-6f
         && !PhysicsEngine::ExportWorldJson(world).empty()
         && hit && hit->body == body && std::abs(hit->hit.fraction - 1.0 / 3.0) < 1e-6

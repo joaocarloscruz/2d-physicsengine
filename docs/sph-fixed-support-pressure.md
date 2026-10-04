@@ -1,6 +1,6 @@
-# Matched cubic pressure at unequal fixed supports
+# Matched pressure at unequal fixed supports
 
-WCSPH with `CubicSpline` and `Summation` uses each particle's supplied smoothing
+WCSPH with `CubicSpline` or `WendlandC2` and `Summation` uses each particle's supplied smoothing
 length in its density estimate:
 
 ```
@@ -52,7 +52,7 @@ The regression also checks separation `.9375`, strictly beyond the mean
 support, with both particle storage orders so discovery uses the union of
 the two supports.
 
-The change applies only to matched cubic summation pressure with unequal stored
+The change applies only to matched cubic/Wendland summation pressure with unequal stored
 supports. Equal supports use the original arithmetic exactly. Legacy poly6/spiky
 defaults and continuity's common-gradient density/pressure adjoint are unchanged.
 Viscosity still uses its existing mean-support Laplacian. Sampled wall density,
@@ -74,7 +74,7 @@ These comparison rates are the continuity pressure-map operator, rather than
 the true derivative of heterogeneous summation density. Even at equal support,
 the legacy pressure kernel differs from its scalar density kernel; wall mirror
 rates likewise are not derivatives of the wall density summation. Consequently
-a zero comparison compression rate can accompany nonzero cubic summation work,
+a zero comparison compression rate can accompany nonzero matched summation work,
 as in the one-sided regression. No public diagnostic field silently changes its
 meaning in this fix. A future true summation-rate observer would need explicit
 mode and boundary conventions.

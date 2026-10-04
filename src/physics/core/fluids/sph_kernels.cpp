@@ -43,10 +43,18 @@ std::pair<double, double> CubicShape(double q) {
     return {0.25*remainder*remainder*remainder, -1.5*remainder*remainder};
 }
 
+// Full support radius h: q=r/h, W=7/(pi*h^2) * shape(q).
+std::pair<double, double> WendlandShape(double q) {
+    if (q >= 1) return {0, 0};
+    const double t = 1-q, cube = t*t*t;
+    return {cube*t*(1+4*q), -20*q*cube};
+}
+
 } // namespace
 
 void SphKernels2D::ValidateFamily(SphKernelFamily family) {
-    if (family != SphKernelFamily::Poly6Spiky && family != SphKernelFamily::CubicSpline)
+    if (family != SphKernelFamily::Poly6Spiky && family != SphKernelFamily::CubicSpline
+        && family != SphKernelFamily::WendlandC2)
         throw std::invalid_argument("SPH kernel family is not recognized.");
 }
 
@@ -84,9 +92,12 @@ float SphKernels2D::SquareLatticeMassScale(
                 if (family == SphKernelFamily::Poly6Spiky)
                     discreteDensityRatio += ratio * ratio * (4.0 / Pi) *
                         difference * difference * difference;
-                else
+                else if (family == SphKernelFamily::CubicSpline)
                     discreteDensityRatio += ratio * ratio * (40.0 / (7*Pi)) *
                         CubicShape(std::sqrt(qSquared)).first;
+                else
+                    discreteDensityRatio += ratio * ratio * (7.0 / Pi) *
+                        WendlandShape(std::sqrt(qSquared)).first;
             }
         }
     }
@@ -156,6 +167,8 @@ float SphKernels2D::DensityWeight(const Vector2& displacement, float smoothingLe
     const double h = smoothingLength;
     const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
     if (radius >= h) return 0;
+    if (family == SphKernelFamily::WendlandC2)
+        return CheckedFloat((7.0/Pi) * WendlandShape(radius/h).first / (h*h));
     return CheckedFloat((40.0/(7*Pi)) * CubicShape(radius/h).first / (h*h));
 }
 
@@ -174,7 +187,9 @@ Vector2 SphKernels2D::PressureGradient(const Vector2& displacement, float smooth
     const double h = smoothingLength;
     const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
     if (radius == 0 || radius >= h) return {};
-    const double derivative = (40.0/(7*Pi)) * CubicShape(radius/h).second / (h*h*h);
+    const double derivative = family == SphKernelFamily::WendlandC2
+        ? (7.0/Pi) * WendlandShape(radius/h).second / (h*h*h)
+        : (40.0/(7*Pi)) * CubicShape(radius/h).second / (h*h*h);
     return {CheckedFloat(derivative * (displacement.x/radius)),
         CheckedFloat(derivative * (displacement.y/radius))};
 }

@@ -18,15 +18,19 @@ struct D2 {
     double dot(D2 b) const { return x*b.x+y*b.y; }
     double norm() const { return std::hypot(x,y); }
 };
-double Weight(D2 r, double h) {
+double Weight(D2 r, double h, SphKernelFamily family) {
     const double q=r.norm()/h;
     if(q>=1) return 0;
+    if(family==SphKernelFamily::WendlandC2)
+        return 7/(Pi*h*h)*std::pow(1-q,4)*(1+4*q);
     const double shape=q<.5 ? 1-6*q*q+6*q*q*q : 2*std::pow(1-q,3);
     return 40/(7*Pi*h*h)*shape;
 }
-D2 Gradient(D2 r, double h) {
+D2 Gradient(D2 r, double h, SphKernelFamily family) {
     const double length=r.norm(), q=length/h;
     if(length==0 || q>=1) return {};
+    if(family==SphKernelFamily::WendlandC2)
+        return r*(-140/(Pi*h*h*h*h)*std::pow(1-q,3));
     const double derivative=q<.5 ? -12*q+18*q*q : -6*(1-q)*(1-q);
     return r*(40/(7*Pi*h*h*h)*derivative/length);
 }
@@ -46,14 +50,14 @@ std::vector<D2> Positions(const std::vector<FluidParticle>& p) {
     std::vector<D2> result; for(const auto& a:p)result.push_back({a.position.x,a.position.y});
     return result;
 }
-std::vector<double> Densities(const std::vector<FluidParticle>& p,const std::vector<D2>& x) {
+std::vector<double> Densities(const std::vector<FluidParticle>& p,const std::vector<D2>& x,SphKernelFamily family) {
     std::vector<double> result(p.size(),0);
     for(std::size_t i=0;i<p.size();++i)for(std::size_t j=0;j<p.size();++j)
-        result[i]+=p[j].mass*Weight(x[i]-x[j],p[i].smoothingLength);
+        result[i]+=p[j].mass*Weight(x[i]-x[j],p[i].smoothingLength,family);
     return result;
 }
 double Energy(const std::vector<FluidParticle>& p,const std::vector<D2>& x,const WcsphConfig& c) {
-    const auto density=Densities(p,x); double energy=0;
+    const auto density=Densities(p,x,c.kernelFamily); double energy=0;
     for(std::size_t i=0;i<p.size();++i)energy+=p[i].mass*SpecificEnergy(density[i],p[i].restDensity,c);
     return energy;
 }
@@ -63,11 +67,11 @@ struct Oracle {
     double energyRate=0,work=0;
 };
 Oracle Evaluate(const std::vector<FluidParticle>& p,const WcsphConfig& c) {
-    const auto x=Positions(p);Oracle result;result.density=Densities(p,x);
+    const auto x=Positions(p);Oracle result;result.density=Densities(p,x,c.kernelFamily);
     result.rate.assign(p.size(),0);result.force.resize(p.size());
     for(std::size_t i=0;i<p.size();++i)for(std::size_t j=i+1;j<p.size();++j) {
-        const auto gi=Gradient(x[i]-x[j],p[i].smoothingLength);
-        const auto gj=Gradient(x[i]-x[j],p[j].smoothingLength);
+        const auto gi=Gradient(x[i]-x[j],p[i].smoothingLength,c.kernelFamily);
+        const auto gj=Gradient(x[i]-x[j],p[j].smoothingLength,c.kernelFamily);
         const double ai=Pressure(result.density[i],p[i].restDensity,c)/std::pow(result.density[i],2);
         const double aj=Pressure(result.density[j],p[j].restDensity,c)/std::pow(result.density[j],2);
         const auto f=(gi*ai+gj*aj)*(-double(p[i].mass)*p[j].mass);
@@ -97,17 +101,17 @@ std::vector<FluidParticle> Triangle() {
 }
 } // namespace
 
-TEST_CASE("Cubic summation pressure acts through one sided density support",
+TEST_CASE("Matched summation pressure acts through one sided density support",
           "[fluid][variable-support][energy]") {
-    auto c=Config();
+    auto c=Config();c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);
     const float distance=GENERATE(.875f,.9375f);
     const bool reversed=GENERATE(false,true);
     auto p=std::vector<FluidParticle>{Particle({0,0},{.25f,0},.75f,.5f),
         Particle({distance,0},{-.125f,0},1.25f,1.25f)};
     if(reversed)std::swap(p[0],p[1]);
     const auto expected=Evaluate(p,c);WcsphSolver solver(.5f,c);solver.prepare(p);
-    REQUIRE(Gradient({-distance,0},.5).norm()==0);
-    REQUIRE(Gradient({-distance,0},.875).norm()==0);
+    REQUIRE(Gradient({-distance,0},.5,c.kernelFamily).norm()==0);
+    REQUIRE(Gradient({-distance,0},.875,c.kernelFamily).norm()==0);
     REQUIRE(expected.force[reversed?1:0].x<0);
     REQUIRE(p[0].force.x==Catch::Approx(expected.force[0].x).epsilon(0).margin(6e-6*std::abs(expected.force[0].x)));
     REQUIRE(p[0].force.y==0);
@@ -119,9 +123,9 @@ TEST_CASE("Cubic summation pressure acts through one sided density support",
     REQUIRE(p[1].density==Catch::Approx(expected.density[1]).epsilon(2e-7));
 }
 
-TEST_CASE("Heterogeneous cubic pressure is the fixed support summation EOS energy gradient",
+TEST_CASE("Heterogeneous matched pressure is the fixed support summation EOS energy gradient",
           "[fluid][variable-support][energy][conservation]") {
-    auto c=Config();c.clampNegativePressure=GENERATE(false,true);
+    auto c=Config();c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);c.clampNegativePressure=GENERATE(false,true);
     auto p=Triangle();const auto x=Positions(p);const auto expected=Evaluate(p,c);
     WcsphSolver solver(.5f,c);solver.prepare(p);
     REQUIRE((c.clampNegativePressure ? p[2].pressure==0 : p[2].pressure<0));
@@ -159,9 +163,9 @@ TEST_CASE("Heterogeneous cubic pressure is the fixed support summation EOS energ
     REQUIRE(errors[1]/errors[2]>3.8);REQUIRE(errors[1]/errors[2]<4.2);
 }
 
-TEST_CASE("Unequal support cubic pressure retains momentum through repeated finite steps",
+TEST_CASE("Unequal support matched pressure retains momentum through repeated finite steps",
           "[fluid][variable-support][conservation]") {
-    auto c=Config();c.clampNegativePressure=false;auto p=Triangle();
+    auto c=Config();c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);c.clampNegativePressure=false;auto p=Triangle();
     const auto moment=[](const std::vector<FluidParticle>& particles) {
         D2 linear;double angular=0;
         for(const auto& a:particles) {
@@ -184,12 +188,12 @@ TEST_CASE("Unequal support cubic pressure retains momentum through repeated fini
 
 TEST_CASE("Existing common gradient pressure paths retain their exact pair arithmetic",
           "[fluid][variable-support][compatibility]") {
-    for(auto family:{SphKernelFamily::Poly6Spiky,SphKernelFamily::CubicSpline})
+    for(auto family:{SphKernelFamily::Poly6Spiky,SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2})
     for(auto mode:{WcsphDensityMode::Summation,WcsphDensityMode::Continuity}) {
         auto c=Config();c.kernelFamily=family;c.densityMode=mode;c.densityDiffusion=0;
         auto p=std::vector<FluidParticle>{Particle({-.125f,.125f},{.25f,-.125f},.75f,.5f),
             Particle({.25f,.375f},{-.125f,.375f},1.25f,
-                family==SphKernelFamily::CubicSpline && mode==WcsphDensityMode::Summation ? .5f:1.25f)};
+                family!=SphKernelFamily::Poly6Spiky && mode==WcsphDensityMode::Summation ? .5f:1.25f)};
         p[0].density=2;p[1].density=3;
         WcsphSolver solver(.5f,c);solver.prepare(p);
         const float h=float(.5*(double(p[0].smoothingLength)+p[1].smoothingLength));

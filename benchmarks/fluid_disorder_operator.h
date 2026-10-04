@@ -18,16 +18,21 @@ struct D2 {
     double norm() const { return std::hypot(x, y); }
 };
 using Family = PhysicsEngine::SphKernelFamily;
+inline void ValidateFamily(Family family) { PhysicsEngine::SphKernels2D::ValidateFamily(family); }
 inline double Weight(D2 r, double h, Family family) {
+    ValidateFamily(family);
     const double q = r.norm() / h;
     if (q >= 1)
         return 0;
     if (family == Family::Poly6Spiky)
         return 4 / (Pi * h * h) * std::pow(1 - q * q, 3);
+    if (family == Family::WendlandC2)
+        return 7/(Pi*h*h)*std::pow(1-q,4)*(1+4*q);
     const double f = q < .5 ? 1 - 6 * q * q + 6 * q * q * q : 2 * std::pow(1 - q, 3);
     return 40 / (7 * Pi * h * h) * f;
 }
 inline D2 Gradient(D2 r, double h, Family family, bool densityDerivative) {
+    ValidateFamily(family);
     const double length = r.norm(), q = length / h;
     if (length == 0 || q >= 1)
         return {};
@@ -35,6 +40,8 @@ inline D2 Gradient(D2 r, double h, Family family, bool densityDerivative) {
     if (family == Family::CubicSpline)
         derivative =
             40 / (7 * Pi * h * h * h) * (q < .5 ? -12 * q + 18 * q * q : -6 * (1 - q) * (1 - q));
+    else if (family == Family::WendlandC2)
+        derivative = -140/(Pi*h*h*h)*q*std::pow(1-q,3);
     else if (densityDerivative)
         derivative = -24 / (Pi * h * h * h) * q * std::pow(1 - q * q, 2);
     else
@@ -131,9 +138,9 @@ inline Operators Build(const System &s) {
     const auto n = s.positions.size();
     if (n == 0 || n > 2048 || s.velocities.size() != n || s.masses.size() != n)
         throw std::length_error("Disorder operator shape or work budget exceeded");
+    ValidateFamily(s.family);
     if (!std::isfinite(s.h) || s.h <= 0 || !std::isfinite(s.rho0) || s.rho0 <= 0 ||
-        !std::isfinite(s.c) || s.c <= 0 ||
-        (s.family != Family::Poly6Spiky && s.family != Family::CubicSpline))
+        !std::isfinite(s.c) || s.c <= 0)
         throw std::invalid_argument("Invalid disorder medium or family");
     for (std::size_t i = 0; i < n; ++i)
         if (!std::isfinite(s.positions[i].x) || !std::isfinite(s.positions[i].y) ||
