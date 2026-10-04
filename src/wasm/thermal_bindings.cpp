@@ -34,6 +34,9 @@ EMSCRIPTEN_BINDINGS(thermal_network) {
     value_object<ThermalLink>("ThermalLink")
         .field("first",&ThermalLink::first).field("second",&ThermalLink::second)
         .field("conductance",&ThermalLink::conductance);
+    value_object<ThermalRadiationLink>("ThermalRadiationLink")
+        .field("first",&ThermalRadiationLink::first).field("second",&ThermalRadiationLink::second)
+        .field("coefficient",&ThermalRadiationLink::coefficient);
     value_object<ThermalDiagnostics>("ThermalDiagnostics")
         .field("totalEnergy",&ThermalDiagnostics::totalEnergy)
         .field("minimumTemperature",&ThermalDiagnostics::minimumTemperature)
@@ -42,18 +45,22 @@ EMSCRIPTEN_BINDINGS(thermal_network) {
         .field("totalReservoirHeat",&ThermalDiagnostics::totalReservoirHeat)
         .field("lastExternalEnergy",&ThermalDiagnostics::lastExternalEnergy)
         .field("lastReservoirHeat",&ThermalDiagnostics::lastReservoirHeat)
-        .field("lastSubsteps",&ThermalDiagnostics::lastSubsteps);
+        .field("lastSubsteps",&ThermalDiagnostics::lastSubsteps)
+        .field("lastRadiativeVisits",&ThermalDiagnostics::lastRadiativeVisits);
     class_<ThermalNetwork>("ThermalNetwork")
         .constructor<>().constructor(&Create,allow_raw_pointers())
         .function("getConfig",&Config)
         .function("setConfig",optional_override([](ThermalNetwork& s,ThermalConfig c) { s.setConfig(Native(c)); }))
         .function("getNodeCount",optional_override([](const ThermalNetwork& s) { return s.getNodes().size(); }))
         .function("getLinkCount",optional_override([](const ThermalNetwork& s) { return s.getLinks().size(); }))
+        .function("getRadiationLinkCount",optional_override([](const ThermalNetwork& s) { return s.getRadiationLinks().size(); }))
         .function("getNode",optional_override([](const ThermalNetwork& s,double index) { return ThermalNode(s.getNodes().at(NodeIndex(s,index))); }))
         .function("getLink",optional_override([](const ThermalNetwork& s,double index) { return ThermalLink(s.getLinks().at(Index(index,s.getLinks().size()))); }))
+        .function("getRadiationLink",optional_override([](const ThermalNetwork& s,double index) { return ThermalRadiationLink(s.getRadiationLinks().at(Index(index,s.getRadiationLinks().size()))); }))
         .function("addNode",optional_override([](ThermalNetwork& s,double temperature,double capacity) { return s.addNode(temperature,capacity); }))
         .function("addNode",&ThermalNetwork::addNode)
         .function("addLink",optional_override([](ThermalNetwork& s,double first,double second,double conductance) { return s.addLink(NodeIndex(s,first),NodeIndex(s,second),conductance); }))
+        .function("addRadiationLink",optional_override([](ThermalNetwork& s,double first,double second,double coefficient) { return s.addRadiationLink(NodeIndex(s,first),NodeIndex(s,second),coefficient); }))
         .function("setTemperature",optional_override([](ThermalNetwork& s,double index,double temperature) { s.setTemperature(NodeIndex(s,index),temperature); }))
         .function("setFixed",optional_override([](ThermalNetwork& s,double index,bool fixed) { s.setFixed(NodeIndex(s,index),fixed); }))
         .function("applyPower",optional_override([](ThermalNetwork& s,double index,double power) { s.applyPower(NodeIndex(s,index),power); }))

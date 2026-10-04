@@ -154,6 +154,9 @@ radiator.addRadiationLink(0, 1, .8 * 5.670374419e-8 * .02);
 radiator.step(.1);
 ```
 
+JavaScript exposes the same radiation methods and owned copied link, node and
+diagnostic snapshots. See the [WASM example and lifetime contract](webassembly.md#owned-thermal-networks).
+
 ## Energy accounting
 
 `totalEnergy` is `sum(C*T)` in joules and includes the constant finite reference

@@ -508,6 +508,7 @@ try {
     const hot = heat.addNode(400, 2); // Kelvin, J/K; fixed defaults to false.
     const cold = heat.addNode(300, 3, false);
     heat.addLink(hot, cold, 1); // W/K
+    heat.addRadiationLink(hot, cold, 1e-8); // Effective reciprocal W/K^4.
     heat.applyPower(cold, 4); // W, queued for the next positive step.
     heat.step(0.1);
     console.log(heat.getNode(cold), heat.getLink(0), heat.getDiagnostics());
@@ -528,6 +529,16 @@ reports energies, thermostat heat accounting, temperature bounds and accepted
 substeps. `getConfig` returns a complete copied object for `setConfig` or the
 configured constructor. All getters produce plain JS values with no borrowed
 references, vector wrappers or snapshot cleanup; they remain safe after deletion.
+
+`addRadiationLink(first, second, coefficient)` adds reciprocal
+Stefan–Boltzmann exchange with a finite nonnegative effective coefficient in
+W/K^4. `getRadiationLinkCount()` and `getRadiationLink(index)` return its separate
+append-only count and copied `{first,second,coefficient}`. Conductive and
+radiative pairs may coexist; their combined count uses `maxLinks`. With
+radiation present, adaptive substeps recompute the stability bound after heating
+and diagnostics also report `lastRadiativeVisits`. No extra constructor fields
+are required. The caller supplies surface/view-factor physics; these links do
+not implement an electromagnetic field or automatic geometry coupling.
 
 The same checked integer input rules and native budgets as `SoftBody` apply.
 A failed step preserves temperatures, pending powers and heat accounting.

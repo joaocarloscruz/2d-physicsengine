@@ -727,6 +727,68 @@ function testMacDiffusion(physics) {
     const zeroGrid=new physics.PeriodicMacGrid();const zeroD=zeroGrid.diffuse();assert.equal(zeroD.roundoffEnergyAllowance,0);assert.equal(zeroD.initialKineticEnergy,0);zeroGrid.delete();
 }
 
+function testThermalRadiation(physics) {
+    const defaults = new physics.ThermalNetwork();
+    const config = {...defaults.getConfig(), maxSubstep: 1};
+    defaults.delete();
+    const pair = new physics.ThermalNetwork(config);
+    pair.addNode(2, 1); pair.addNode(1, 2);
+    for (const invalid of [-1, NaN, Infinity]) {
+        assert.throws(() => pair.addRadiationLink(0, 1, invalid));
+        assert.equal(pair.getRadiationLinkCount(), 0);
+    }
+    for (const index of [-1, .5, 2, 2**32, NaN, Infinity])
+        assert.throws(() => pair.addRadiationLink(0, index, 1));
+    assert.equal(pair.addRadiationLink(0, 1, 1/16), 0);
+    assert.throws(() => pair.addRadiationLink(1, 0, 1));
+    for (const index of [-1, .5, 1, 2**32, NaN, Infinity])
+        assert.throws(() => pair.getRadiationLink(index));
+    const link = pair.getRadiationLink(0);
+    assert.deepEqual(link, {first: 0, second: 1, coefficient: 1/16});
+    link.coefficient = 99;
+    assert.equal(pair.getRadiationLink(0).coefficient, 1/16);
+    pair.step(.125);
+    assert.equal(pair.getNode(0).temperature, 2-15/128);
+    assert.equal(pair.getNode(1).temperature, 1+15/256);
+    assert.equal(pair.getDiagnostics().totalEnergy, 4);
+    assert.equal(pair.getDiagnostics().lastRadiativeVisits, 14);
+    pair.applyPower(0, -1000);
+    const before = [pair.getNode(0), pair.getNode(1), pair.getDiagnostics()];
+    assert.throws(() => pair.step(.125));
+    assert.deepEqual([pair.getNode(0), pair.getNode(1), pair.getDiagnostics()], before);
+    pair.step(0);
+    assert.equal(pair.getNode(0).externalPower, -1000);
+    assert.equal(pair.getDiagnostics().lastRadiativeVisits, 0);
+    pair.setConfig({...config, maxLinks: 1});
+    assert.throws(() => pair.addLink(0, 1, 1));
+    pair.delete();
+    assert.equal(link.coefficient, 99); // Snapshot survives owner deletion.
+
+    let previousError;
+    for (const h of [1/512, 1/1024, 1/2048]) {
+        const n = new physics.ThermalNetwork({...config, maxSubstep: h});
+        n.addNode(4, 2); n.addNode(0, 1, true); n.addRadiationLink(0, 1, .25);
+        n.step(.25);
+        const error = 4/Math.cbrt(7)-n.getNode(0).temperature;
+        assert.ok(error > 0);
+        if (previousError) assert.ok(previousError/error > 1.95 && previousError/error < 2.1);
+        assert.ok(Math.abs(n.getDiagnostics().totalEnergy-8-n.getDiagnostics().totalReservoirHeat) < 3e-14);
+        previousError = error;
+        n.delete();
+    }
+    assert.ok(previousError < .002);
+    const heated = new physics.ThermalNetwork({...config, maxSubstep: .125, maxSubsteps: 2});
+    heated.addNode(0, 1); heated.addNode(0, 1, true); heated.addRadiationLink(0, 1, 1);
+    heated.applyPower(0, 64);
+    const staged = [heated.getNode(0), heated.getNode(1), heated.getDiagnostics()];
+    assert.throws(() => heated.step(.25));
+    assert.deepEqual([heated.getNode(0), heated.getNode(1), heated.getDiagnostics()], staged);
+    heated.setConfig({...config, maxSubstep: .125}); heated.step(.25);
+    assert.ok(heated.getDiagnostics().lastSubsteps > 2);
+    assert.ok(heated.getNode(0).temperature >= 0 && heated.getNode(0).temperature < 8);
+    heated.delete();
+}
+
 async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
@@ -923,6 +985,7 @@ async function main() {
     boundedHeat.addNode(300, 1); assert.throws(() => boundedHeat.addLink(1, 2, 1));
     assert.equal(boundedHeat.getLinkCount(), 1);
     boundedHeat.delete();
+    testThermalRadiation(physics);
     const charge = new physics.ChargedParticle({x: 0, y: 0}, {x: 2, y: 0}, 3, 6);
     charge.step(Math.PI / 8, {electric: {x: 0, y: 0}, magnetic: 2});
     assert.ok(Math.abs(charge.getPosition().x - 0.5) < 1e-12);
