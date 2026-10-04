@@ -143,3 +143,34 @@ six contact entries and had 123 feature changes; retained contacts alone did not
 prevent drift. Re-run the same matrix after production changes and compare
 physical metrics and work rather than silently widening thresholds or removing
 the difficult fixtures.
+
+## Polygon geometry comparison with the current contact arithmetic
+
+Issue #83's [polygon geometry change](polygon-manifold-numerics.md) was compared
+against the same contact solver from `7c0df78` (locally cherry-picked as
+`e5d9a31`). The after revision is `a17929b`. Both runs use the unmodified quick
+matrix, Windows Release Clang, two-second support fixtures, 120 rows and 7,280
+World steps. Neither run had execution failures. Commands:
+
+```sh
+rigid_contact_benchmark --quick --output rigid-contact-before83.json
+rigid_contact_benchmark --quick --output rigid-contact-after83.json
+```
+
+The table reports before → after values. The rest fixture retained zero feature
+changes, including the existing separate 600-step resting-patch regression.
+Only one of the 120 matrix rows changed its feature-change count: the three-box
+stack at dt=1/120, four iterations and no warming changed from 39 to 40. Its
+slightly lower displacement accompanied a slightly higher final speed.
+
+| Fixture | dt | Iterations | Warm | Feature changes | Maximum displacement | Peak penetration | Final maximum speed |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Rest | 1/60 | 4 | 0 | 0 → 0 | .006310654216 → .006310654323 | .005767737923 → .005767743234 | .001549835487 → .001549835639 |
+| Stack 3 | 1/120 | 4 | 0 | 39 → 40 | .025632656460 → .025603808177 | .008495626156 → .008495222195 | .070715280541 → .070871225491 |
+| Stack 6 | 1/60 | 4 | 0 | 123 → 123 | 1.245568252716 → 1.245568934502 | .063713628879 → .063713989136 | 2.641057693389 → 2.641055584762 |
+| Stack 6 | 1/120 | 10 | .8 | 34 → 34 | .082295470490 → .082295742839 | .011733212670 → .011733220568 | .083026693861 → .083026695886 |
+
+These are reproducible fixture observations, not acceptance bands. The scale
+fix preserves the tested ordinary resting behavior but does not resolve the
+coarse stack's large displacement or establish accuracy at arbitrary aspect
+ratios. Elapsed wall time remains excluded from deterministic comparisons.
