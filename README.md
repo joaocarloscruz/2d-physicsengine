@@ -1,6 +1,7 @@
 # 2D Physics Engine
 
-A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
+A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies,
+with standalone thermal conduction and prescribed-field charged-particle modules.
 The rigid-body and particle interfaces also have a WebAssembly API.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
 distance/revolute joints with motors and angular stops, simulation islands, optional
@@ -86,6 +87,7 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [Charged particles in prescribed electromagnetic fields](docs/electromagnetic-particles.md)
+- [Thermal conduction networks](docs/thermal-networks.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)

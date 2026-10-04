@@ -45,6 +45,20 @@ retain the previous state and queued forces. It is not registered with `World` a
 does not automatically collide or exchange forces with rigid bodies or fluids.
 See [soft-body integration and validation](soft-bodies.md).
 
+## Thermal and electromagnetic modules
+
+`ThermalNetwork` integrates a lumped heat-capacity graph with conductive links,
+external power and fixed-temperature reservoirs. Bounded explicit steps retain
+state and queued loads on failure; energy diagnostics account for heat entering
+through loads and reservoirs. Temperatures and heat capacities use double precision.
+See [thermal networks](thermal-networks.md) for units and convergence tests.
+
+`ChargedParticle` analytically evolves a nonrelativistic point charge in prescribed
+uniform electric and magnetic fields. Its double-precision state supports planar
+cyclotron motion and crossed-field drift. These standalone modules have no automatic
+mechanical or fluid coupling; the electromagnetic module does not evolve fields.
+See [electromagnetic particles](electromagnetic-particles.md).
+
 ## Limits
 
 Only circles and convex nondegenerate polygons are supported. Polygon vertices
