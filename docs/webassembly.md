@@ -309,8 +309,10 @@ resource accounting and representability limits](maxwell-grids.md).
 
 ## Prerequisites
 
-Install and activate the Emscripten SDK, then make sure `emcmake` and `cmake`
-are available in the current PowerShell session.
+Install and activate **Emscripten 6.0.3**, then make sure `emcmake` and `cmake`
+are available in the current PowerShell session. The binding cleanup adapter
+depends on this SDK's runtime ABI; CMake rejects other versions until the adapter
+has been reviewed and its stress suite rerun for an upgrade.
 
 ## Build and verify
 

@@ -5,7 +5,8 @@ Standalone modules add thermal conduction, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
 viscosity, and periodic TMz electromagnetic fields.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
-charged particles, gravity, waves, periodic projection and owned spatial query results;
+charged particles, gravity, waves, periodic projection/viscosity, Maxwell fields
+and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
 distance, revolute and prismatic joints with drives and stops, simulation islands,
