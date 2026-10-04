@@ -351,8 +351,18 @@ TEST_CASE("Elastic DC translation and prestress retain independent plane-strain 
     g.step(.037);
     Same(g.getState(), s);
     const auto d = g.getDiagnostics();
-    REQUIRE(d.kineticEnergy == Catch::Approx(12.48).epsilon(0).margin(4e-15));
-    REQUIRE(d.strainEnergy == Catch::Approx(3.872).epsilon(0).margin(3e-15));
+    // Independent constitutive energy from the represented inputs. The native
+    // weighted hypot reduction has O(N) rounded operations; a two-ULP absolute
+    // decimal tolerance was tighter than GCC/libm's valid reduction error.
+    const auto n = s.vx.size();
+    const long double volume = static_cast<long double>(n) * c.spacingX * c.spacingY;
+    const double kinetic = static_cast<double>(volume * c.density / 2 * (2 * 2 + 3 * 3));
+    const double strain = static_cast<double>(volume *
+        (81.L / (8 * (static_cast<long double>(c.lambda) + c.shearModulus)) +
+         1.L / (8 * c.shearModulus) + 36.L / (2 * c.shearModulus)));
+    const double roundoff = (8.0 * n + 16) * std::numeric_limits<double>::epsilon();
+    REQUIRE(d.kineticEnergy == Catch::Approx(kinetic).epsilon(0).margin(roundoff * kinetic));
+    REQUIRE(d.strainEnergy == Catch::Approx(strain).epsilon(0).margin(roundoff * strain));
     REQUIRE(d.modifiedEnergy == d.totalEnergy);
     REQUIRE(d.compatibilityRms == 0);
     REQUIRE(d.meanSigmaZZ == Catch::Approx(1.8).epsilon(0).margin(1e-15));
