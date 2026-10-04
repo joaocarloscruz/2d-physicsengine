@@ -130,7 +130,7 @@ void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
 void World::addParticleSystem(ParticleSystemPtr system) {
     requireMutationAllowed();
     if (!system) throw std::invalid_argument("Particle system cannot be null.");
-    if (system) {
+    if (std::find(particleSystems.begin(), particleSystems.end(), system) == particleSystems.end()) {
         particleSystems.push_back(std::move(system));
     }
 }

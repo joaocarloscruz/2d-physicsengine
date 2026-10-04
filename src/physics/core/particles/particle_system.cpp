@@ -1,6 +1,7 @@
 #include "physics/core/particles/particle_system.h"
 
 #include <stdexcept>
+#include <cmath>
 
 namespace PhysicsEngine {
 
@@ -36,6 +37,8 @@ void ParticleSystem::clear() {
 }
 
 void ParticleSystem::step(float deltaTime) {
+    if (!std::isfinite(deltaTime) || deltaTime < 0)
+        throw std::invalid_argument("Particle system delta time must be finite and non-negative.");
     for (Particle& particle : particles) {
         particle.ApplyForce(uniformAcceleration * particle.mass);
         particle.Integrate(deltaTime);
@@ -43,6 +46,8 @@ void ParticleSystem::step(float deltaTime) {
 }
 
 void ParticleSystem::setUniformAcceleration(const Vector2& acceleration) {
+    if (!std::isfinite(acceleration.x) || !std::isfinite(acceleration.y))
+        throw std::invalid_argument("Particle system acceleration must be finite.");
     uniformAcceleration = acceleration;
 }
 

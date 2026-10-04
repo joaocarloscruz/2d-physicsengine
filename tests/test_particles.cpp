@@ -101,3 +101,27 @@ TEST_CASE("ParticleSpatialGrid validates spatial parameters", "[ParticleSystem][
     grid.rebuild(particles);
     REQUIRE_THROWS_AS(grid.findPotentialPairs(particles, 0.0f), std::invalid_argument);
 }
+
+
+TEST_CASE("Repeated particle system registration does not double integrate", "[review][particles]") {
+    World world;
+    auto particles = std::make_shared<ParticleSystem>();
+    particles->addParticle({}, {1, 0}, 1);
+    world.addParticleSystem(particles); world.addParticleSystem(particles);
+    world.step(0.1f);
+    REQUIRE(world.getParticleSystems().size() == 1);
+    REQUIRE(particles->getParticles()[0].position.x == Catch::Approx(0.1f));
+    REQUIRE(world.getLastStepStatistics().integratedParticleCount == 1);
+}
+
+TEST_CASE("Particle APIs reject invalid state before changing it", "[review][particles]") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    CHECK_THROWS_AS(Particle(Vector2(nan, 0)), std::invalid_argument);
+    CHECK_THROWS_AS(Particle({}, Vector2(0, nan)), std::invalid_argument);
+    Particle particle;
+    CHECK_THROWS_AS(particle.ApplyForce({nan, 0}), std::invalid_argument);
+    ParticleSystem system;
+    CHECK_THROWS_AS(system.setUniformAcceleration({0, nan}), std::invalid_argument);
+    CHECK_THROWS_AS(system.step(-1), std::invalid_argument);
+    CHECK_THROWS_AS(system.step(nan), std::invalid_argument);
+}
