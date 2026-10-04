@@ -345,3 +345,23 @@ TEST_CASE("WCSPH dam-break benchmark is finite and repeatable", "[fluid][wcsph][
         REQUIRE(first[index].pressure == second[index].pressure);
     }
 }
+
+
+TEST_CASE("WCSPH recalculates inverse mass after public mass edits", "[review][fluid]") {
+    WcsphConfig config; config.externalAcceleration = {0, -10};
+    WcsphSolver solver(1, config);
+    std::vector<FluidParticle> particles(1);
+    particles[0].mass *= 4;
+    solver.step(particles, 0.01f);
+    REQUIRE(particles[0].inverseMass == Catch::Approx(1 / particles[0].mass));
+    REQUIRE(particles[0].velocity.y == Catch::Approx(-0.1f));
+}
+
+TEST_CASE("WCSPH zero-time preparation resets substep diagnostics", "[review][fluid]") {
+    WcsphSolver solver(1);
+    std::vector<FluidParticle> particles(1);
+    solver.step(particles, 0.01f);
+    REQUIRE(solver.getDiagnostics().substeps > 0);
+    solver.step(particles, 0);
+    REQUIRE(solver.getDiagnostics().substeps == 0);
+}

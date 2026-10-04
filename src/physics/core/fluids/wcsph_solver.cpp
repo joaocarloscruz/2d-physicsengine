@@ -18,6 +18,8 @@ void RequireFinite(float value, const char* message) {
 }
 
 void ValidateParticleState(const FluidParticle& particle) {
+    FluidParticleProperties{particle.mass, particle.restDensity,
+        particle.smoothingLength, particle.viscosity}.Validate();
     if (!std::isfinite(particle.mass) || particle.mass <= 0.0f
         || !std::isfinite(particle.restDensity)
         || particle.restDensity <= 0.0f
@@ -152,8 +154,9 @@ void WcsphSolver::prepareState(
     }
 
     float interactionRadius = 0.0f;
-    for (const FluidParticle& particle : particles) {
+    for (FluidParticle& particle : particles) {
         ValidateParticleState(particle);
+        particle.inverseMass = 1.0f / particle.mass;
         interactionRadius = std::max(
             interactionRadius,
             particle.smoothingLength

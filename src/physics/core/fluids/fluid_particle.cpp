@@ -6,7 +6,7 @@
 namespace PhysicsEngine {
 
 void FluidParticleProperties::Validate() const {
-    if (!std::isfinite(mass) || mass <= 0.0f) {
+    if (!std::isfinite(mass) || mass <= 0.0f || !std::isfinite(1.0f / mass)) {
         throw std::invalid_argument(
             "Fluid particle mass must be positive and finite."
         );
@@ -26,6 +26,9 @@ void FluidParticleProperties::Validate() const {
             "Fluid viscosity must be finite and non-negative."
         );
     }
+    const float referenceVolume = mass / restDensity;
+    if (!std::isfinite(referenceVolume) || referenceVolume <= 0)
+        throw std::invalid_argument("Fluid reference volume must be positive and finite.");
 }
 
 FluidParticle::FluidParticle(
