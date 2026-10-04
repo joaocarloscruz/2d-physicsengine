@@ -3,12 +3,12 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
-viscosity, conservative scalar transport, neutral periodic electrostatics,
+viscosity, conservative scalar transport, periodic ideal-gas flow, neutral periodic electrostatics,
 periodic TMz electromagnetic fields with optional Ohmic evolution,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
-scalar transport, static electrostatics, lossless Maxwell fields
+scalar transport, static electrostatics, lossless and Ohmic Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
@@ -88,6 +88,10 @@ claim of superiority across all fluid scenes.
 then prints energy, strain and substep diagnostics. It requires no renderer.
 
 `thermal_network_demo` reports conduction and reservoir energy accounting.
+`euler_gas_demo` evolves periodic ideal-gas cell averages and reports positivity,
+CFL, counted work and mass/momentum/total-energy conservation diagnostics. Its
+first-order Rusanov scheme and range limits are described in
+[periodic gas dynamics](docs/periodic-euler-gas.md).
 `thermal_radiation_demo` measures Stefan–Boltzmann cooling, timestep convergence
 and reservoir energy accounting for a lumped body facing a cold enclosure.
 `gravity_binary` compares a two-body orbit with its analytical period, and
