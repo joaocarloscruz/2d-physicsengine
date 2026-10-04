@@ -11,6 +11,8 @@ struct DfsphConfig {
     float densityTolerance = 0.001f;
     float divergenceTolerance = 0.01f; // s^-1
     float relaxation = 0.5f;
+    SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;
+
     void Validate() const;
 };
 

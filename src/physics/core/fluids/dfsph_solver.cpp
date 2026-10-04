@@ -7,6 +7,7 @@
 
 namespace PhysicsEngine {
 void DfsphConfig::Validate() const {
+    SphKernels2D::ValidateFamily(kernelFamily);
     if (!std::isfinite(externalAcceleration.x) || !std::isfinite(externalAcceleration.y) ||
         !std::isfinite(maximumTimeStep) || maximumTimeStep <= 0 ||
         !std::isfinite(cflFactor) || cflFactor <= 0 || cflFactor > 1 ||
@@ -32,15 +33,15 @@ void DfsphSolver::prepare(std::vector<FluidParticle>& particles) {
     pairs.clear(); pairs.reserve(neighbors.size());
     for (auto& p : particles) {
         p.inverseMass = 1/p.mass;
-        p.density = p.mass*SphKernels2D::DensityWeight({}, p.smoothingLength);
+        p.density = p.mass*SphKernels2D::DensityWeight({}, p.smoothingLength, config.kernelFamily);
     }
     for (const auto& pair : neighbors) {
         auto& a = particles[pair.first]; auto& b = particles[pair.second];
         const float h = static_cast<float>(0.5*(static_cast<double>(a.smoothingLength)+b.smoothingLength));
         const Vector2 displacement = a.position-b.position;
-        const float weight = SphKernels2D::DensityWeight(displacement, h);
+        const float weight = SphKernels2D::DensityWeight(displacement, h, config.kernelFamily);
         a.density += b.mass*weight; b.density += a.mass*weight;
-        pairs.push_back({pair.first, pair.second, SphKernels2D::PressureGradient(displacement, h)});
+        pairs.push_back({pair.first, pair.second, SphKernels2D::PressureGradient(displacement, h, config.kernelFamily)});
     }
     std::vector<std::pair<double, double>> sum(particles.size());
     std::vector<double> squared(particles.size(), 0.0);
@@ -183,7 +184,7 @@ void DfsphSolver::step(std::vector<FluidParticle>& particles, float deltaTime) {
         if (remaining < deltaTime*1e-6f) remaining = 0;
         ++diagnostics.substeps;
     }
-    const auto measured = MeasureFluidDiagnostics(particles, neighbors);
+    const auto measured = MeasureFluidDiagnostics(particles, neighbors, config.kernelFamily);
     diagnostics.maximumDensityError = measured.maximumDensityError;
     diagnostics.maximumCompression = measured.maximumCompression;
     diagnostics.maximumAbsoluteDensityRate = measured.maximumAbsoluteDensityRate;

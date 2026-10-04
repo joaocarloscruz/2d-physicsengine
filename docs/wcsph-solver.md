@@ -84,3 +84,25 @@ Production static containment is provided separately by the circle and convex
 polygon models documented in [fluid-boundaries.md](fluid-boundaries.md).
 For measured scaling and reproduction commands, see
 [fluid-performance.md](fluid-performance.md).
+
+
+## Kernel-family selection
+
+Set `config.kernelFamily = SphKernelFamily::CubicSpline` to opt into the
+matched cubic scalar density weight and radial pressure/continuity gradient.
+The default `Poly6Spiky` retains existing dynamics. An unknown enum value is
+rejected during configuration validation. Support `h`, caller mass and rest
+density are unchanged; lattice mass calibration remains a caller choice.
+The Muller viscosity Laplacian and continuum/neighbor diffusion bounds are
+independent of this selector; a changed computed density can still change its
+viscosity coefficient and resulting stable timestep.
+
+Diagnostics use the selected gradient. WCSPH additionally includes prepared
+wall mirror rates in its raw compression/divergence diagnostics, in both
+families; previously these diagnostics omitted walls. Density diffusion is
+excluded from that raw operator measurement. The legacy two-argument free
+`MeasureFluidDiagnostics` retains the legacy family with no wall rates.
+DFSPH retains its existing free-surface projection and has no boundary solver.
+This selector is an experimental formulation choice, not a guarantee of
+hydrostatic equilibrium, disorder healing or freedom from pairing/tensile
+instabilities. See the [consistency diagnostic](fluid-consistency-diagnostic.md).

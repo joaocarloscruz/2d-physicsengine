@@ -28,6 +28,8 @@ struct WcsphConfig {
     WcsphDensityMode densityMode = WcsphDensityMode::Summation;
     float densityDiffusion = 0.1f;
 
+    SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;
+
     void Validate() const;
 };
 

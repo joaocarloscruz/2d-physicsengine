@@ -9,7 +9,7 @@ using namespace PhysicsEngine;
 
 namespace {
 
-float RunTankBody(float bodyDensity) {
+float RunTankBody(float bodyDensity, SphKernelFamily family) {
     constexpr float spacing = 0.15f;
     constexpr float smoothingLength = 0.3f;
     constexpr float bodyRadius = 0.3f;
@@ -41,6 +41,7 @@ float RunTankBody(float bodyDensity) {
         }
     }
     WcsphConfig fluidConfig;
+    fluidConfig.kernelFamily = family;
     fluidConfig.speedOfSound = 15.0f;
     fluidConfig.maximumTimeStep = 0.003f;
     FluidRigidCouplingSettings couplingSettings;
@@ -153,8 +154,9 @@ TEST_CASE("Coupled simulation applies validated boundary sampling settings", "[f
 }
 
 TEST_CASE("Coupled tank keeps a light body above a denser body", "[fluid][coupled][buoyancy][benchmark]") {
-    const float lightBodyHeight = RunTankBody(500.0f);
-    const float denseBodyHeight = RunTankBody(1500.0f);
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    const float lightBodyHeight = RunTankBody(500.0f, family);
+    const float denseBodyHeight = RunTankBody(1500.0f, family);
 
     INFO("light height: " << lightBodyHeight);
     INFO("dense height: " << denseBodyHeight);

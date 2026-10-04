@@ -1,5 +1,6 @@
 #pragma once
 #include "fluid_particle.h"
+#include "sph_kernels.h"
 #include "fluid_particle_spatial_grid.h"
 #include <cstdint>
 
@@ -27,4 +28,8 @@ public:
 // Same measurement operator for both methods; does not mutate particle state.
 FluidDiagnostics MeasureFluidDiagnostics(const std::vector<FluidParticle>& particles,
     const std::vector<FluidParticleSpatialGrid::ParticlePair>& pairs);
+// Prepared wall rates exclude density diffusion; empty means no wall contribution.
+FluidDiagnostics MeasureFluidDiagnostics(const std::vector<FluidParticle>& particles,
+    const std::vector<FluidParticleSpatialGrid::ParticlePair>& pairs,
+    SphKernelFamily family, const std::vector<float>& additionalDensityRates = {});
 }
