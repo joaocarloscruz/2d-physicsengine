@@ -156,11 +156,18 @@ jobs:
           PY
 
   webassembly:
-    name: WebAssembly build and smoke test
+    name: WebAssembly (${{ matrix.profile }})
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [optimized, sanitized, production]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       EMSCRIPTEN_VERSION: 6.0.3
+      WASM_PROFILE: ${{ matrix.profile }}
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
     steps:
       - name: Check out repository
@@ -178,7 +185,15 @@ jobs:
         shell: bash
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON
+          args=(-DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON)
+          if [[ "$WASM_PROFILE" == sanitized ]]; then
+            args=(-DCMAKE_BUILD_TYPE=Debug -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON
+                  '-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-omit-frame-pointer'
+                  '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined -g')
+          elif [[ "$WASM_PROFILE" == production ]]; then
+            args=(-DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=OFF)
+          fi
+          emcmake cmake -S . -B build-wasm -DBUILD_TESTING=OFF -DPHYSICS_BUILD_EXAMPLES=OFF "${args[@]}"
 
       - name: Build WebAssembly target
         shell: bash
@@ -191,7 +206,18 @@ jobs:
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           node build-wasm/wasm/smoke-test.cjs
-          node build-wasm/wasm/boundary-stress.cjs
+          if [[ "$WASM_PROFILE" == production ]]; then
+            node - <<'JS'
+          const assert = require('node:assert/strict');
+          require('./build-wasm/wasm/physics_engine.js')().then(module => {
+            const helpers = Object.keys(module).filter(name =>
+              /boundaryTest|BoundaryTest|emscripten_stack_get_current/.test(name));
+            assert.deepEqual(helpers, [], 'Production module exposes test helpers');
+          }).catch(error => { console.error(error); process.exitCode = 1; });
+          JS
+          else
+            node build-wasm/wasm/boundary-stress.cjs
+          fi
 
   sanitizers:
     name: Address and undefined behavior sanitizers

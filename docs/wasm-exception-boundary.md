@@ -84,7 +84,9 @@ An additional 1000 lifetime batches cover deletion during value conversion,
 raw/shared arguments, retained aliases, constructors, setters, numeric coercion,
 and shadowed lifetime methods during subtype sharing and cleanup.
 The production physics smoke suite runs in its existing order; no larger stack
-or test-only stack reset is used. Hosted WASM CI enables and runs these probes.
+or test-only stack reset is used. Hosted WASM CI runs independent optimized,
+ASan/UBSan and production profiles. Both probe profiles run physical smoke and
+boundary stress; production runs smoke and checks that helper exports are absent.
 
 The adapter's copied/adapted SDK portions retain Emscripten's copyright and MIT
 license in `src/wasm/embind_boundary.LICENSE`.
