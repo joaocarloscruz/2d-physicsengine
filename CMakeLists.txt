@@ -293,7 +293,9 @@ elseif(BUILD_TESTING)
     target_link_libraries(contact_load_benchmark PRIVATE PhysicsEngine::Engine)
     add_executable(contact_load_diagnostic benchmarks/contact_load_diagnostic.cpp)
     target_link_libraries(contact_load_diagnostic PRIVATE PhysicsEngine::Engine)
-    add_test(NAME contact_load_diagnostic_smoke COMMAND contact_load_diagnostic)
+    add_test(NAME contact_load_diagnostic_smoke COMMAND ${CMAKE_COMMAND}
+        -DPROGRAM=$<TARGET_FILE:contact_load_diagnostic>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyContactLoadJson.cmake)
     set_tests_properties(contact_load_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
     add_executable(contact_integration_diagnostic benchmarks/contact_integration_diagnostic.cpp)
     target_link_libraries(contact_integration_diagnostic PRIVATE PhysicsEngine::Engine)

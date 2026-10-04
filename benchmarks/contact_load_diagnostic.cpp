@@ -109,7 +109,7 @@ void Observe(std::ostream &out, const char *name, int steps, bool slide, bool re
         << incrementalY << ',' << incrementalSpin << "],\"summedPositionCorrection\":["
         << correctionX << ',' << correctionY << ',' << correctionAngle
         << "],\"peakUnloadedTangentialSpeed\":" << unloadedTangent
-        << ",\"peakLoadedTangentialSpeed\":" << loadedTangent << "],\"events\":[" << tracker.begins
+        << ",\"peakLoadedTangentialSpeed\":" << loadedTangent << ",\"events\":[" << tracker.begins
         << ',' << tracker.persists << ',' << tracker.ends << "]}";
     world.removeCollisionListener(&tracker);
 }
