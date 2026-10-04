@@ -10,7 +10,8 @@ q_t+\nabla\cdot(\mathbf u q)=0.
 The caller supplies frozen periodic MAC face velocities. This first-order
 donor-cell model does not advance velocities, project them, apply forces, diffuse
 the scalar or connect to World, SPH, thermal networks or a shared clock. It is
-not a complete Navier–Stokes step and has no JavaScript binding yet. The
+not a complete Navier–Stokes step. Its [owned JavaScript binding](webassembly.md#owned-periodic-scalar-transport)
+exposes the same independent state, clock and bounded operation. The
 [Clawpack scalar conservation-law derivation](https://www.clawpack.org/riemann_book/html/Advection.html)
 and [LeVeque chapter 20 examples](https://www.clawpack.org/gallery/gallery/gallery_fvmbook.html)
 provide background; the equations and implementation below were derived

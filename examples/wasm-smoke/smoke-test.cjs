@@ -77,6 +77,171 @@ function testQueries(physics) {
     polygonEngine.delete();
 }
 
+function testScalarTransport(physics) {
+    const near=(a,b,t=4e-14)=>assert.ok(Math.abs(a-b)<=t, `${a} vs ${b}, tolerance ${t}`);
+    const nearArray=(a,b,t)=>{assert.equal(a.length,b.length);a.forEach((v,k)=>near(v,b[k],t));};
+    const options={cflSafety:.9,maxSubstep:.1,maximumSubsteps:10000,maximumCellVisits:100000000};
+    const uniform=(n,u,v)=>({xFaces:Array(n).fill(u),yFaces:Array(n).fill(v)});
+    const put=(grid,q,v)=>{grid.setState(q);grid.setVelocities(v.xFaces,v.yFaces);};
+    // Independent cell donor matrix: each row uses four incoming neighbors,
+    // rather than reproducing the native equal/opposite face accumulation.
+    const donor=(q,v,c,h)=>q.map((value,k)=>{
+        const i=k%c.columns,j=Math.floor(k/c.columns), nx=c.columns,ny=c.rows;
+        const l=(i+nx-1)%nx+nx*j,r=(i+1)%nx+nx*j,b=i+nx*((j+ny-1)%ny),t=i+nx*((j+1)%ny);
+        const out=(Math.max(v.xFaces[r],0)+Math.max(-v.xFaces[k],0))/c.spacingX+
+            (Math.max(v.yFaces[t],0)+Math.max(-v.yFaces[k],0))/c.spacingY;
+        return (1-h*out)*value+h*(Math.max(v.xFaces[k],0)*q[l]+Math.max(-v.xFaces[r],0)*q[r])/c.spacingX+
+            h*(Math.max(v.yFaces[k],0)*q[b]+Math.max(-v.yFaces[t],0)*q[t])/c.spacingY;
+    });
+    const defaults=new physics.PeriodicScalarTransport(),base=defaults.getConfig();
+    assert.deepEqual(base,{columns:16,rows:16,spacingX:1,spacingY:1});
+    assert.deepEqual(defaults.getState(),Array(256).fill(0));
+    assert.deepEqual(defaults.getVelocities(),uniform(256,0,0));assert.equal(defaults.getTime(),0);
+    const diagnosticNames=['substeps','cellVisits','duration','timeBefore','timeAfter','lastSubstep',
+        'maximumOutflowRate','outflowRateBound','maximumAbsDivergence','maximumCfl','initialIntegratedScalar',
+        'finalIntegratedScalar','initialAbsoluteIntegral','finalAbsoluteIntegral','integratedScalarDrift',
+        'conservationRoundoffAllowance','initialMinimum','initialMaximum','finalMinimum','finalMaximum',
+        'rangeRoundoffAllowance','nonnegativeInput','discreteDivergenceFree','zeroDurationNoOp'];
+    assert.deepEqual(Object.keys(defaults.getLastStep()).sort(),diagnosticNames.sort());
+    for(const [name,value] of Object.entries(defaults.getLastStep()))
+        assert.equal(value,['nonnegativeInput','discreteDivergenceFree','zeroDurationNoOp'].includes(name)?false:0);
+    defaults.step(.01);assert.equal(defaults.getTime(),.01);defaults.delete();
+    for(const [columns,rows] of [[7,5],[2,5],[5,2],[2,2]]) {
+        const c={columns,rows,spacingX:.23,spacingY:.41},n=columns*rows,grid=new physics.PeriodicScalarTransport(c);
+        const q=Array.from({length:n},(_,k)=>.2+Math.sin(.7*k));
+        const v={xFaces:q.map((_,k)=>.3*Math.sin(.31*k+.7)),yFaces:q.map((_,k)=>-.2*Math.cos(.9*k))};
+        put(grid,q,v);const d=grid.step(.02);
+        assert.equal(d.substeps,1);nearArray(grid.getState(),donor(q,v,c,.02));
+        near(d.finalIntegratedScalar,q.reduce((a,b)=>a+b)*c.spacingX*c.spacingY,3e-15);
+        assert.ok(Math.abs(d.integratedScalarDrift)<=d.conservationRoundoffAllowance);
+        assert.equal(d.cellVisits,11*n);assert.ok(d.maximumCfl<.9);
+        grid.delete();
+    }
+    for(const [columns,rows] of [[13,11],[2,5],[5,2],[2,2]]) for(const u of [-.3,.3]) for(const v of [-.2,.2]) {
+        const c={columns,rows,spacingX:.23,spacingY:.41},n=columns*rows,grid=new physics.PeriodicScalarTransport(c);
+        const tx=2*Math.PI/columns,ty=2*Math.PI/rows;
+        const q=Array.from({length:n},(_,k)=>2+.4*Math.cos(tx*(k%columns)+ty*Math.floor(k/columns)+.31));
+        put(grid,q,uniform(n,u,v));const d=grid.step(.1,{...options,maxSubstep:.01});
+        // Independent complex Fourier amplification using the actual accepted h.
+        const cx=d.lastSubstep*Math.abs(u)/c.spacingX,cy=d.lastSubstep*Math.abs(v)/c.spacingY;
+        const gr=1-cx-cy+cx*Math.cos(tx)+cy*Math.cos(ty);
+        const gi=-cx*Math.sign(u)*Math.sin(tx)-cy*Math.sign(v)*Math.sin(ty);
+        const amplitude=Math.hypot(gr,gi)**d.substeps,phase=d.substeps*Math.atan2(gi,gr);
+        nearArray(grid.getState(),q.map((_,k)=>2+.4*amplitude*Math.cos(tx*(k%columns)+ty*Math.floor(k/columns)+.31+phase)));
+        assert.ok(amplitude<1);assert.ok(d.discreteDivergenceFree);assert.ok(d.nonnegativeInput);grid.delete();
+    }
+    const c={columns:2,rows:2,spacingX:1,spacingY:1},grid=new physics.PeriodicScalarTransport(c);
+    put(grid,[1,2,1,2],{xFaces:[1,-1,1,-1],yFaces:[0,0,0,0]});
+    const two=grid.step(.1);nearArray(grid.getState(),[1.4,1.6,1.4,1.6],1e-15);
+    assert.equal(two.maximumOutflowRate,2);assert.equal(two.maximumAbsDivergence,2);
+    assert.equal(two.discreteDivergenceFree,false);near(two.finalIntegratedScalar,6,1e-15);
+    put(grid,[1,1,1,1],{xFaces:[1,-1,1,-1],yFaces:[0,0,0,0]});
+    const compression=grid.step(.1);nearArray(grid.getState(),[1.2,.8,1.2,.8],1e-15);
+    assert.ok(compression.finalMaximum>1);assert.ok(compression.finalMinimum<1);near(compression.integratedScalarDrift,0);
+    const snapshot=()=>({q:grid.getState(),v:grid.getVelocities(),d:grid.getLastStep(),time:grid.getTime()});
+    const retained=grid.getLastStep(),q=[.731,-.137,1.123,3.331];
+    put(grid,q,uniform(4,0,0));assert.deepEqual(grid.getLastStep(),retained);
+    const noOp=grid.step(0,{...options,maximumSubsteps:0,maximumCellVisits:12});
+    assert.equal(noOp.cellVisits,12);assert.equal(noOp.substeps,0);assert.equal(noOp.zeroDurationNoOp,true);
+    assert.equal(noOp.timeBefore,noOp.timeAfter);assert.equal(noOp.duration,0);assert.equal(noOp.maximumCfl,0);
+    assert.equal(noOp.integratedScalarDrift,0);assert.equal(noOp.conservationRoundoffAllowance,0);
+    assert.equal(noOp.rangeRoundoffAllowance,0);assert.deepEqual(grid.getState(),q);
+    near(noOp.initialIntegratedScalar,q.reduce((a,b)=>a+b),1e-15);
+    near(noOp.initialAbsoluteIntegral,q.reduce((a,b)=>a+Math.abs(b)),1e-15);
+    assert.equal(noOp.initialIntegratedScalar,noOp.finalIntegratedScalar);
+    assert.equal(noOp.initialAbsoluteIntegral,noOp.finalAbsoluteIntegral);
+    assert.equal(noOp.initialMinimum,Math.min(...q));assert.equal(noOp.finalMinimum,noOp.initialMinimum);
+    assert.equal(noOp.initialMaximum,Math.max(...q));assert.equal(noOp.finalMaximum,noOp.initialMaximum);
+    assert.equal(noOp.maximumOutflowRate,0);assert.equal(noOp.outflowRateBound,0);
+    assert.equal(noOp.maximumAbsDivergence,0);assert.equal(noOp.discreteDivergenceFree,true);assert.equal(noOp.nonnegativeInput,false);
+    const before=snapshot();
+    for(const work of [0,11]) {assert.throws(()=>grid.step(0,{...options,maximumSubsteps:0,maximumCellVisits:work}));assert.deepEqual(snapshot(),before);}
+    const exact=grid.step(.01,{...options,maxSubstep:.01,maximumSubsteps:1,maximumCellVisits:44});
+    assert.equal(exact.substeps,1);assert.equal(exact.cellVisits,44);assert.deepEqual(grid.getState(),q);
+    // Every rejection preserves fields, prescribed advector, clock and the full last operation.
+    const rollback=snapshot(),reject=fn=>{assert.throws(fn);assert.deepEqual(snapshot(),rollback);};
+    for(const duration of [-1,NaN,Infinity]) reject(()=>grid.step(duration));
+    for(const field of ['maximumSubsteps','maximumCellVisits']) for(const bad of [-1,.5,NaN,Infinity,2**32,2**32+1])
+        reject(()=>grid.step(0,{...options,[field]:bad}));
+    reject(()=>grid.step(0,{...options,maximumSubsteps:1000001}));
+    reject(()=>grid.step(0,{...options,maximumCellVisits:1000000001}));
+    for(const safety of [0,1,-1,NaN,Infinity]) reject(()=>grid.step(0,{...options,cflSafety:safety}));
+    for(const h of [0,-1,NaN,Infinity]) reject(()=>grid.step(0,{...options,maxSubstep:h}));
+    reject(()=>grid.step(.02,{...options,maxSubstep:.01,maximumSubsteps:1}));
+    reject(()=>grid.step(.01,{...options,maximumCellVisits:43}));
+    for(const bad of [[],[1,2,3],new Float64Array(4),Array(4),[1,2,3,NaN],[1,2,3,Infinity],['1',2,3,4],[null,2,3,4],[{},2,3,4]]) {
+        reject(()=>grid.setState(bad));reject(()=>grid.setVelocities(bad,[0,0,0,0]));
+        reject(()=>grid.setVelocities([0,0,0,0],bad));
+    }
+    for(const field of ['columns','rows']) for(const bad of [0,1,-1,.5,NaN,Infinity,262145,2**32,2**32+2])
+        assert.throws(()=>new physics.PeriodicScalarTransport({...base,[field]:bad}));
+    assert.throws(()=>new physics.PeriodicScalarTransport({...base,columns:512,rows:513}));
+    for(const field of ['spacingX','spacingY']) for(const bad of [0,-1,NaN,Infinity,Number.MAX_VALUE])
+        assert.throws(()=>new physics.PeriodicScalarTransport({...base,[field]:bad}));
+    assert.throws(()=>new physics.PeriodicScalarTransport({...c,spacingX:1e-200,spacingY:1e-200}));
+    const largest=new physics.PeriodicScalarTransport({...c,columns:512,rows:512});
+    assert.equal(largest.getState().length,262144);largest.delete();
+    grid.step(0,{...options,maximumSubsteps:1000000,maximumCellVisits:1000000000}); // inclusive caps
+    put(grid,[1,0,0,0],uniform(4,.7,.3));const rate=grid.step(0).outflowRateBound;
+    // Chosen duration is above the conservative CFL endpoint: one-step budget must reject.
+    const cflBefore=snapshot();assert.throws(()=>grid.step(.9/rate,{...options,maxSubstep:2,maximumSubsteps:1}));
+    assert.deepEqual(snapshot(),cflBefore);
+    const bounded=grid.step(.9/rate,{...options,maxSubstep:2});assert.equal(bounded.substeps,2);assert.ok(bounded.maximumCfl<=.9);
+    // This initial summary is finite. Concentration overflows only after staged donor transfers.
+    const late=new physics.PeriodicScalarTransport({...c,spacingX:1e-154,spacingY:1e-154});
+    put(late,[1e308,1e308,1e308,1e308],{xFaces:[1e-154,-1e-154,1e-154,-1e-154],yFaces:[0,0,0,0]});
+    const lateBefore={q:late.getState(),v:late.getVelocities(),d:late.getLastStep()};
+    assert.throws(()=>late.step(.4,{...options,maxSubstep:1}));
+    assert.deepEqual({q:late.getState(),v:late.getVelocities(),d:late.getLastStep()},lateBefore);assert.equal(late.getTime(),0);late.delete();
+    const tiny=new physics.PeriodicScalarTransport(c);put(tiny,[1e308,0,0,0],uniform(4,1e-308,0));
+    assert.throws(()=>tiny.step(1e-20));assert.deepEqual(tiny.getState(),[1e308,0,0,0]);tiny.delete();
+    for(const scale of [1e-200,1e200]) {
+        const g=new physics.PeriodicScalarTransport({...c,spacingX:1e100,spacingY:1e-100});
+        const reduced=[1,.5,.2,.7],v=uniform(4,.3e100,-.2e-100);
+        put(g,reduced.map(value=>value*scale),v);const d=g.step(.1);
+        nearArray(g.getState().map(value=>value/scale),donor(reduced,uniform(4,.3,-.2),c,.1),3e-15);
+        assert.ok(Math.abs(d.integratedScalarDrift)<=d.conservationRoundoffAllowance);g.delete();
+    }
+    const pulseConfig={columns:32,rows:16,spacingX:.03,spacingY:.07},pulse=new physics.PeriodicScalarTransport(pulseConfig);
+    const pulseQ=Array.from({length:512},(_,k)=>((k%32>=29||k%32<3)&&Math.floor(k/32)>=6&&Math.floor(k/32)<10)?1:0);
+    const pulseV={xFaces:pulseQ.map((_,k)=>.3+.1*Math.sin(2*Math.PI*Math.floor(k/32)/16)),
+        yFaces:pulseQ.map((_,k)=>-.2+.1*Math.cos(2*Math.PI*(k%32)/32))};
+    put(pulse,pulseQ,pulseV);const pd=pulse.step(.6);assert.ok(pd.discreteDivergenceFree);assert.ok(pd.nonnegativeInput);
+    pulse.getState().forEach(value=>{assert.ok(value>=0&&value<=1+2e-14);});near(pd.finalIntegratedScalar,24*.03*.07,2e-15);
+    put(pulse,Array(512).fill(.7),pulseV);pulse.step(.6);nearArray(pulse.getState(),Array(512).fill(.7),3e-15);pulse.delete();
+    const sinc=x=>Math.sin(x)/x,spatialError=nx=>{
+        const c={columns:nx,rows:nx/2,spacingX:1/nx,spacingY:2/nx},n=c.columns*c.rows,g=new physics.PeriodicScalarTransport(c);
+        const factor=sinc(Math.PI*c.spacingX)*sinc(2*Math.PI*c.spacingY),duration=.4;
+        const phase=k=>2*Math.PI*((k%nx+.5)*c.spacingX+2*(Math.floor(k/nx)+.5)*c.spacingY);
+        put(g,Array.from({length:n},(_,k)=>1+.3*factor*Math.cos(phase(k))),uniform(n,.7,-.2));
+        g.step(duration,{...options,maxSubstep:duration/nx});
+        const error=Math.sqrt(g.getState().reduce((sum,value,k)=>sum+(value-1-.3*factor*Math.cos(phase(k)-2*Math.PI*.3*duration))**2,0)/n);
+        g.delete();return error;
+    };
+    const errors=[32,64,128,256].map(spatialError);
+    assert.ok(errors[0]/errors[1]>1.6);assert.ok(errors[1]/errors[2]>1.75);assert.ok(errors[2]/errors[3]>1.85&&errors[2]/errors[3]<2.1);
+    const tc={columns:32,rows:2,spacingX:1/32,spacingY:.5},theta=2*Math.PI/32,T=.4;
+    const er=Math.exp(T/tc.spacingX*(Math.cos(theta)-1)),ei=-T/tc.spacingX*Math.sin(theta);
+    let previous=0;
+    for(const count of [16,32,64,128]) {
+        const g=new physics.PeriodicScalarTransport(tc);put(g,Array.from({length:64},(_,k)=>1+.3*Math.cos(theta*(k%32))),uniform(64,1,0));
+        g.step(T,{...options,maxSubstep:T/count});
+        const error=Math.sqrt(g.getState().reduce((sum,value,k)=>sum+(value-1-.3*er*Math.cos(theta*(k%32)+ei))**2,0)/64);
+        if(previous) assert.ok(previous/error>1.8&&previous/error<2.4);previous=error;g.delete();
+    }
+    const replay=new physics.PeriodicScalarTransport(c),initial=grid.getState(),advector=grid.getVelocities();
+    put(replay,initial,advector);const originTime=grid.getTime();
+    for(let i=0;i<12;++i) {grid.step(.03);replay.step(.03);assert.deepEqual(grid.getState(),replay.getState());}
+    near(grid.getTime()-originTime,replay.getTime(),1e-15);replay.delete();
+    const copiedInputs=grid.getState(),copiedV=grid.getVelocities();put(grid,copiedInputs,copiedV);
+    const isolated=snapshot(),copied=snapshot();copied.q[0]=99;copied.v.xFaces[0]=99;copied.d.timeAfter=99;
+    copiedInputs[0]=99;copiedV.yFaces[0]=99;const configCopy=grid.getConfig();configCopy.columns=999;
+    assert.deepEqual(snapshot(),isolated);assert.deepEqual(grid.getConfig(),c);
+    const retainedText=JSON.stringify(isolated);grid.delete();assert.equal(JSON.stringify(isolated),retainedText);
+    assert.ok(Array.isArray(isolated.q));assert.ok(Number.isFinite(isolated.d.timeAfter));
+    console.log(`PASS: scalar transport donor/Fourier/compression, positivity/mass, temporal/spatial refinement (${errors.join(', ')}), work/range rollback and copied lifetimes`);
+}
+
 function testMaxwell(physics) {
     const defaults = new physics.MaxwellGrid(), base = defaults.getConfig();
     assert.deepEqual(base, {columns:16, rows:16, spacingX:1, spacingY:1, permittivity:1,
@@ -795,6 +960,7 @@ async function main() {
     testWaves(physics);
     testMacProjection(physics);
     testMacDiffusion(physics);
+    testScalarTransport(physics);
     testMaxwell(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
@@ -1173,7 +1339,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic MAC projection/diffusion, and periodic TMz Maxwell fields");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, and periodic TMz Maxwell fields");
 }
 
 main().catch((error) => {

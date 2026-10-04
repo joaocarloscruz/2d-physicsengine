@@ -13,7 +13,12 @@ addToLibrary({
     // bypasses C++ RAII in JS EH. Snapshot these bounded public array inputs
     // before entering native code; check every shape before reading any entry.
     let arrays, count, maxwell = false;
-    if (name === 'PeriodicMacGrid.setVelocities') {
+    if (name === 'PeriodicScalarTransport.setState' || name === 'PeriodicScalarTransport.setVelocities') {
+      const config = physicsSizingGetters['PeriodicScalarTransport.getConfig'].call(self);
+      count = config.columns * config.rows;
+      if (count > 262144) throw new RangeError('Scalar cell cap exceeded');
+      arrays = args;
+    } else if (name === 'PeriodicMacGrid.setVelocities') {
       const config = physicsSizingGetters['PeriodicMacGrid.getConfig'].call(self);
       count = config.columns * config.rows;
       if (count > 262144) throw new RangeError('MAC cell cap exceeded');
@@ -107,7 +112,8 @@ addToLibrary({
     // Capture native sizing observers before exposing mutable JS prototypes.
     // A user-shadowed getConfig/getCellCount cannot enlarge snapshot work.
     if (humanName === 'PeriodicMacGrid.getConfig' || humanName === 'WaveMembrane.getCellCount' ||
-        humanName === 'MaxwellGrid.getConfig') physicsSizingGetters[humanName] = invoker;
+        humanName === 'MaxwellGrid.getConfig' || humanName === 'PeriodicScalarTransport.getConfig')
+      physicsSizingGetters[humanName] = invoker;
     return invoker;
   },
 

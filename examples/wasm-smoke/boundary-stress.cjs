@@ -169,6 +169,85 @@ const createModule = require('./physics_engine.js');
         }
         console.log(`PASS: Maxwell boundary stress; 1000 batches/10000 rejection checks, stack=${maxwellStack}, live heap=${maxwellBefore.heap}, uncaught=${maxwellBefore.uncaught}; unchanged fields/diagnostics`);
     }
+    if (typeof physics.PeriodicScalarTransport === 'function') {
+        const config={columns:2,rows:2,spacingX:1,spacingY:1};
+        const options={cflSafety:.9,maxSubstep:.1,maximumSubsteps:10000,maximumCellVisits:100000000};
+        const scalar=new physics.PeriodicScalarTransport(config);
+        const late=new physics.PeriodicScalarTransport({...config,spacingX:1e-154,spacingY:1e-154});
+        late.setState(Array(4).fill(1e308));
+        late.setVelocities([1e-154,-1e-154,1e-154,-1e-154],Array(4).fill(0));
+        const owners=[scalar,late];
+        const snapshot=owner=>({q:owner.getState(),v:owner.getVelocities(),d:owner.getLastStep(),time:owner.getTime()});
+        const states=owners.map(snapshot);
+        const nativeConfig=physics.PeriodicScalarTransport.prototype.getConfig;
+        physics.PeriodicScalarTransport.prototype.getConfig=()=>({columns:1e20,rows:1e20});
+        scalar.getConfig=()=>({columns:1e20,rows:1e20});
+        const zero=()=>Array(4).fill(0);
+        const proxy=new Proxy(zero(),{get(target,key) {
+            if(key==='3') throw ordinary;
+            return Reflect.get(target,key);
+        }});
+        const hasProxy=new Proxy(zero(),{getOwnPropertyDescriptor(target,key) {
+            if(key==='3') throw ordinary;
+            return Reflect.getOwnPropertyDescriptor(target,key);
+        }});
+        const lengthProxy=new Proxy(zero(),{get(target,key) {
+            if(key==='length') throw ordinary;
+            return Reflect.get(target,key);
+        }});
+        const optionGetter={...options,get maximumCellVisits(){throw ordinary;}};
+        const failures=[
+            ()=>scalar.step(0,{...options,maximumCellVisits:0}),
+            ()=>scalar.step(.01,{...options,maximumSubsteps:0}),
+            ()=>late.step(.4,{...options,maxSubstep:1}),
+            ()=>scalar.setState(accessor(4,ordinary)),
+            ()=>scalar.setState(proxy),
+            ()=>scalar.setState(hasProxy),
+            ()=>scalar.setState(lengthProxy),
+            ()=>scalar.setVelocities(accessor(4,ordinary),zero()),
+            ()=>scalar.setVelocities(zero(),proxy),
+            ()=>scalar.setVelocities(zero(),accessor(4,73)),
+            ()=>scalar.step(0,optionGetter),
+            ()=>new physics.PeriodicScalarTransport({...config,get rows(){throw ordinary;}}),
+            ()=>scalar.step(0,{...options,maximumSubsteps:2**32+1}),
+            ()=>scalar.setState(accessor(4,undefined)),
+            ()=>scalar.setState(accessor(4,null)),
+        ];
+        function scalarBatch() {
+            for(let i=0;i<failures.length;++i) {
+                const before=stack();
+                assert.throws(failures[i],error=>i===9?error===73:i===13?error===undefined:
+                    i===14?error===null:error instanceof Error&&!('excPtr' in error));
+                assert.equal(stack(),before);
+            }
+            assert.throws(()=>scalar.setState(proxy),error=>error===ordinary);
+            assert.throws(()=>scalar.step(0,optionGetter),error=>error===ordinary);
+            let reads=0;
+            const unread=zero();Object.defineProperty(unread,3,{get:()=>{++reads;throw ordinary;}});
+            assert.throws(()=>scalar.setVelocities(unread,[]),error=>error instanceof RangeError);
+            assert.equal(reads,0); // both face lengths before any entry access
+            const nested=zero();Object.defineProperty(nested,3,{get:()=>{scalar.step(0,{...options,maximumCellVisits:0});}});
+            assert.throws(()=>scalar.setState(nested),error=>error instanceof Error&&/budget/.test(error.message));
+            const reentrant=zero();Object.defineProperty(reentrant,3,{get:()=>{
+                scalar.setState(zero());assert.equal(probe.method(),7);return 0;
+            }});
+            scalar.setState(reentrant);scalar.setVelocities(zero(),reentrant);
+            for(const method of ['setState','setVelocities']) {
+                const receiver=new physics.PeriodicScalarTransport(config),deleting=zero();
+                Object.defineProperty(deleting,3,{get:()=>{receiver.delete();return 0;}});
+                assert.throws(()=>method==='setState'?receiver.setState(deleting):receiver.setVelocities(zero(),deleting),
+                    error=>error instanceof Error);
+                assert.ok(receiver.isDeleted());
+            }
+        }
+        for(let i=0;i<20;++i) scalarBatch();
+        const scalarBefore=physics.boundaryTestStats(),scalarStack=stack();
+        for(let i=0;i<1000;++i) scalarBatch();
+        assert.deepEqual(physics.boundaryTestStats(),scalarBefore);assert.equal(stack(),scalarStack);
+        physics.PeriodicScalarTransport.prototype.getConfig=nativeConfig;
+        for(let i=0;i<owners.length;++i) {assert.deepEqual(snapshot(owners[i]),states[i]);owners[i].delete();}
+        console.log(`PASS: scalar boundary stress; 1000 batches/21000 rejection checks, stack=${scalarStack}, live heap=${scalarBefore.heap}, uncaught=${scalarBefore.uncaught}; unchanged scalar/advector/clock/diagnostics`);
+    }
     probe.delete();
     assert.equal(physics.boundaryTestStats().objects, 0);
     assert.equal(physics.boundaryTestStats().values, 1); // test static field only

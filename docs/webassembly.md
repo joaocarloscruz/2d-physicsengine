@@ -12,6 +12,96 @@ Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
 and return owned collections with exact BigInt body IDs, retained body handles
 and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
 
+## Owned periodic scalar transport
+
+`PeriodicScalarTransport` owns periodic cell-average density `q` and prescribed,
+frozen MAC face velocities. Default construction uses 16×16 unit-spaced cells;
+the configured constructor takes the complete geometry object below. It solves
+`q_t + div(u*q) = 0` using first-order unsplit donor-cell transport. Compressible
+flow changes an initially uniform density while conserving its integral.
+It has numerical diffusion and does not advance/project velocities or couple
+to Engine, World, SPH, thermal state or a shared clock. See the
+[native equations, accuracy, units and representability limits](periodic-scalar-transport.md).
+
+```javascript
+const scalar = new physics.PeriodicScalarTransport({
+    columns: 2, rows: 2, spacingX: 0.25, spacingY: 0.5
+});
+let values, diagnostics;
+try {
+    scalar.setState([1, 2, 1, 2]);
+    scalar.setVelocities([0.25, 0.25, 0.25, 0.25], [0, 0, 0, 0]);
+    diagnostics = scalar.step(0.1, {
+        cflSafety: 0.9, maxSubstep: 0.1,
+        maximumSubsteps: 10000, maximumCellVisits: 100000000
+    });
+    values = scalar.getState(); // [1.1, 1.9, 1.1, 1.9]
+    console.log(scalar.getTime(), scalar.getVelocities());
+} finally {
+    scalar.delete();
+}
+console.log(values, diagnostics); // Owned snapshots survive deletion.
+```
+
+`getConfig()`, `getState()`, `getVelocities()` and `getLastStep()` return plain
+copied objects/arrays with no borrowed WASM memory or snapshot cleanup.
+`getTime()` returns the independent clock in time units. Geometry is immutable.
+`setState(values)` and `setVelocities(xFaces, yFaces)` copy inputs; later input
+or snapshot mutation cannot affect the simulation. Setters preserve the clock
+and complete last successful diagnostic, which describes that earlier operation.
+Delete the simulation handle once when finished.
+
+All three arrays have `columns*rows` entries indexed `i + columns*j`.
+Cell averages are centered at `((i+.5)*dx,(j+.5)*dy)`, x faces at
+`(i*dx,(j+.5)*dy)`, and y faces at `((i+.5)*dx,j*dy)`.
+Periodic faces have no duplicate final row/column. Inputs must be dense plain
+JS arrays of finite numbers; typed arrays, holes, strings and nonfinite values
+are rejected. Both face lengths are checked before either array's entries are
+read, and all entries are copied in JS before native allocation. Privately
+captured native sizing observers bypass shadowed public getters. Foreign
+accessor/proxy exceptions preserve their thrown value, and native rejections
+become owned `Error` objects through the same exception-safe boundary.
+
+`step(duration)` uses the four defaults shown above; its configured overload
+requires all four fields. Dimensions and budgets enter as doubles and must be
+finite exact nonnegative integers before conversion. Each dimension is at least
+two, the product at most 262144 cells, `maximumSubsteps` at most 1000000 and
+`maximumCellVisits` at most 1000000000. Zero budgets are valid options but fail
+when required work is positive. Spacings must be positive/finite with
+representable area/domain extents, duration finite/nonnegative, `cflSafety`
+strictly between zero and one and `maxSubstep` positive/finite.
+
+Positive duration charges `(7+4*substeps)*cells` logical cell visits; native
+allocation/destruction and JS input/output copies are additional bounded linear
+work. `step(0)` still validates/audits and requires exactly `3*cells` visits. It
+publishes coherent zero-duration diagnostics while retaining state and clock;
+even a zero-duration call fails with insufficient work budget. Any failed step
+retains scalar, velocities, clock and the full previous diagnostic. Unrepresentable
+rates, transfers, summaries or updates fail explicitly without hidden clamping,
+rescaling or an absolute scalar floor.
+
+Every native diagnostic is returned by `step` and `getLastStep`:
+
+| Fields | Units / meaning |
+| --- | --- |
+| `substeps`, `cellVisits` | Accepted partition and charged logical work |
+| `duration`, `timeBefore`, `timeAfter`, `lastSubstep` | Time |
+| `maximumOutflowRate`, `outflowRateBound`, `maximumAbsDivergence` | 1/time; conservative outflow bound and measured advector divergence |
+| `maximumCfl` | Dimensionless accepted substep × outflow bound |
+| `initialIntegratedScalar`, `finalIntegratedScalar`, `initialAbsoluteIntegral`, `finalAbsoluteIntegral`, `integratedScalarDrift`, `conservationRoundoffAllowance` | Scalar × length²; absolute integral uses `abs(q)` |
+| `initialMinimum`, `initialMaximum`, `finalMinimum`, `finalMaximum`, `rangeRoundoffAllowance` | Scalar units |
+| `nonnegativeInput`, `discreteDivergenceFree`, `zeroDurationNoOp` | Initial positivity, exact computed zero-divergence and no-op flags |
+
+The roundoff allowances are scale-aware numerical guards, not physical error
+tolerances. Positivity applies to nonnegative input; the old-range bound and
+constant preservation additionally require discrete divergence-free velocity.
+For compressible flow, density can exceed its initial maximum. Node smoke tests
+independently check donor rows/Fourier amplification, two-cell anisotropic
+grids, compression, mass, positivity and first-order temporal/spatial refinement.
+Probe-enabled boundary stress also checks repeated native/foreign failures,
+reentrant getters, shadowed sizing methods and receiver deletion with exact
+stack/live-allocation/uncaught-counter stability.
+
 ## Owned periodic MAC grids
 
 `PeriodicMacGrid` owns a standalone periodic velocity grid with separate
