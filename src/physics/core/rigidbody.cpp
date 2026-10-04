@@ -62,12 +62,7 @@ namespace PhysicsEngine {
             inertia = 0.0f;
             inverseInertia = 0.0f;
         } else {
-            float area = shape->GetArea();
-            mass = material.density * area;
-            inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
-
-            inertia = shape->GetInertia(mass);
-            inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
+            SetMass(material.density * shape->GetArea());
         }
 
     }
@@ -178,11 +173,19 @@ namespace PhysicsEngine {
             throw std::invalid_argument("RigidBody mass must be positive and finite.");
         }
         if (isStatic) return;
+        const float nextInverseMass = 1.0f / m;
+        const float nextInertia = shape->GetInertia(m);
+        const float nextInverseInertia = 1.0f / nextInertia;
+        if (!std::isfinite(nextInverseMass) || nextInverseMass <= 0 ||
+            !std::isfinite(nextInertia) || nextInertia <= 0 ||
+            !std::isfinite(nextInverseInertia) || nextInverseInertia <= 0) {
+            throw std::invalid_argument("RigidBody mass and inertia must have finite positive reciprocals.");
+        }
         mass = m;
         Wake();
-        inverseMass = (mass != 0.0f) ? 1.0f / mass : 0.0f;
-        inertia = shape->GetInertia(mass);
-        inverseInertia = (inertia != 0.0f) ? 1.0f / inertia : 0.0f;
+        inverseMass = nextInverseMass;
+        inertia = nextInertia;
+        inverseInertia = nextInverseInertia;
     }
 
     void RigidBody::SetCollisionCategoryBits(std::uint32_t bits) {

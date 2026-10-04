@@ -185,3 +185,13 @@ TEST_CASE("Circle polygon contact direction follows geometry rather than body or
     circle.SetPosition(separated);
     REQUIRE_FALSE(CheckCollision(&circle, &polygon).hasCollision);
 }
+
+
+TEST_CASE("Derived rigid mass values must be representable", "[review][validation]") {
+    REQUIRE_THROWS_AS(RigidBody(Circle(1e20f), Material{}), std::invalid_argument);
+    REQUIRE_THROWS_AS(RigidBody(Circle(1), Material{1e-40f, 0}), std::invalid_argument);
+    RigidBody body(Circle(1), Material{});
+    const float originalMass = body.GetMass();
+    REQUIRE_THROWS_AS(body.SetMass(1e-40f), std::invalid_argument);
+    REQUIRE(body.GetMass() == originalMass);
+}
