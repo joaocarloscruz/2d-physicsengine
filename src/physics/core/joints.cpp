@@ -82,8 +82,11 @@ Proposal Propose(const RigidBody &b, D2 r, D2 impulse, double angularImpulse, bo
     if (b.IsStatic())
         return {linear, angular};
     return {CheckedVector(Double(linear) + impulse * b.inverseMass),
-            CheckedFloat(angularChange && absoluteAngular ? *angularChange : double(angular) +
-                         (angularChange ? *angularChange
+            CheckedFloat(angularChange && absoluteAngular
+                             ? *angularChange
+                             : double(angular) +
+                                   (angularChange
+                                        ? *angularChange
                                         : b.inverseInertia * (r.cross(impulse) + angularImpulse)))};
 }
 void Apply(RigidBody &a, RigidBody &b, D2 ra, D2 rb, D2 impulse, bool position,
@@ -93,9 +96,8 @@ void Apply(RigidBody &a, RigidBody &b, D2 ra, D2 rb, D2 impulse, bool position,
     Checked(impulse.x);
     Checked(impulse.y);
     Checked(angularImpulse);
-    const auto pa =
-        Propose(a, ra, impulse * -1, -angularImpulse, position, change ? &change->a : nullptr,
-                change && change->absolute);
+    const auto pa = Propose(a, ra, impulse * -1, -angularImpulse, position,
+                            change ? &change->a : nullptr, change && change->absolute);
     const auto pb =
         Propose(b, rb, impulse, angularImpulse, position, change ? &change->b : nullptr,
                 change && change->absolute);
@@ -169,54 +171,69 @@ HingeImpulse SolveHingeMass(const RigidBody &a, const RigidBody &b, D2 ra, D2 rb
             {-ia * angularRhs / k33 - weight * difference,
              ib * angularRhs / k33 - weight * difference}};
 }
-HingeImpulse SolveHingeVelocity(const RigidBody& a,const RigidBody& b,D2 ra,D2 rb,double target) {
-    const double m=double(a.inverseMass)+b.inverseMass,ia=a.inverseInertia,ib=b.inverseInertia,
-        angularMass=ia+ib,weight=ia*ib/angularMass;
-    const D2 d=ra-rb,dv=Double(b.velocity)-Double(a.velocity),base=dv*-1;
-    const D2 lever=rb+d*(ia/angularMass);
-    const double shared=(ib*a.angularVelocity+ia*b.angularVelocity)/angularMass;
-    const D2 jd{-d.y,d.x},jl{-lever.y,lever.x};
-    const double determinant=Checked(m*(m+weight*d.dot(d)));
-    if(determinant<=0) throw std::overflow_error("Joint hinge mass is singular.");
+HingeImpulse SolveHingeVelocity(const RigidBody &a, const RigidBody &b, D2 ra, D2 rb,
+                                double target) {
+    const double m = double(a.inverseMass) + b.inverseMass, ia = a.inverseInertia,
+                 ib = b.inverseInertia, angularMass = ia + ib, weight = ia * ib / angularMass;
+    const D2 d = ra - rb, dv = Double(b.velocity) - Double(a.velocity), base = dv * -1;
+    const D2 lever = rb + d * (ia / angularMass);
+    const double shared = (ib * a.angularVelocity + ia * b.angularVelocity) / angularMass;
+    const D2 jd{-d.y, d.x}, jl{-lever.y, lever.x};
+    const double determinant = Checked(m * (m + weight * d.dot(d)));
+    if (determinant <= 0)
+        throw std::overflow_error("Joint hinge mass is singular.");
     // Reduced RHS is -dv + J*d*shared - J*lever*target. Keep J*d
     // separate through the adjugate: d dot J*d is identically zero.
-    const D2 numerator=base*m+d*(weight*d.dot(base))+jd*(m*shared)
-        -jl*(m*target)+d*(weight*ra.cross(rb)*target);
-    const D2 linear{Checked(numerator.x/determinant),Checked(numerator.y/determinant)};
-    const double angularRhs=target-(double(b.angularVelocity)-a.angularVelocity);
-    const double common=weight*d.cross(linear);
-    return {linear,Checked(angularRhs/angularMass-lever.cross(linear)),
-        {Checked(shared-ia/angularMass*target-common),Checked(shared+ib/angularMass*target-common),true}};
+    const D2 numerator = base * m + d * (weight * d.dot(base)) + jd * (m * shared) -
+                         jl * (m * target) + d * (weight * ra.cross(rb) * target);
+    const D2 linear{Checked(numerator.x / determinant), Checked(numerator.y / determinant)};
+    const double angularRhs = target - (double(b.angularVelocity) - a.angularVelocity);
+    const double common = weight * d.cross(linear);
+    return {linear,
+            Checked(angularRhs / angularMass - lever.cross(linear)),
+            {Checked(shared - ia / angularMass * target - common),
+             Checked(shared + ib / angularMass * target - common), true}};
 }
-HingeImpulse FixedHingeVelocity(const RigidBody &a,const RigidBody &b,D2 ra,D2 rb,double angular) {
+HingeImpulse FixedHingeVelocity(const RigidBody &a, const RigidBody &b, D2 ra, D2 rb,
+                                double angular) {
     const double m = double(a.inverseMass) + b.inverseMass;
     const double ia = a.inverseInertia, ib = b.inverseInertia, cross = ra.cross(rb);
     const double determinant =
         Checked(m * (m + ia * ra.dot(ra) + ib * rb.dot(rb)) + ia * ib * cross * cross);
-    if(determinant<=0) throw std::overflow_error("Joint point mass is singular.");
-    const D2 d=ra-rb,dv=Double(b.velocity)-Double(a.velocity),jrb{-rb.y,rb.x},jd{-d.y,d.x};
-    const double wa=a.angularVelocity,wb=b.angularVelocity,shared=ib*wa+ia*wb;
-    const D2 translation=dv*(-m)-ra*(ia*ra.dot(dv))-rb*(ib*rb.dot(dv));
-    const D2 rotation=jrb*(m*(wa-wb-(ia+ib)*angular))+jd*(m*(wa-ia*angular))
-        +(rb*shared+d*(ia*wb+ia*ib*angular))*cross;
-    const D2 numerator=translation+rotation;
-    const D2 linear{Checked(numerator.x/determinant),Checked(numerator.y/determinant)};
+    if (determinant <= 0)
+        throw std::overflow_error("Joint point mass is singular.");
+    const D2 d = ra - rb, dv = Double(b.velocity) - Double(a.velocity), jrb{-rb.y, rb.x},
+             jd{-d.y, d.x};
+    const double wa = a.angularVelocity, wb = b.angularVelocity, shared = ib * wa + ia * wb;
+    const D2 translation = dv * (-m) - ra * (ia * ra.dot(dv)) - rb * (ib * rb.dot(dv));
+    const D2 rotation = jrb * (m * (wa - wb - (ia + ib) * angular)) +
+                        jd * (m * (wa - ia * angular)) +
+                        (rb * shared + d * (ia * wb + ia * ib * angular)) * cross;
+    const D2 numerator = translation + rotation;
+    const D2 linear{Checked(numerator.x / determinant), Checked(numerator.y / determinant)};
     // Recover final angular states directly. Forming full point speeds and
     // then adding a nearly -omega correction erases a small surviving spin.
-    const double finalA=Checked((m*m*wa+m*(rb.dot(rb)*shared+ia*rb.dot(d)*wb+ia*ra.cross(dv)
-        -ia*angular*(m-ib*rb.dot(d)))+ia*ib*cross*rb.dot(dv))/determinant);
-    const double finalB=Checked((m*m*wb+m*(ra.dot(ra)*shared-ib*ra.dot(d)*wa-ib*rb.cross(dv)
-        +ib*angular*(m+ia*ra.dot(d)))+ia*ib*cross*ra.dot(dv))/determinant);
-    return {linear,angular,{finalA,finalB,true}};
+    const double finalA = Checked((m * m * wa +
+                                   m * (rb.dot(rb) * shared + ia * rb.dot(d) * wb +
+                                        ia * ra.cross(dv) - ia * angular * (m - ib * rb.dot(d))) +
+                                   ia * ib * cross * rb.dot(dv)) /
+                                  determinant);
+    const double finalB = Checked((m * m * wb +
+                                   m * (ra.dot(ra) * shared - ib * ra.dot(d) * wa -
+                                        ib * rb.cross(dv) + ib * angular * (m + ia * ra.dot(d))) +
+                                   ia * ib * cross * ra.dot(dv)) /
+                                  determinant);
+    return {linear, angular, {finalA, finalB, true}};
 }
 void SolveCoupledVelocity(RigidBody &a, RigidBody &b, const Geometry &g, double targetSpeed,
                           double &accumulated, double minimum, double maximum) {
     const D2 ra = g.ra, rb = g.rb;
-    const auto candidate = SolveHingeVelocity(a,b,ra,rb,targetSpeed);
+    const auto candidate = SolveHingeVelocity(a, b, ra, rb, targetSpeed);
     const double next = std::clamp(Checked(accumulated + candidate.angular), minimum, maximum);
     const double angular = next - accumulated;
-    const auto accepted=angular==candidate.angular?candidate:FixedHingeVelocity(a,b,ra,rb,angular);
-    Apply(a,b,ra,rb,accepted.linear,false,angular,&accepted.change);
+    const auto accepted =
+        angular == candidate.angular ? candidate : FixedHingeVelocity(a, b, ra, rb, angular);
+    Apply(a, b, ra, rb, accepted.linear, false, angular, &accepted.change);
     accumulated = next;
 }
 } // namespace
@@ -329,7 +346,7 @@ void RevoluteJoint::solveVelocity() {
     }
     if (limitsEnabled && angularMass > 0) {
         if (lowerLimit == upperLimit) {
-            const auto impulse = SolveHingeVelocity(*a,*b,g.ra,g.rb,0);
+            const auto impulse = SolveHingeVelocity(*a, *b, g.ra, g.rb, 0);
             Apply(*a, *b, g.ra, g.rb, impulse.linear, false, impulse.angular, &impulse.change);
         } else {
             const double angle = getAngle();

@@ -405,125 +405,239 @@ TEST_CASE("Static support velocity participates without moving the support", "[j
     REQUIRE(a->position == Vector2{});
     REQUIRE(a->orientation == 0);
 }
-TEST_CASE("Locked hinge retains center velocity below an enormous shared rotational speed", "[joint-arithmetic][hinge-rhs]") {
-    for(float r:{1e10f,1e20f,1e30f}) for(float angle:{0.f,.37f}) for(float mass:{1e-30f,1.f,1e30f}) {
-        World w(JointConfig()); auto a=JointBody({1e30f,0},true),b=JointBody({1e30f,0});
-        a->SetOrientation(angle); b->SetOrientation(angle); b->SetMass(mass);
-        b->SetVelocity({1,-2}); b->SetAngularVelocity(1);
-        auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{r,0},Vector2{r,0}); j->setLimits(true,0,0);
-        w.addBody(a); w.addBody(b); w.addJoint(j); w.step(0);
-        REQUIRE(b->velocity.x==Catch::Approx(0).epsilon(0).margin(2e-7));
-        REQUIRE(b->velocity.y==Catch::Approx(0).epsilon(0).margin(4e-7));
-        REQUIRE(b->angularVelocity==0); REQUIRE(a->angularVelocity==0);
+TEST_CASE("Locked hinge retains center velocity below an enormous shared rotational speed",
+          "[joint-arithmetic][hinge-rhs]") {
+    for (float r : {1e10f, 1e20f, 1e30f})
+        for (float angle : {0.f, .37f})
+            for (float mass : {1e-30f, 1.f, 1e30f}) {
+                World w(JointConfig());
+                auto a = JointBody({1e30f, 0}, true), b = JointBody({1e30f, 0});
+                a->SetOrientation(angle);
+                b->SetOrientation(angle);
+                b->SetMass(mass);
+                b->SetVelocity({1, -2});
+                b->SetAngularVelocity(1);
+                auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{r, 0}, Vector2{r, 0});
+                j->setLimits(true, 0, 0);
+                w.addBody(a);
+                w.addBody(b);
+                w.addJoint(j);
+                w.step(0);
+                REQUIRE(b->velocity.x == Catch::Approx(0).epsilon(0).margin(2e-7));
+                REQUIRE(b->velocity.y == Catch::Approx(0).epsilon(0).margin(4e-7));
+                REQUIRE(b->angularVelocity == 0);
+                REQUIRE(a->angularVelocity == 0);
+            }
+}
+TEST_CASE("One-sided long-anchor stops lock outward motion and retain tiny inward release",
+          "[joint-arithmetic][hinge-rhs]") {
+    const float direction = GENERATE(-1.f, 1.f);
+    for (float r : {1e10f, 1e20f, 1e30f}) {
+        World w(JointConfig());
+        auto a = JointBody({}, true), b = JointBody();
+        b->SetMass(1);
+        auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{r, 0}, Vector2{r, 0});
+        j->setLimits(true, direction > 0 ? -1 : 0, direction > 0 ? 0 : 1);
+        b->SetVelocity({0, -direction});
+        b->SetAngularVelocity(direction);
+        w.addBody(a);
+        w.addBody(b);
+        w.addJoint(j);
+        w.step(0);
+        REQUIRE(std::abs(b->velocity.y) < 2e-7);
+        REQUIRE(b->angularVelocity == 0);
+        b->SetVelocity({0, direction});
+        b->SetAngularVelocity(direction);
+        w.step(0);
+        const double inverse = b->inverseInertia, denominator = 1 + inverse * double(r) * r;
+        const double expectedSpin = direction * (1 - inverse * r) / denominator;
+        const double expectedLinear = direction * (inverse * double(r) * r - r) / denominator;
+        REQUIRE(b->velocity.y == Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
+        REQUIRE(b->angularVelocity ==
+                Catch::Approx(expectedSpin).epsilon(0).margin(std::abs(expectedSpin) * 3e-7));
+        REQUIRE(double(b->velocity.y) + r * double(b->angularVelocity) ==
+                Catch::Approx(0).epsilon(0).margin(3e-7));
     }
 }
-TEST_CASE("One-sided long-anchor stops lock outward motion and retain tiny inward release", "[joint-arithmetic][hinge-rhs]") {
-    const float direction=GENERATE(-1.f,1.f);
-    for(float r:{1e10f,1e20f,1e30f}) {
-        World w(JointConfig()); auto a=JointBody({},true),b=JointBody(); b->SetMass(1);
-        auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{r,0},Vector2{r,0});
-        j->setLimits(true,direction>0?-1:0,direction>0?0:1);
-        b->SetVelocity({0,-direction}); b->SetAngularVelocity(direction);
-        w.addBody(a); w.addBody(b); w.addJoint(j); w.step(0);
-        REQUIRE(std::abs(b->velocity.y)<2e-7); REQUIRE(b->angularVelocity==0);
-        b->SetVelocity({0,direction}); b->SetAngularVelocity(direction); w.step(0);
-        const double inverse=b->inverseInertia,denominator=1+inverse*double(r)*r;
-        const double expectedSpin=direction*(1-inverse*r)/denominator;
-        const double expectedLinear=direction*(inverse*double(r)*r-r)/denominator;
-        REQUIRE(b->velocity.y==Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
-        REQUIRE(b->angularVelocity==Catch::Approx(expectedSpin).epsilon(0).margin(std::abs(expectedSpin)*3e-7));
-        REQUIRE(double(b->velocity.y)+r*double(b->angularVelocity)==Catch::Approx(0).epsilon(0).margin(3e-7));
-    }
-}
-TEST_CASE("Capped hinge motor retains the independent center velocity in the point response", "[joint-arithmetic][hinge-rhs]") {
-    constexpr float dt=.125f;
-    for(float torque:{0.f,1e20f}) {
-        World w(JointConfig()); auto a=JointBody({},true),b=JointBody({0,-dt}); b->SetMass(1);
+TEST_CASE("Capped hinge motor retains the independent center velocity in the point response",
+          "[joint-arithmetic][hinge-rhs]") {
+    constexpr float dt = .125f;
+    for (float torque : {0.f, 1e20f}) {
+        World w(JointConfig());
+        auto a = JointBody({}, true), b = JointBody({0, -dt});
+        b->SetMass(1);
         // Arrive at identical orientations/positions at the velocity phase.
-        b->SetOrientation(-dt); b->SetVelocity({0,1}); b->SetAngularVelocity(1);
-        const float r=1e20f; auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{r,0},Vector2{r,0});
-        j->setMotor(true,0,torque); w.addBody(a); w.addBody(b); w.addJoint(j); w.step(dt);
-        const double cap=double(torque)*dt,inverse=b->inverseInertia,denominator=1+inverse*double(r)*r;
-        const double expectedSpin=(1-inverse*r+inverse*cap)/denominator;
-        const double expectedLinear=(inverse*double(r)*r-r-inverse*r*cap)/denominator;
-        REQUIRE(b->velocity.y==Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
-        REQUIRE(b->angularVelocity==Catch::Approx(expectedSpin).epsilon(0).margin(std::abs(expectedSpin)*3e-7));
-        REQUIRE(j->getMotorTorque()==Catch::Approx(double(torque)).epsilon(2e-7));
-        REQUIRE(double(b->velocity.y)+r*double(b->angularVelocity)==Catch::Approx(0).epsilon(0).margin(3e-7));
+        b->SetOrientation(-dt);
+        b->SetVelocity({0, 1});
+        b->SetAngularVelocity(1);
+        const float r = 1e20f;
+        auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{r, 0}, Vector2{r, 0});
+        j->setMotor(true, 0, torque);
+        w.addBody(a);
+        w.addBody(b);
+        w.addJoint(j);
+        w.step(dt);
+        const double cap = double(torque) * dt, inverse = b->inverseInertia,
+                     denominator = 1 + inverse * double(r) * r;
+        const double expectedSpin = (1 - inverse * r + inverse * cap) / denominator;
+        const double expectedLinear =
+            (inverse * double(r) * r - r - inverse * r * cap) / denominator;
+        REQUIRE(b->velocity.y == Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
+        REQUIRE(b->angularVelocity ==
+                Catch::Approx(expectedSpin).epsilon(0).margin(std::abs(expectedSpin) * 3e-7));
+        REQUIRE(j->getMotorTorque() == Catch::Approx(double(torque)).epsilon(2e-7));
+        REQUIRE(double(b->velocity.y) + r * double(b->angularVelocity) ==
+                Catch::Approx(0).epsilon(0).margin(3e-7));
     }
 }
-TEST_CASE("Unsaturated long-anchor hinge motor reaches its small prescribed angular target", "[joint-arithmetic][hinge-rhs]") {
-    constexpr float dt=.125f,r=1e20f,target=1e-20f;
-    World w(JointConfig()); auto a=JointBody({},true),b=JointBody({0,-dt}); b->SetMass(1); b->SetVelocity({0,1});
-    auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{r,0},Vector2{r,0}); j->setMotor(true,target,1e25f);
-    w.addBody(a); w.addBody(b); w.addJoint(j); w.step(dt);
-    const double expectedLinear=-double(r)*target,expectedImpulse=target/double(b->inverseInertia)+double(r)*(1+double(r)*target);
-    REQUIRE(b->velocity.y==Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
-    REQUIRE(b->angularVelocity==Catch::Approx(double(target)).epsilon(0).margin(3e-27));
-    REQUIRE(j->getMotorTorque()==Catch::Approx(expectedImpulse/dt).epsilon(3e-7));
-    REQUIRE(std::abs(j->getMotorTorque())<1e25);
-}
-TEST_CASE("Common long-anchor locked hinge retains unequal-mass momentum and expected energy loss", "[joint-arithmetic][hinge-rhs]") {
-    World w(JointConfig()); auto a=JointBody(),b=JointBody(); a->SetMass(2); b->SetMass(4);
-    a->SetVelocity({4,1}); b->SetVelocity({-2,3}); a->SetAngularVelocity(3); b->SetAngularVelocity(-1);
-    auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{1e30f,0},Vector2{1e30f,0}); j->setLimits(true,0,0);
-    w.addBody(a); w.addBody(b); w.addJoint(j); w.step(0);
-    REQUIRE(a->velocity.x==Catch::Approx(0).epsilon(0).margin(2e-7)); REQUIRE(b->velocity.x==Catch::Approx(0).epsilon(0).margin(2e-7));
-    REQUIRE(a->velocity.y==Catch::Approx(7./3).epsilon(0).margin(3e-7)); REQUIRE(b->velocity.y==Catch::Approx(7./3).epsilon(0).margin(3e-7));
-    REQUIRE(a->angularVelocity==Catch::Approx(1./3).epsilon(0).margin(4e-8)); REQUIRE(b->angularVelocity==Catch::Approx(1./3).epsilon(0).margin(4e-8));
-    REQUIRE(2*double(a->velocity.y)+4*double(b->velocity.y)==Catch::Approx(14).epsilon(0).margin(2e-6));
-    REQUIRE(double(a->inertia)*a->angularVelocity+double(b->inertia)*b->angularVelocity==Catch::Approx(1).epsilon(0).margin(1e-7));
-    const double energy=.5*2*double(a->velocity.y)*a->velocity.y+.5*4*double(b->velocity.y)*b->velocity.y
-        +.5*a->inertia*double(a->angularVelocity)*a->angularVelocity+.5*b->inertia*double(b->angularVelocity)*b->angularVelocity;
-    REQUIRE(energy==Catch::Approx(16.5).epsilon(0).margin(5e-6));
-}
-TEST_CASE("Inactive hinge retains the original point-only long-anchor response", "[joint-arithmetic][hinge-rhs]") {
-    for(bool limits:{false,true}) {
-        World w(JointConfig()); auto a=JointBody({},true),b=JointBody(); b->SetMass(1); b->SetVelocity({0,1});
-        constexpr float r=1e20f; auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{r,0},Vector2{r,0});
-        j->setLimits(limits,-1,1); w.addBody(a); w.addBody(b); w.addJoint(j); w.step(0);
-        const double expected=-double(b->inverseInertia)*r/(1+double(b->inverseInertia)*r*r);
-        REQUIRE(b->velocity.y==Catch::Approx(1).epsilon(0).margin(2e-7));
-        REQUIRE(b->angularVelocity==Catch::Approx(expected).epsilon(0).margin(std::abs(expected)*3e-7));
-        REQUIRE(double(b->velocity.y)+r*double(b->angularVelocity)==Catch::Approx(0).epsilon(0).margin(3e-7));
-    }
-}
-TEST_CASE("Reduced hinge motor overflow retains both velocity states and unaccepted drive cache", "[joint-arithmetic][hinge-rhs]") {
+TEST_CASE("Unsaturated long-anchor hinge motor reaches its small prescribed angular target",
+          "[joint-arithmetic][hinge-rhs]") {
+    constexpr float dt = .125f, r = 1e20f, target = 1e-20f;
     World w(JointConfig());
-    auto a=std::make_shared<RigidBody>(Circle(1e-19f),Material{1e38f,0}),b=std::make_shared<RigidBody>(Circle(1e-19f),Material{1e38f,0});
-    a->SetCollisionMaskBits(0); b->SetCollisionMaskBits(0); a->SetMass(1); b->SetMass(1);
-    b->SetVelocity({0,std::numeric_limits<float>::max()});
-    auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{},Vector2{1e-19f,0}); j->setMotor(true,0,std::numeric_limits<float>::max());
-    w.addBody(a); w.addBody(b); w.addJoint(j); const auto va=a->velocity,vb=b->velocity;
-    REQUIRE_THROWS_AS(w.step(.125f),std::overflow_error);
-    REQUIRE(a->velocity==va); REQUIRE(b->velocity==vb); REQUIRE(a->angularVelocity==0); REQUIRE(b->angularVelocity==0); REQUIRE(j->getMotorTorque()==0);
+    auto a = JointBody({}, true), b = JointBody({0, -dt});
+    b->SetMass(1);
+    b->SetVelocity({0, 1});
+    auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{r, 0}, Vector2{r, 0});
+    j->setMotor(true, target, 1e25f);
+    w.addBody(a);
+    w.addBody(b);
+    w.addJoint(j);
+    w.step(dt);
+    const double expectedLinear = -double(r) * target,
+                 expectedImpulse =
+                     target / double(b->inverseInertia) + double(r) * (1 + double(r) * target);
+    REQUIRE(b->velocity.y == Catch::Approx(expectedLinear).epsilon(0).margin(2e-7));
+    REQUIRE(b->angularVelocity == Catch::Approx(double(target)).epsilon(0).margin(3e-27));
+    REQUIRE(j->getMotorTorque() == Catch::Approx(expectedImpulse / dt).epsilon(3e-7));
+    REQUIRE(std::abs(j->getMotorTorque()) < 1e25);
 }
-TEST_CASE("Offcenter unequal hinge motor matches independent rational block and cap solutions", "[joint-arithmetic][hinge-rhs]") {
-    const bool capped=GENERATE(false,true); constexpr float dt=.125f;
-    World w(JointConfig()); auto a=JointBody({-1.5f,-.125f}),b=JointBody({1.25f,-.375f});
-    a->SetMass(2); b->SetMass(4); a->SetVelocity({4,1}); b->SetVelocity({-2,3});
-    a->SetAngularVelocity(2); b->SetAngularVelocity(-1); a->SetOrientation(-.25f); b->SetOrientation(.125f);
-    auto j=std::make_shared<RevoluteJoint>(a,b,Vector2{1,.5f},Vector2{-1,.5f}); j->setMotor(true,.75f,capped?2:100);
-    w.addBody(a); w.addBody(b); w.addJoint(j); w.step(dt);
+TEST_CASE("Common long-anchor locked hinge retains unequal-mass momentum and expected energy loss",
+          "[joint-arithmetic][hinge-rhs]") {
+    World w(JointConfig());
+    auto a = JointBody(), b = JointBody();
+    a->SetMass(2);
+    b->SetMass(4);
+    a->SetVelocity({4, 1});
+    b->SetVelocity({-2, 3});
+    a->SetAngularVelocity(3);
+    b->SetAngularVelocity(-1);
+    auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{1e30f, 0}, Vector2{1e30f, 0});
+    j->setLimits(true, 0, 0);
+    w.addBody(a);
+    w.addBody(b);
+    w.addJoint(j);
+    w.step(0);
+    REQUIRE(a->velocity.x == Catch::Approx(0).epsilon(0).margin(2e-7));
+    REQUIRE(b->velocity.x == Catch::Approx(0).epsilon(0).margin(2e-7));
+    REQUIRE(a->velocity.y == Catch::Approx(7. / 3).epsilon(0).margin(3e-7));
+    REQUIRE(b->velocity.y == Catch::Approx(7. / 3).epsilon(0).margin(3e-7));
+    REQUIRE(a->angularVelocity == Catch::Approx(1. / 3).epsilon(0).margin(4e-8));
+    REQUIRE(b->angularVelocity == Catch::Approx(1. / 3).epsilon(0).margin(4e-8));
+    REQUIRE(2 * double(a->velocity.y) + 4 * double(b->velocity.y) ==
+            Catch::Approx(14).epsilon(0).margin(2e-6));
+    REQUIRE(double(a->inertia) * a->angularVelocity + double(b->inertia) * b->angularVelocity ==
+            Catch::Approx(1).epsilon(0).margin(1e-7));
+    const double energy = .5 * 2 * double(a->velocity.y) * a->velocity.y +
+                          .5 * 4 * double(b->velocity.y) * b->velocity.y +
+                          .5 * a->inertia * double(a->angularVelocity) * a->angularVelocity +
+                          .5 * b->inertia * double(b->angularVelocity) * b->angularVelocity;
+    REQUIRE(energy == Catch::Approx(16.5).epsilon(0).margin(5e-6));
+}
+TEST_CASE("Inactive hinge retains the original point-only long-anchor response",
+          "[joint-arithmetic][hinge-rhs]") {
+    for (bool limits : {false, true}) {
+        World w(JointConfig());
+        auto a = JointBody({}, true), b = JointBody();
+        b->SetMass(1);
+        b->SetVelocity({0, 1});
+        constexpr float r = 1e20f;
+        auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{r, 0}, Vector2{r, 0});
+        j->setLimits(limits, -1, 1);
+        w.addBody(a);
+        w.addBody(b);
+        w.addJoint(j);
+        w.step(0);
+        const double expected =
+            -double(b->inverseInertia) * r / (1 + double(b->inverseInertia) * r * r);
+        REQUIRE(b->velocity.y == Catch::Approx(1).epsilon(0).margin(2e-7));
+        REQUIRE(b->angularVelocity ==
+                Catch::Approx(expected).epsilon(0).margin(std::abs(expected) * 3e-7));
+        REQUIRE(double(b->velocity.y) + r * double(b->angularVelocity) ==
+                Catch::Approx(0).epsilon(0).margin(3e-7));
+    }
+}
+TEST_CASE("Reduced hinge motor overflow retains both velocity states and unaccepted drive cache",
+          "[joint-arithmetic][hinge-rhs]") {
+    World w(JointConfig());
+    auto a = std::make_shared<RigidBody>(Circle(1e-19f), Material{1e38f, 0}),
+         b = std::make_shared<RigidBody>(Circle(1e-19f), Material{1e38f, 0});
+    a->SetCollisionMaskBits(0);
+    b->SetCollisionMaskBits(0);
+    a->SetMass(1);
+    b->SetMass(1);
+    b->SetVelocity({0, std::numeric_limits<float>::max()});
+    auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{}, Vector2{1e-19f, 0});
+    j->setMotor(true, 0, std::numeric_limits<float>::max());
+    w.addBody(a);
+    w.addBody(b);
+    w.addJoint(j);
+    const auto va = a->velocity, vb = b->velocity;
+    REQUIRE_THROWS_AS(w.step(.125f), std::overflow_error);
+    REQUIRE(a->velocity == va);
+    REQUIRE(b->velocity == vb);
+    REQUIRE(a->angularVelocity == 0);
+    REQUIRE(b->angularVelocity == 0);
+    REQUIRE(j->getMotorTorque() == 0);
+}
+TEST_CASE("Offcenter unequal hinge motor matches independent rational block and cap solutions",
+          "[joint-arithmetic][hinge-rhs]") {
+    const bool capped = GENERATE(false, true);
+    constexpr float dt = .125f;
+    World w(JointConfig());
+    auto a = JointBody({-1.5f, -.125f}), b = JointBody({1.25f, -.375f});
+    a->SetMass(2);
+    b->SetMass(4);
+    a->SetVelocity({4, 1});
+    b->SetVelocity({-2, 3});
+    a->SetAngularVelocity(2);
+    b->SetAngularVelocity(-1);
+    a->SetOrientation(-.25f);
+    b->SetOrientation(.125f);
+    auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{1, .5f}, Vector2{-1, .5f});
+    j->setMotor(true, .75f, capped ? 2 : 100);
+    w.addBody(a);
+    w.addBody(b);
+    w.addJoint(j);
+    w.step(dt);
     // At the velocity phase rA=(1,.5), rB=(-1,.5), inv masses=.5/.25,
     // inv inertias=1/.5. Independent rational matrix:
     // [9/8,-1/4,-3/4; -1/4,9/4,1/2; -3/4,1/2,3/2] j = [9/2,-1,15/4].
     // Its exact solution is (17/2,-27/25,711/100). Fixing j_angle=1/4
     // gives the separate point-row solution (657/158,-3/79).
-    const double px=capped?657./158:17./2,py=capped?-3./79:-27./25,q=capped?.25:711./100;
-    const double avx=4-.5*px,avy=1-.5*py,bvx=-2+.25*px,bvy=3+.25*py;
-    const double aw=2-(py-.5*px+q),bw=-1+.5*(-py-.5*px+q);
-    REQUIRE(a->velocity.x==Catch::Approx(avx).epsilon(0).margin(6e-7)); REQUIRE(a->velocity.y==Catch::Approx(avy).epsilon(0).margin(6e-7));
-    REQUIRE(b->velocity.x==Catch::Approx(bvx).epsilon(0).margin(6e-7)); REQUIRE(b->velocity.y==Catch::Approx(bvy).epsilon(0).margin(6e-7));
-    REQUIRE(a->angularVelocity==Catch::Approx(aw).epsilon(0).margin(4e-7)); REQUIRE(b->angularVelocity==Catch::Approx(bw).epsilon(0).margin(4e-7));
-    REQUIRE(j->getMotorTorque()==Catch::Approx(q/dt).epsilon(0).margin(2e-6));
-    REQUIRE(2*double(a->velocity.x)+4*double(b->velocity.x)==Catch::Approx(0).epsilon(0).margin(2e-6));
-    REQUIRE(2*double(a->velocity.y)+4*double(b->velocity.y)==Catch::Approx(14).epsilon(0).margin(3e-6));
-    const double angular=-2*double(a->velocity.y)+4*double(b->velocity.y)+a->angularVelocity+2*double(b->angularVelocity);
-    REQUIRE(angular==Catch::Approx(10).epsilon(0).margin(3e-6));
-    const double energy=double(a->velocity.x)*a->velocity.x+double(a->velocity.y)*a->velocity.y
-        +2*(double(b->velocity.x)*b->velocity.x+double(b->velocity.y)*b->velocity.y)
-        +.5*double(a->angularVelocity)*a->angularVelocity+double(b->angularVelocity)*b->angularVelocity;
-    const double expected=avx*avx+avy*avy+2*(bvx*bvx+bvy*bvy)+.5*aw*aw+bw*bw;
-    REQUIRE(energy==Catch::Approx(expected).epsilon(0).margin(6e-6));
+    const double px = capped ? 657. / 158 : 17. / 2, py = capped ? -3. / 79 : -27. / 25,
+                 q = capped ? .25 : 711. / 100;
+    const double avx = 4 - .5 * px, avy = 1 - .5 * py, bvx = -2 + .25 * px, bvy = 3 + .25 * py;
+    const double aw = 2 - (py - .5 * px + q), bw = -1 + .5 * (-py - .5 * px + q);
+    REQUIRE(a->velocity.x == Catch::Approx(avx).epsilon(0).margin(6e-7));
+    REQUIRE(a->velocity.y == Catch::Approx(avy).epsilon(0).margin(6e-7));
+    REQUIRE(b->velocity.x == Catch::Approx(bvx).epsilon(0).margin(6e-7));
+    REQUIRE(b->velocity.y == Catch::Approx(bvy).epsilon(0).margin(6e-7));
+    REQUIRE(a->angularVelocity == Catch::Approx(aw).epsilon(0).margin(4e-7));
+    REQUIRE(b->angularVelocity == Catch::Approx(bw).epsilon(0).margin(4e-7));
+    REQUIRE(j->getMotorTorque() == Catch::Approx(q / dt).epsilon(0).margin(2e-6));
+    REQUIRE(2 * double(a->velocity.x) + 4 * double(b->velocity.x) ==
+            Catch::Approx(0).epsilon(0).margin(2e-6));
+    REQUIRE(2 * double(a->velocity.y) + 4 * double(b->velocity.y) ==
+            Catch::Approx(14).epsilon(0).margin(3e-6));
+    const double angular = -2 * double(a->velocity.y) + 4 * double(b->velocity.y) +
+                           a->angularVelocity + 2 * double(b->angularVelocity);
+    REQUIRE(angular == Catch::Approx(10).epsilon(0).margin(3e-6));
+    const double energy =
+        double(a->velocity.x) * a->velocity.x + double(a->velocity.y) * a->velocity.y +
+        2 * (double(b->velocity.x) * b->velocity.x + double(b->velocity.y) * b->velocity.y) +
+        .5 * double(a->angularVelocity) * a->angularVelocity +
+        double(b->angularVelocity) * b->angularVelocity;
+    const double expected =
+        avx * avx + avy * avy + 2 * (bvx * bvx + bvy * bvy) + .5 * aw * aw + bw * bw;
+    REQUIRE(energy == Catch::Approx(expected).epsilon(0).margin(6e-6));
 }
