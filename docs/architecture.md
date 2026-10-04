@@ -95,6 +95,17 @@ div H (div B divided by uniform permeability), without projecting initial
 divergence. It has no particle-field coupling or connection to the prescribed
 fields above. See [Maxwell fields](maxwell-grids.md) for units and boundaries.
 
+`PeriodicElectrostaticGrid` separately solves static homogeneous Poisson fields
+from caller-prescribed periodic charge. A fixed roundoff band permits only a
+bounded, reported neutralizing mean correction; the snapshot retains original
+and effective sources. Projected conjugate gradients use hard work limits and
+certify the residual reconstructed from stored electric fields before atomic
+publication. Diagnostics expose both source defects, curl, zero-gauge error
+and the residual-corrected field/source energy identity. Charge and energy
+integrals are per out-of-plane depth. It has no clock, harmonic/DC field,
+particle deposition or automatic charge/field feedback. See
+[electrostatic equations and validation](periodic-electrostatic-grids.md).
+
 ## Gravity and scalar waves
 
 `NBodyGravity` integrates independent point masses in double precision with

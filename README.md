@@ -3,7 +3,8 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
-viscosity, conservative scalar transport, periodic TMz electromagnetic fields,
+viscosity, conservative scalar transport, neutral periodic electrostatics,
+periodic TMz electromagnetic fields,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
@@ -102,6 +103,8 @@ reports magnetic divergence. These are separate bounded operations/models.
 first-order numerical diffusion under a frozen periodic face-velocity field.
 `elastic_wave_demo` measures a plane-strain P wave's physical and modified energy,
 strain compatibility and bounded work on a homogeneous periodic grid.
+`electrostatic_grid_demo` measures continuum potential/field convergence,
+stored Gauss residuals, source neutrality correction and electrostatic energy.
 `rigid_contact_benchmark --quick` measures resting
 contacts, stacks, friction and isolated impacts against physical oracles; its
 finite output includes substantial stack drift in difficult configurations.
@@ -125,6 +128,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
 - [Periodic MAC viscosity and dissipation](docs/periodic-mac-diffusion.md)
 - [Periodic homogeneous TMz electromagnetic fields](docs/maxwell-grids.md)
+- [Neutral periodic electrostatic potential and fields](docs/periodic-electrostatic-grids.md)
 - [Rigid-contact physical benchmark](docs/rigid-contact-benchmark.md)
 - [Polygon manifold geometry and scale limits](docs/polygon-manifold-numerics.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
