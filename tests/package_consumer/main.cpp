@@ -8,9 +8,18 @@ int main() {
     const auto points = PhysicsEngine::QueryPoint(world, {1, 0});
     PhysicsEngine::ChargedParticle charge({}, {1, 0}, 1, 1);
     charge.step(0.5, {{}, 2});
+    PhysicsEngine::SoftBody soft;
+    soft.addParticle({}, {2, 0});
+    soft.step(0.25);
+    PhysicsEngine::ThermalNetwork thermal;
+    thermal.addNode(300, 2);
+    thermal.applyPower(0, 4);
+    thermal.step(0.5);
     return std::abs(body->position.x-1) < 1e-6f
         && !PhysicsEngine::ExportWorldJson(world).empty()
         && hit && hit->body == body && std::abs(hit->hit.fraction - 1.0 / 3.0) < 1e-6
         && points.size() == 1 && points[0] == body
-        && std::abs(charge.getVelocity().x - std::cos(1.0)) < 1e-12 ? 0 : 1;
+        && std::abs(charge.getVelocity().x - std::cos(1.0)) < 1e-12
+        && std::abs(soft.getParticles()[0].position.x - 0.5f) < 1e-6f
+        && std::abs(thermal.getNodes()[0].temperature - 301) < 1e-10 ? 0 : 1;
 }

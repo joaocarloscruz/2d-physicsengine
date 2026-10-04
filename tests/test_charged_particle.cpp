@@ -9,10 +9,10 @@ using namespace PhysicsEngine;
 namespace {
 constexpr double pi = 3.14159265358979323846;
 void sameState(const ChargedParticle& a, const ChargedParticle& b, double tolerance = 1e-12) {
-    REQUIRE(a.getPosition().x == Catch::Approx(b.getPosition().x).margin(tolerance));
-    REQUIRE(a.getPosition().y == Catch::Approx(b.getPosition().y).margin(tolerance));
-    REQUIRE(a.getVelocity().x == Catch::Approx(b.getVelocity().x).margin(tolerance));
-    REQUIRE(a.getVelocity().y == Catch::Approx(b.getVelocity().y).margin(tolerance));
+    REQUIRE(a.getPosition().x == Catch::Approx(b.getPosition().x).epsilon(0).margin(tolerance));
+    REQUIRE(a.getPosition().y == Catch::Approx(b.getPosition().y).epsilon(0).margin(tolerance));
+    REQUIRE(a.getVelocity().x == Catch::Approx(b.getVelocity().x).epsilon(0).margin(tolerance));
+    REQUIRE(a.getVelocity().y == Catch::Approx(b.getVelocity().y).epsilon(0).margin(tolerance));
 }
 }
 
