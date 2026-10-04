@@ -164,6 +164,7 @@ if(EMSCRIPTEN)
         src/wasm/mac_bindings.cpp
         src/wasm/scalar_transport_bindings.cpp
         src/wasm/maxwell_bindings.cpp
+        src/wasm/elastic_wave_bindings.cpp
         src/wasm/query_bindings.cpp
     )
 
