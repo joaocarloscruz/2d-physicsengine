@@ -1,5 +1,8 @@
 # Fluid particles and neighborhoods
 
+The `viscosity` field is 2D dynamic viscosity (kg/s), with kinematic viscosity
+`nu = mu/rho`; see [Explicit fluid viscosity and timesteps](fluid-viscosity.md).
+
 Grid input ranges, failed rebuild behavior, and traversal budgets are documented
 in [Grid and sampling numerical limits](grid-and-sampling-limits.md).
 

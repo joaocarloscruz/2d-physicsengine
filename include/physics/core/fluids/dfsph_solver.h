@@ -23,7 +23,7 @@ public:
     FluidDiagnostics getDiagnostics() const override { return diagnostics; }
     const DfsphConfig& getConfig() const { return config; }
 private:
-    struct Pair { std::size_t a, b; Vector2 gradient; };
+    struct Pair { std::size_t a, b; Vector2 gradient; double viscosityCoupling = 0.0; };
     void prepare(std::vector<FluidParticle>& particles);
     void project(std::vector<FluidParticle>& particles, float dt, bool density);
     float stableTimeStep(const std::vector<FluidParticle>& particles) const;
@@ -36,6 +36,7 @@ private:
     std::vector<FluidParticleSpatialGrid::ParticlePair> neighbors;
     std::vector<Pair> pairs;
     std::vector<float> diagonal;
+    double viscosityTimeLimit = 0.0;
     FluidDiagnostics diagnostics;
 };
 }

@@ -14,6 +14,10 @@ particle to rest density or make all signed divergence vanish. Viscosity is expl
 advection is symplectic Euler. Timestep limits cover advection, external acceleration
 and viscosity; there is no acoustic speed-of-sound restriction.
 
+Viscosity uses dynamic `mu`, a density-aware continuum limit and cached neighbor
+diffusion rates. [Explicit fluid viscosity and timesteps](fluid-viscosity.md)
+documents units, the discrete energy-stability bound and compatibility details.
+
 ## Diagnostics and convergence
 
 - `maximumDensityError`: maximum absolute relative density error, including surface deficits.

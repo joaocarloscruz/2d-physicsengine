@@ -175,6 +175,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
+        ${TESTS_SRC_DIR}/test_fluid_viscosity.cpp
         ${TESTS_SRC_DIR}/test_state_export.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp
         ${TESTS_SRC_DIR}/test_fluid_particles.cpp

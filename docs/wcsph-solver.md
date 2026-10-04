@@ -50,6 +50,10 @@ updates velocity before position for each solver substep.
 
 ## CFL-aware stepping
 
+Viscosity uses dynamic `mu`, a density-aware continuum limit and a prepared
+neighbor diffusion bound; see [Explicit fluid viscosity and timesteps](fluid-viscosity.md)
+for units, the discrete energy-stability derivation and compatibility details.
+
 `getStableTimeStep()` limits explicit integration using the smallest smoothing
 length, artificial sound speed, maximum particle speed, viscosity, the
 configured CFL factor, and an absolute maximum timestep. `step()` subdivides a

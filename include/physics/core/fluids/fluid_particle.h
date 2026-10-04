@@ -9,7 +9,7 @@ struct FluidParticleProperties {
     float mass = 1.0f;
     float restDensity = 1000.0f;
     float smoothingLength = 0.5f;
-    float viscosity = 0.01f;
+    float viscosity = 0.01f; // 2D dynamic viscosity mu (kg/s); nu = mu/density.
 
     void Validate() const;
 };
@@ -25,7 +25,7 @@ struct FluidParticle {
     float pressure;
     float smoothingLength;
     float restDensity;
-    float viscosity;
+    float viscosity; // 2D dynamic viscosity mu (kg/s).
     float volume;
 
     FluidParticle(

@@ -1,6 +1,7 @@
 #include "physics/core/fluids/wcsph_solver.h"
 
 #include "physics/core/fluids/sph_kernels.h"
+#include "sph_viscosity.h"
 
 #include "../checked_grid.h"
 
@@ -369,42 +370,34 @@ void WcsphSolver::prepareState(
         particle.densityRate = 0.0f;
     }
 
+    std::vector<double> viscosityRows(particles.size(), 0.0);
     for (const auto& pair : pairs) {
         FluidParticle& first = particles[pair.first];
         FluidParticle& second = particles[pair.second];
         const Vector2 displacement = first.position - second.position;
-        const float smoothingLength = 0.5f * (
-            first.smoothingLength + second.smoothingLength
-        );
+        const float smoothingLength = static_cast<float>(0.5 * (
+            static_cast<double>(first.smoothingLength) + second.smoothingLength
+        ));
         const Vector2 gradient = SphKernels2D::PressureGradient(
             displacement,
             smoothingLength
         );
-        const float pressureTerm = first.pressure
-                / (first.density * first.density)
-            + second.pressure / (second.density * second.density);
-        const Vector2 pressureForce = gradient * (
-            -first.mass * second.mass * pressureTerm
+        const double pressureTerm = first.pressure
+                / (static_cast<double>(first.density) * first.density)
+            + second.pressure / (static_cast<double>(second.density) * second.density);
+        const double pressureScale = -static_cast<double>(first.mass) * second.mass * pressureTerm;
+        const Vector2 pressureForce = SphViscosity::CheckedVector(
+            gradient.x * pressureScale, gradient.y * pressureScale
         );
 
-        const float viscosity = 0.5f * (
-            first.viscosity + second.viscosity
-        );
-        const float laplacian = SphKernels2D::ViscosityLaplacian(
-            displacement,
-            smoothingLength
-        );
-        const float viscosityScale = viscosity * first.mass * second.mass
-            / (first.density * second.density) * laplacian;
-        const Vector2 viscosityForce = (
-            second.velocity - first.velocity
-        ) * viscosityScale;
-        const Vector2 pairForce = pressureForce + viscosityForce;
-        if (!std::isfinite(pairForce.x) || !std::isfinite(pairForce.y)) {
-            throw std::runtime_error("WCSPH pair force became non-finite.");
-        }
-        first.force = first.force + pairForce;
-        second.force = second.force - pairForce;
+        const float laplacian = SphKernels2D::ViscosityLaplacian(displacement, smoothingLength);
+        const double viscosityScale = SphViscosity::Coupling(first, second, laplacian);
+        viscosityRows[pair.first] += viscosityScale / first.mass;
+        viscosityRows[pair.second] += viscosityScale / second.mass;
+        const Vector2 pairForce = SphViscosity::Add(pressureForce,
+            SphViscosity::PairForce(first, second, viscosityScale));
+        first.force = SphViscosity::Add(first.force, pairForce);
+        second.force = SphViscosity::Add(second.force, pairForce, -1.0);
         if (config.densityMode == WcsphDensityMode::Continuity) {
             const float compressionRate = (
                 first.velocity - second.velocity
@@ -478,7 +471,9 @@ void WcsphSolver::prepareState(
 
     lastStatistics.neighbors = grid.getLastStatistics();
     diagnostics = MeasureFluidDiagnostics(particles, pairs);
-    lastStatistics.stableTimeStep = getStableTimeStep(particles);
+    lastStatistics.stableTimeStep = SphViscosity::TimeStep(std::min(
+        static_cast<double>(getStableTimeStep(particles)), SphViscosity::RowLimit(viscosityRows)
+    ));
 }
 
 float WcsphSolver::getStableTimeStep(
@@ -488,47 +483,36 @@ float WcsphSolver::getStableTimeStep(
         return config.maximumTimeStep;
     }
     float minimumSmoothingLength = std::numeric_limits<float>::max();
-    float maximumSpeed = 0.0f;
-    float maximumViscosity = 0.0f;
-    float maximumAcceleration = 0.0f;
+    double maximumSpeed = 0.0;
+    double viscosityLimit = std::numeric_limits<double>::infinity();
+    double maximumAcceleration = 0.0;
     for (const FluidParticle& particle : particles) {
         ValidateParticleState(particle);
+        RequireFinite(particle.force.x, "WCSPH timestep requires finite particle force.");
+        RequireFinite(particle.force.y, "WCSPH timestep requires finite particle force.");
         minimumSmoothingLength = std::min(
             minimumSmoothingLength,
             particle.smoothingLength
         );
         maximumSpeed = std::max(
             maximumSpeed,
-            particle.velocity.magnitude()
+            std::hypot(static_cast<double>(particle.velocity.x), particle.velocity.y)
         );
-        maximumViscosity = std::max(
-            maximumViscosity,
-            particle.viscosity
-        );
+        viscosityLimit = std::min(viscosityLimit, SphViscosity::ContinuumLimit(particle));
         maximumAcceleration = std::max(
             maximumAcceleration,
-            particle.force.magnitude() * particle.inverseMass
+            std::hypot(static_cast<double>(particle.force.x), particle.force.y) / particle.mass
         );
     }
-    const float acousticLimit = config.cflFactor * minimumSmoothingLength
+    const double acousticLimit = static_cast<double>(config.cflFactor) * minimumSmoothingLength
         / (config.speedOfSound + maximumSpeed);
-    float stableTimeStep = std::min(config.maximumTimeStep, acousticLimit);
-    if (maximumViscosity > 0.0f) {
-        const float viscosityLimit = 0.125f
-            * minimumSmoothingLength * minimumSmoothingLength
-            / maximumViscosity;
-        stableTimeStep = std::min(stableTimeStep, viscosityLimit);
-    }
-    if (maximumAcceleration > 0.0f) {
-        const float forceLimit = config.cflFactor * std::sqrt(
-            minimumSmoothingLength / maximumAcceleration
-        );
+    double stableTimeStep = std::min(static_cast<double>(config.maximumTimeStep), acousticLimit);
+    stableTimeStep = std::min(stableTimeStep, viscosityLimit);
+    if (maximumAcceleration > 0.0) {
+        const double forceLimit = config.cflFactor * std::sqrt(minimumSmoothingLength / maximumAcceleration);
         stableTimeStep = std::min(stableTimeStep, forceLimit);
     }
-    if (!std::isfinite(stableTimeStep) || stableTimeStep <= 0.0f) {
-        throw std::runtime_error("WCSPH stable timestep is not positive and finite.");
-    }
-    return stableTimeStep;
+    return SphViscosity::TimeStep(stableTimeStep);
 }
 
 void WcsphSolver::integrate(
@@ -536,9 +520,8 @@ void WcsphSolver::integrate(
     float deltaTime
 ) {
     for (FluidParticle& particle : particles) {
-        const Vector2 acceleration = particle.force * particle.inverseMass;
-        particle.velocity = particle.velocity + acceleration * deltaTime;
-        particle.position = particle.position + particle.velocity * deltaTime;
+        particle.velocity = SphViscosity::AdvanceVelocity(particle, deltaTime);
+        particle.position = SphViscosity::Add(particle.position, particle.velocity, deltaTime);
         if (config.densityMode == WcsphDensityMode::Continuity) {
             particle.density += particle.densityRate * deltaTime;
         }

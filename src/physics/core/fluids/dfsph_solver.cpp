@@ -1,5 +1,6 @@
 #include "physics/core/fluids/dfsph_solver.h"
 #include "physics/core/fluids/sph_kernels.h"
+#include "sph_viscosity.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -35,29 +36,45 @@ void DfsphSolver::prepare(std::vector<FluidParticle>& particles) {
     }
     for (const auto& pair : neighbors) {
         auto& a = particles[pair.first]; auto& b = particles[pair.second];
-        const float h = 0.5f*(a.smoothingLength+b.smoothingLength);
+        const float h = static_cast<float>(0.5*(static_cast<double>(a.smoothingLength)+b.smoothingLength));
         const Vector2 displacement = a.position-b.position;
         const float weight = SphKernels2D::DensityWeight(displacement, h);
         a.density += b.mass*weight; b.density += a.mass*weight;
         pairs.push_back({pair.first, pair.second, SphKernels2D::PressureGradient(displacement, h)});
     }
-    std::vector<Vector2> sum(particles.size());
-    std::vector<float> squared(particles.size(), 0);
+    std::vector<std::pair<double, double>> sum(particles.size());
+    std::vector<double> squared(particles.size(), 0.0);
     diagonal.assign(particles.size(), 0);
     for (const auto& pair : pairs) {
         const auto& a = particles[pair.a]; const auto& b = particles[pair.b];
-        sum[pair.a] = sum[pair.a]+pair.gradient*b.mass;
-        sum[pair.b] = sum[pair.b]-pair.gradient*a.mass;
-        squared[pair.a] += b.mass*pair.gradient.magnitudeSquared();
-        squared[pair.b] += a.mass*pair.gradient.magnitudeSquared();
+        sum[pair.a].first += static_cast<double>(pair.gradient.x)*b.mass;
+        sum[pair.a].second += static_cast<double>(pair.gradient.y)*b.mass;
+        sum[pair.b].first -= static_cast<double>(pair.gradient.x)*a.mass;
+        sum[pair.b].second -= static_cast<double>(pair.gradient.y)*a.mass;
+        const double normSquared = static_cast<double>(pair.gradient.x)*pair.gradient.x
+            + static_cast<double>(pair.gradient.y)*pair.gradient.y;
+        squared[pair.a] += b.mass*normSquared;
+        squared[pair.b] += a.mass*normSquared;
     }
     for (std::size_t i=0; i<particles.size(); ++i) {
         auto& p = particles[i];
         if (!std::isfinite(p.density) || p.density <= 0) throw std::runtime_error("DFSPH density overflow.");
         p.volume = p.mass/p.density;
         // Exact diagonal for unequal particle masses, without the time factor.
-        diagonal[i] = -(sum[i].magnitudeSquared()+p.mass*squared[i])/(p.density*p.density);
+        diagonal[i] = SphViscosity::CheckedFloat(-(sum[i].first*sum[i].first
+            + sum[i].second*sum[i].second + p.mass*squared[i])
+            /(static_cast<double>(p.density)*p.density));
     }
+    std::vector<double> viscosityRows(particles.size(), 0.0);
+    for (auto& pair : pairs) {
+        const auto& a = particles[pair.a]; const auto& b = particles[pair.b];
+        const float h = static_cast<float>(0.5*(static_cast<double>(a.smoothingLength)+b.smoothingLength));
+        pair.viscosityCoupling = SphViscosity::Coupling(a, b,
+            SphKernels2D::ViscosityLaplacian(a.position-b.position, h));
+        viscosityRows[pair.a] += pair.viscosityCoupling/a.mass;
+        viscosityRows[pair.b] += pair.viscosityCoupling/b.mass;
+    }
+    viscosityTimeLimit = SphViscosity::RowLimit(viscosityRows);
 }
 
 std::vector<float> DfsphSolver::densityRates(const std::vector<FluidParticle>& p,
@@ -127,16 +144,15 @@ void DfsphSolver::project(std::vector<FluidParticle>& p, float dt, bool density)
 }
 
 float DfsphSolver::stableTimeStep(const std::vector<FluidParticle>& particles) const {
-    float dt = config.maximumTimeStep;
+    double dt = std::min(static_cast<double>(config.maximumTimeStep), viscosityTimeLimit);
     for (const auto& p : particles) {
-        const float speed = p.velocity.magnitude();
-        if (speed > 0) dt = std::min(dt, config.cflFactor*p.smoothingLength/speed);
-        if (p.viscosity > 0) dt = std::min(dt, 0.125f*p.smoothingLength*p.smoothingLength/p.viscosity);
-        const float acceleration = config.externalAcceleration.magnitude();
-        if (acceleration > 0) dt = std::min(dt, config.cflFactor*std::sqrt(p.smoothingLength/acceleration));
+        const double speed = std::hypot(static_cast<double>(p.velocity.x), p.velocity.y);
+        if (speed > 0.0) dt = std::min(dt, config.cflFactor*p.smoothingLength/speed);
+        dt = std::min(dt, SphViscosity::ContinuumLimit(p));
+        const double acceleration = std::hypot(static_cast<double>(config.externalAcceleration.x), config.externalAcceleration.y);
+        if (acceleration > 0.0) dt = std::min(dt, config.cflFactor*std::sqrt(p.smoothingLength/acceleration));
     }
-    if (!std::isfinite(dt) || dt <= 0) throw std::runtime_error("DFSPH timestep underflow.");
-    return dt;
+    return SphViscosity::TimeStep(dt);
 }
 
 void DfsphSolver::step(std::vector<FluidParticle>& particles, float deltaTime) {
@@ -149,18 +165,18 @@ void DfsphSolver::step(std::vector<FluidParticle>& particles, float deltaTime) {
         if (diagnostics.substeps >= static_cast<std::uint32_t>(config.maximumSubsteps))
             throw std::runtime_error("DFSPH exceeded maximum substeps.");
         const float dt = std::min(remaining, stableTimeStep(particles));
-        for (auto& p : particles) p.force = config.externalAcceleration*p.mass;
+        for (auto& p : particles) p.force = SphViscosity::CheckedVector(
+            static_cast<double>(config.externalAcceleration.x)*p.mass,
+            static_cast<double>(config.externalAcceleration.y)*p.mass);
         for (const auto& pair : pairs) {
             auto& a = particles[pair.a]; auto& b = particles[pair.b];
-            const float laplacian = SphKernels2D::ViscosityLaplacian(a.position-b.position,
-                0.5f*(a.smoothingLength+b.smoothingLength));
-            const Vector2 force = (b.velocity-a.velocity)*(0.5f*(a.viscosity+b.viscosity)
-                *a.mass*b.mass/(a.density*b.density)*laplacian);
-            a.force = a.force+force; b.force = b.force-force;
+            const Vector2 force = SphViscosity::PairForce(a, b, pair.viscosityCoupling);
+            a.force = SphViscosity::Add(a.force, force);
+            b.force = SphViscosity::Add(b.force, force, -1.0);
         }
-        for (auto& p : particles) p.velocity = p.velocity+p.force*(dt/p.mass);
+        for (auto& p : particles) p.velocity = SphViscosity::AdvanceVelocity(p, dt);
         project(particles, dt, true);
-        for (auto& p : particles) p.position = p.position+p.velocity*dt;
+        for (auto& p : particles) p.position = SphViscosity::Add(p.position, p.velocity, dt);
         prepare(particles);
         project(particles, dt, false);
         remaining -= dt;
