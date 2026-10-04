@@ -74,3 +74,22 @@ broad phases, and custom joint solvers run inside the active simulation step;
 they must not change world structure or configuration. Such operations throw
 `std::logic_error` before modifying the world. Queue these changes in application
 code and apply them after `step` returns.
+
+#### Circle-polygon manifold scale
+
+The discrete circle-polygon narrow phase uses double relative geometry,
+projections and `hypot` normalization. Every nonzero closest-corner direction
+is tested; there is no absolute distance cutoff that can turn a small corner
+gap into a collision. Local polygon edges are formed before adding body
+translations. Both polygon windings and offset local vertices are supported.
+
+Exact boundary touch remains excluded from discrete overlap (the query API
+includes touching). Containment uses the minimum separating translation, with
+stored edge order breaking exact ties. The normal is oriented for body A to B;
+the contact point remains on the circle surface, including containment.
+Reversing arguments negates the normal and preserves contact geometry.
+
+Nonfinite transforms or mismatched shape arguments throw `invalid_argument`.
+Manifold depth and vectors are checked before float conversion; a genuinely
+out-of-range output throws `overflow_error`. This does not add precision to
+stored float body positions or make arbitrarily ill-conditioned geometry exact.
