@@ -12,6 +12,76 @@ Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
 and return owned collections with exact BigInt body IDs, retained body handles
 and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
 
+## Owned periodic ideal-gas Euler grids
+
+`PeriodicEulerGasGrid` evolves periodic cell averages of density, two momentum
+densities and total energy density. It uses the native first-order Rusanov
+scheme, including its numerical diffusion and strict multidimensional CFL
+bound. It models one homogeneous ideal gas; there is no viscosity, reaction,
+multiphase flow, rigid wall, or automatic thermal/World coupling. See the
+[native equations, units, positivity conditions and range limits](periodic-euler-gas.md).
+
+```javascript
+const gas = new physics.PeriodicEulerGasGrid({
+    columns: 32, rows: 16, spacingX: 1 / 32, spacingY: 1 / 16, gamma: 1.4
+});
+let retained;
+try {
+    const state = gas.state(); // Reduced-unit uniform rho=1, p=1, zero velocity.
+    state.density.fill(2);    // Momentum and total energy stay unchanged.
+    gas.setState(state);
+    const report = gas.step(0.05, {
+        cflSafety: 0.9, maxSubstep: 0.1,
+        maximumSubsteps: 10000, maximumCellVisits: 100000000
+    });
+    retained = {state: gas.state(), primitives: gas.primitives(), report};
+} finally {
+    gas.delete();
+}
+console.log(retained.primitives.pressure); // Owned arrays remain valid.
+```
+
+Default construction uses 16×16 cells, unit spacings and `gamma=1.4`.
+`config()` returns all five immutable geometry/model fields. Explicit config
+and step options require every field; `step(duration)` supplies the four defaults
+shown above. Dimensions are exact integers at least two, with at most 262144
+total cells. Substep/work budgets are exact nonnegative integers, capped at
+1000000 and 1000000000 respectively. Counts are checked as doubles before native
+integer conversion, so large values cannot wrap. Positive stepping charges
+`(4+6*substeps)*cellCount` visits and can reject after staged intermediate work.
+
+`state()` and `setState(state)` use four row-major arrays: `density`,
+`momentumX`, `momentumY`, `totalEnergy`. `primitives()` returns five arrays:
+`velocityX`, `velocityY`, `pressure`, `soundSpeed`, `internalEnergy` (the latter
+is an energy density). State inputs must be ordinary dense finite-number arrays
+of exactly `columns*rows` entries. The boundary checks all four shapes before
+reading entries and snapshots their values before native allocation, using a
+captured native geometry getter. Foreign accessor/proxy errors preserve their
+JavaScript identity; nested calls and receiver deletion during conversion are
+checked before native receiver access. Native validation additionally requires
+positive density, positive representable internal energy and finite derived
+primitives. Arbitrary finite inputs can still exceed the supported numerical
+range; no floors, clamps, or hidden energy corrections are applied.
+
+`step()` returns a complete copied `EulerGasDiagnostics`; `lastStep()` returns
+the last successful report and `time()` the owned clock. Both nested `initial`
+and `final` summaries expose all twelve native fields, including area-integrated
+mass, both momenta, total/internal/kinetic energy, absolute momentum integrals
+and density/pressure bounds. The report includes all four conservation defects
+and roundoff allowances, duration/clock/substep timing, both maximum signal
+speeds, maximum CFL, substeps, cell visits and `zeroDurationNoOp`. These are
+plain values with no borrowed views or snapshot cleanup.
+
+`setState()` retains time and historical `lastStep()`. A successful `step(0)`
+publishes fresh initial/final summaries while preserving state/time, costs
+`3*cellCount` visits and permits a zero substep budget; it can reject an
+insufficient work budget. Every failed state update or step retains the state,
+clock and previous report. Delete each grid handle once; copied config, arrays,
+primitives and reports remain valid after deletion. The Node suite independently
+checks convex flux splitting, anisotropic/two-cell grids, exact translating
+contact cell averages and Sod Riemann averages, refinement, conservation,
+positivity, budget/range/clock rollback, deterministic replay and lifetime stress.
+
 ## Owned periodic electrostatic grids
 
 `PeriodicElectrostaticGrid` solves `-permittivity*Lap(phi)=charge` on an immutable

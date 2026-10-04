@@ -4,7 +4,8 @@
 for a homogeneous ideal gas on a periodic rectangular grid. It evolves density,
 two momentum densities and total energy density in double precision. There are
 no sources, viscosity, heat conduction, walls, particle or rigid-body coupling,
-shared World clock, or browser bindings. It is a bounded initial Euler model;
+or shared World clock. [Owned JavaScript bindings](webassembly.md#owned-periodic-ideal-gas-euler-grids)
+expose the same native solver and budgets. It is a bounded initial Euler model;
 it does not resolve the separate SPH validation failures.
 
 ## Model, geometry and ownership
@@ -143,8 +144,9 @@ conserved cell averages and splits quadrature at wave discontinuities. A doubled
 domain at identical dx quantifies numerical periodic-image contamination; finite
 physical propagation speed alone does not isolate a diffusive numerical stencil.
 Rusanov diffusion visibly damps contacts and smears shocks; refinement reduces
-these errors. This validation is local native execution, not evidence of hosted
-CI or browser support. Local optimized measurements (gamma=1.4) are:
+these errors. These are local optimized native measurements (gamma=1.4), not
+hosted CI claims. The owned JavaScript suite also checks independent split-state,
+contact and Sod oracles through the WASM solver:
 
 | Comparison | Resolutions | Conserved error or density RMS |
 | --- | --- | --- |

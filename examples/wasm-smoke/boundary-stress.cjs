@@ -284,6 +284,7 @@ const createModule = require('./physics_engine.js');
     require("./electrostatic-tests.cjs").stress(physics, probe);
     require("./maxwell-ohmic-tests.cjs").stress(physics, probe);
     require("./maxwell-mean-tests.cjs").stress(physics);
+    require("./euler-gas-tests.cjs").stress(physics, probe);
     probe.delete();
     assert.equal(physics.boundaryTestStats().objects, 0);
     assert.equal(physics.boundaryTestStats().values, 1); // test static field only

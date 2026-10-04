@@ -966,6 +966,7 @@ async function main() {
     require("./maxwell-mean-tests.cjs").smoke(physics);
     require("./elastic-wave-tests.cjs").smoke(physics);
     require("./electrostatic-tests.cjs").smoke(physics);
+    require("./euler-gas-tests.cjs").smoke(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
@@ -1344,7 +1345,7 @@ async function main() {
     engine.delete();
     particles.delete();
     require("./handle-lifetime-tests.cjs").smoke(physics);
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves and static electrostatics");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
 }
 
 main().catch((error) => {

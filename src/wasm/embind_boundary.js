@@ -206,7 +206,7 @@ addToLibrary({
     // A foreign JS exception from an array accessor inside emscripten::val
     // bypasses C++ RAII in JS EH. Snapshot these bounded public array inputs
     // before entering native code; check every shape before reading any entry.
-    let arrays, count, maxwell = false, elastic = false, electrostatic = false;
+    let arrays, count, maxwell = false, elastic = false, electrostatic = false, euler = false;
     if (name === 'PeriodicScalarTransport.setState' || name === 'PeriodicScalarTransport.setVelocities') {
       const config = physicsSizingGetters['PeriodicScalarTransport.getConfig'].call(self);
       count = config.columns * config.rows;
@@ -232,6 +232,12 @@ addToLibrary({
       if (count > 262144) throw new RangeError('Elastic wave cell cap exceeded');
       arrays = [state.vx, state.vy, state.sigmaXX, state.sigmaYY, state.sigmaXY];
       elastic = true;
+    } else if (name === 'PeriodicEulerGasGrid.setState') {
+      const config = physicsSizingGetters['PeriodicEulerGasGrid.config'].call(self), state = args[0];
+      count = config.columns * config.rows;
+      if (count > 262144) throw new RangeError('Euler gas cell cap exceeded');
+      arrays = [state.density, state.momentumX, state.momentumY, state.totalEnergy];
+      euler = true;
     } else if (name === 'MaxwellGrid.setState') {
       const config = physicsSizingGetters['MaxwellGrid.getConfig'].call(self), state = args[0];
       count = config.columns * config.rows;
@@ -273,6 +279,7 @@ addToLibrary({
       }
       return [copies[0], options];
     }
+    if (euler) return [{density: copies[0], momentumX: copies[1], momentumY: copies[2], totalEnergy: copies[3]}];
     if (elastic) return [{vx: copies[0], vy: copies[1], sigmaXX: copies[2], sigmaYY: copies[3], sigmaXY: copies[4]}];
     return maxwell ? [{ez: copies[0], hx: copies[1], hy: copies[2]}] : copies;
   },
@@ -346,7 +353,8 @@ addToLibrary({
     // A user-shadowed getConfig/getCellCount cannot enlarge snapshot work.
     if (humanName === 'PeriodicMacGrid.getConfig' || humanName === 'WaveMembrane.getCellCount' ||
         humanName === 'MaxwellGrid.getConfig' || humanName === 'PeriodicScalarTransport.getConfig' ||
-        humanName === 'ElasticWaveGrid.getConfig' || humanName === 'PeriodicElectrostaticGrid.getConfig')
+        humanName === 'ElasticWaveGrid.getConfig' || humanName === 'PeriodicElectrostaticGrid.getConfig' ||
+        humanName === 'PeriodicEulerGasGrid.config')
       physicsSizingGetters[humanName] = invoker;
     return invoker;
   },

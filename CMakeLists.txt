@@ -177,6 +177,7 @@ if(EMSCRIPTEN)
         src/wasm/maxwell_bindings.cpp
         src/wasm/elastic_wave_bindings.cpp
         src/wasm/electrostatic_bindings.cpp
+        src/wasm/euler_gas_bindings.cpp
         src/wasm/query_bindings.cpp
     )
 
@@ -212,7 +213,7 @@ if(EMSCRIPTEN)
     # Harness edits must be visible even when the module needs no relink.
     # Explicit outputs also let incremental builds restore a missing asset.
     set(WASM_ASSET_OUTPUTS)
-    foreach(asset IN ITEMS index.html smoke.js smoke-test.cjs boundary-stress.cjs handle-lifetime-tests.cjs elastic-wave-tests.cjs electrostatic-tests.cjs maxwell-ohmic-tests.cjs maxwell-mean-tests.cjs)
+    foreach(asset IN ITEMS index.html smoke.js smoke-test.cjs boundary-stress.cjs handle-lifetime-tests.cjs elastic-wave-tests.cjs electrostatic-tests.cjs maxwell-ohmic-tests.cjs maxwell-mean-tests.cjs euler-gas-tests.cjs)
         set(asset_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/${asset}")
         set(asset_output "${WASM_OUTPUT_DIRECTORY}/${asset}")
         add_custom_command(OUTPUT "${asset_output}"
