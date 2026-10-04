@@ -56,13 +56,50 @@ double NormEnergy(double norm, bool nonzero) {
         throw std::overflow_error("Maxwell aggregate energy underflows float64 range.");
     return energy;
 }
-std::size_t Index(std::size_t i, std::size_t j, std::size_t columns) {
-    return i + columns * j;
+struct Sum {
+    double sum = 0, correction = 0;
+    void add(double x) {
+        const double next = Checked(sum + x);
+        correction = Checked(correction +
+                             (std::abs(sum) >= std::abs(x) ? (sum - next) + x : (x - next) + sum));
+        sum = next;
+    }
+    double value() const { return Checked(sum + correction); }
+};
+double DecayExponent(double duration, double sigma, double epsilon) {
+    int eh, es, ee;
+    const double mh = std::frexp(duration, &eh), ms = std::frexp(sigma, &es),
+                 me = std::frexp(epsilon, &ee);
+    const double chi = Checked(std::scalbn((mh * ms) / me, eh + es - ee - 1));
+    if (chi <= 0)
+        throw std::overflow_error("Maxwell Ohmic exponent underflows float64 range.");
+    return chi;
 }
+double Loss(double fraction, double energy) {
+    const double result = Checked(fraction * energy);
+    if (energy > 0 && result == 0)
+        throw std::overflow_error("Maxwell Ohmic subflow loss underflows float64 range.");
+    return result;
+}
+double Balance(double final, double initial, double joule, double wave) {
+    const double scale = std::max({final, initial, joule, std::abs(wave)});
+    if (scale == 0)
+        return 0;
+    Sum normalized;
+    for (double x : {final, -initial, joule, -wave}) {
+        const double ratio = x / scale;
+        if (x != 0 && ratio == 0)
+            throw std::overflow_error("Maxwell Ohmic ledger normalization erases a term.");
+        normalized.add(ratio);
+    }
+    const double residual = Checked(scale * normalized.value());
+    if (normalized.value() != 0 && residual == 0)
+        throw std::overflow_error("Maxwell Ohmic balance underflows float64 range.");
+    return residual;
+}
+std::size_t Index(std::size_t i, std::size_t j, std::size_t columns) { return i + columns * j; }
 } // namespace
-void MaxwellGridConfig::Validate() const {
-    PhysicsEngine::Validate(*this);
-}
+void MaxwellGridConfig::Validate() const { PhysicsEngine::Validate(*this); }
 MaxwellGrid::MaxwellGrid(const MaxwellGridConfig &config) : config_(config) {
     const auto c = Validate(config_);
     ix_ = c.ix;
@@ -87,7 +124,8 @@ double MaxwellGrid::divergenceAt(const MaxwellFieldState &s, std::size_t i, std:
     return Checked(Checked(Checked(s.hx[Index((i + 1) % nx, j, nx)] - s.hx[k]) * ix_) +
                    Checked(Checked(s.hy[Index(i, (j + 1) % ny, nx)] - s.hy[k]) * iy_));
 }
-MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h) const {
+MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h,
+                                            double *electricModifiedPart) const {
     MaxwellGridDiagnostics d;
     d.stableTimeStep = limit_;
     d.modifiedEnergyStep = h;
@@ -126,6 +164,11 @@ MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h
     d.electricEnergy = NormEnergy(electricNorm, nonzeroElectric);
     d.magneticEnergy = NormEnergy(magneticNorm, nonzeroMagnetic);
     const double correction = NormEnergy(correctionNorm, nonzeroCorrection);
+    if (electricModifiedPart) {
+        *electricModifiedPart = Checked(d.electricEnergy - correction);
+        if (*electricModifiedPart < 0 || (d.electricEnergy > 0 && *electricModifiedPart == 0))
+            throw std::overflow_error("Maxwell electric modified-energy part is unrepresentable.");
+    }
     d.totalEnergy = Checked(d.electricEnergy + d.magneticEnergy);
     d.modifiedEnergy = Checked(d.totalEnergy - correction);
     if (d.modifiedEnergy < 0 || (d.totalEnergy > 0 && d.modifiedEnergy == 0))
@@ -164,20 +207,16 @@ double MaxwellGrid::getModifiedEnergy(double h) const {
                 throw std::overflow_error("Maxwell reference-step coefficient is unrepresentable.");
     return measure(state_, h).modifiedEnergy;
 }
-void MaxwellGrid::step(double dt) {
-    if (!std::isfinite(dt) || dt < 0)
-        throw std::invalid_argument("Maxwell timestep must be finite and nonnegative.");
-    if (dt == 0)
-        return;
+MaxwellGrid::StepPlan MaxwellGrid::plan(double dt, std::size_t passesPerSubstep) const {
     const double requested = std::ceil(dt / limit_);
     // Compare against the hard/user count bounds before the only count cast.
     if (!std::isfinite(requested) || requested > double(config_.maximumSubsteps))
         throw std::length_error("Maxwell substep limit exceeded.");
     auto count = static_cast<std::size_t>(std::max(1.0, requested));
     const auto n = state_.ez.size(), passes = config_.maximumCellVisits / n;
-    if (passes < 4 || count > (passes - 1) / 3)
+    if (passes < passesPerSubstep + 1 || count > (passes - 1) / passesPerSubstep)
         throw std::length_error("Maxwell cell-visit budget exceeded.");
-    const auto budget = std::min(config_.maximumSubsteps, (passes - 1) / 3);
+    const auto budget = std::min(config_.maximumSubsteps, (passes - 1) / passesPerSubstep);
     double h = dt / count;
     if (h > limit_) {
         if (count >= budget)
@@ -194,7 +233,11 @@ void MaxwellGrid::step(double dt) {
     const double time = Checked(diagnostics_.time + dt);
     if (time == diagnostics_.time)
         throw std::overflow_error("Maxwell clock increment is unrepresentable.");
-    auto next = state_;
+    return {h, time, count};
+}
+void MaxwellGrid::waveStep(MaxwellFieldState &next, double h) const {
+    const double half = 0.5 * h, mx = half * magneticX_, my = half * magneticY_;
+    const double ex = h * electricX_, ey = h * electricY_;
     const auto nx = config_.columns, ny = config_.rows;
     auto kick = [&]() {
         for (std::size_t j = 0; j < ny; ++j)
@@ -208,7 +251,7 @@ void MaxwellGrid::step(double dt) {
                     Checked(mx * Checked(next.ez[Index((i + 1) % nx, j, nx)] - next.ez[k])));
             }
     };
-    for (std::size_t s = 0; s < count; ++s) {
+    {
         kick();
         for (std::size_t j = 0; j < ny; ++j)
             for (std::size_t i = 0; i < nx; ++i) {
@@ -221,8 +264,20 @@ void MaxwellGrid::step(double dt) {
             }
         kick();
     }
+}
+void MaxwellGrid::step(double dt) {
+    if (!std::isfinite(dt) || dt < 0)
+        throw std::invalid_argument("Maxwell timestep must be finite and nonnegative.");
+    if (dt == 0)
+        return;
+    const auto p = plan(dt, 3);
+    const auto h = p.h;
+    const auto count = p.count, n = state_.ez.size();
+    auto next = state_;
+    for (std::size_t s = 0; s < count; ++s)
+        waveStep(next, h);
     auto d = measure(next, h);
-    d.time = time;
+    d.time = p.time;
     d.lastSubstep = h;
     d.lastSubsteps = count;
     d.lastCellVisits = n * (3 * count + 1);
@@ -230,5 +285,82 @@ void MaxwellGrid::step(double dt) {
     state_.hx.swap(next.hx);
     state_.hy.swap(next.hy);
     diagnostics_ = d;
+}
+MaxwellOhmicStepDiagnostics MaxwellGrid::stepOhmic(double dt, double conductivity) {
+    if (!std::isfinite(dt) || dt < 0 || !std::isfinite(conductivity) || conductivity < 0)
+        throw std::invalid_argument(
+            "Ohmic duration and conductivity must be finite and nonnegative.");
+    MaxwellOhmicStepDiagnostics ledger;
+    ledger.conductivity = conductivity;
+    ledger.duration = dt;
+    ledger.startTime = ledger.endTime = diagnostics_.time;
+    ledger.initialPhysicalEnergy = ledger.finalPhysicalEnergy = diagnostics_.totalEnergy;
+    if (dt == 0)
+        return ledger;
+    if (conductivity == 0) {
+        step(dt); // No additional throwing observation after existing publication.
+        ledger.endTime = diagnostics_.time;
+        ledger.finalPhysicalEnergy = diagnostics_.totalEnergy;
+        ledger.wavePhysicalEnergyChange = ledger.finalPhysicalEnergy - ledger.initialPhysicalEnergy;
+        ledger.substep = diagnostics_.lastSubstep;
+        ledger.substeps = diagnostics_.lastSubsteps;
+        ledger.cellVisits = diagnostics_.lastCellVisits;
+        return ledger;
+    }
+    const auto p = plan(dt, 8);
+    const double chi = DecayExponent(p.h, conductivity, config_.permittivity);
+    const double factor = Checked(std::exp(-chi)), decrement = Checked(-std::expm1(-chi)),
+                 energyFraction = Checked(-std::expm1(-2 * chi));
+    if (factor == 0 || decrement <= 0 || energyFraction <= 0)
+        throw std::overflow_error("Maxwell Ohmic decay factor is unrepresentable.");
+    auto next = state_;
+    double electricQ = 0;
+    auto observed = measure(next, p.h, &electricQ);
+    Sum joule, represented, wave, modified;
+    auto decay = [&]() {
+        // Exact split-subflow work, independently of rounded stored-field loss.
+        joule.add(Loss(energyFraction, observed.electricEnergy));
+        modified.add(Loss(energyFraction, electricQ));
+        const double before = observed.electricEnergy;
+        for (double &e : next.ez) {
+            const double value = Checked(chi < .5 ? e - Checked(e * decrement) : e * factor);
+            if (e != 0 && value == 0)
+                throw std::overflow_error("Maxwell Ohmic field update underflows float64 range.");
+            e = value;
+        }
+        observed = measure(next, p.h, &electricQ);
+        represented.add(Checked(before - observed.electricEnergy));
+    };
+    for (std::size_t s = 0; s < p.count; ++s) {
+        decay();
+        const double beforeWave = observed.totalEnergy;
+        waveStep(next, p.h);
+        observed = measure(next, p.h, &electricQ);
+        wave.add(Checked(observed.totalEnergy - beforeWave));
+        decay();
+    }
+    ledger.endTime = p.time;
+    ledger.finalPhysicalEnergy = observed.totalEnergy;
+    ledger.exactJouleEnergy = joule.value();
+    ledger.representedElectricEnergyLoss = represented.value();
+    ledger.wavePhysicalEnergyChange = wave.value();
+    ledger.modifiedEnergyDissipation = modified.value();
+    ledger.decayStorageEnergyChange =
+        Checked(ledger.exactJouleEnergy - ledger.representedElectricEnergyLoss);
+    ledger.physicalBalanceResidual =
+        Balance(ledger.finalPhysicalEnergy, ledger.initialPhysicalEnergy, ledger.exactJouleEnergy,
+                ledger.wavePhysicalEnergyChange);
+    ledger.substep = p.h;
+    ledger.substeps = p.count;
+    ledger.cellVisits = state_.ez.size() * (8 * p.count + 1);
+    observed.time = p.time;
+    observed.lastSubstep = p.h;
+    observed.lastSubsteps = p.count;
+    observed.lastCellVisits = ledger.cellVisits;
+    state_.ez.swap(next.ez);
+    state_.hx.swap(next.hx);
+    state_.hy.swap(next.hy);
+    diagnostics_ = observed;
+    return ledger;
 }
 } // namespace PhysicsEngine

@@ -81,6 +81,10 @@ int main() {
     if(maxwell.getState().ez!=fields.ez || maxwell.getState().hx!=fields.hx
         ||maxwell.getState().hy!=fields.hy ||maxwell.getDiagnostics().lastCellVisits!=16
         ||std::abs(maxwell.getDiagnostics().totalEnergy-28)>1e-12) return 1;
+    const auto ohmic=maxwell.stepOhmic(.1,2);
+    if(std::abs(maxwell.getState().ez[0]-std::exp(-.2))>1e-14
+        ||maxwell.getState().hx!=fields.hx||maxwell.getState().hy!=fields.hy
+        ||ohmic.cellVisits!=36||std::abs(ohmic.exactJouleEnergy-2*(-std::expm1(-.4)))>1e-13) return 1;
     PhysicsEngine::MacVelocityState macState; macState.xFaces={1,-1,1,-1}; macState.yFaces.assign(4,.5);
     mac.setVelocities(macState);
     const auto projection=mac.project();

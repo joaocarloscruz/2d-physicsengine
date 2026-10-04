@@ -130,6 +130,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(mac_diffusion_demo PRIVATE PhysicsEngine::Engine)
         add_executable(scalar_transport_demo examples/scalar_transport_demo.cpp)
         target_link_libraries(scalar_transport_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(maxwell_ohmic_demo examples/maxwell_ohmic_demo.cpp)
+        target_link_libraries(maxwell_ohmic_demo PRIVATE PhysicsEngine::Engine)
         add_executable(maxwell_grid_demo examples/maxwell_grid_demo.cpp)
         target_link_libraries(maxwell_grid_demo PRIVATE PhysicsEngine::Engine)
         add_executable(electrostatic_grid_demo examples/electrostatic_grid_demo.cpp)
@@ -146,6 +148,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME scalar_transport_smoke COMMAND scalar_transport_demo)
             add_test(NAME maxwell_grid_smoke COMMAND maxwell_grid_demo)
             add_test(NAME electrostatic_grid_smoke COMMAND electrostatic_grid_demo)
+            add_test(NAME maxwell_ohmic_smoke COMMAND maxwell_ohmic_demo)
             add_test(NAME elastic_wave_smoke COMMAND elastic_wave_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
@@ -253,6 +256,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_thermal_radiation.cpp
         ${TESTS_SRC_DIR}/test_wave_membrane.cpp
         ${TESTS_SRC_DIR}/test_maxwell_grid.cpp
+        ${TESTS_SRC_DIR}/test_maxwell_ohmic.cpp
         ${TESTS_SRC_DIR}/test_elastic_wave_grid.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
         ${TESTS_SRC_DIR}/test_fluid_viscosity.cpp

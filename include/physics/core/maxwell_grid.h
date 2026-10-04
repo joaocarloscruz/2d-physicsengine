@@ -30,7 +30,21 @@ struct MaxwellGridDiagnostics {
     double time = 0, stableTimeStep = 0, lastSubstep = 0;
     std::size_t lastSubsteps = 0, lastCellVisits = 0;
 };
-// Independent homogeneous, lossless periodic TMz fields. No sources, material
+// Return-only ledger for one accepted explicitly Ohmic operation; J/m in SI.
+// Exact subflow work uses the measured pre-decay physical electric energy.
+// Represented loss is the difference of measured pre/post electric energies;
+// storage discrepancy includes field rounding and energy-measurement roundoff.
+struct MaxwellOhmicStepDiagnostics {
+    double conductivity = 0, duration = 0, startTime = 0, endTime = 0;
+    double initialPhysicalEnergy = 0, finalPhysicalEnergy = 0;
+    double exactJouleEnergy = 0, representedElectricEnergyLoss = 0;
+    double wavePhysicalEnergyChange = 0, modifiedEnergyDissipation = 0;
+    double decayStorageEnergyChange = 0, physicalBalanceResidual = 0;
+    double substep = 0;
+    std::size_t substeps = 0, cellVisits = 0;
+};
+// Independent homogeneous periodic TMz fields; step is lossless and explicitly
+// requested stepOhmic adds homogeneous scalar conductivity. No other sources, material
 // interfaces, particle coupling or World integration. Geometry/medium/budgets
 // are immutable. All public snapshots own their values.
 class MaxwellGrid {
@@ -54,6 +68,10 @@ class MaxwellGrid {
     // Symmetric H half-kick / E full-drift / H half-kick. Zero is a complete
     // no-op. Failure preserves fields, clock and diagnostic counters.
     void step(double dt);
+    // S/m conductivity; symmetric exact E decay / wave / exact E decay.
+    // No persistent heat ledger or thermal feedback. Failed calls publish nothing.
+    // sigma=0 delegates exactly to step, including its original work budget.
+    MaxwellOhmicStepDiagnostics stepOhmic(double dt, double conductivity);
 
   private:
     MaxwellGridConfig config_;
@@ -61,7 +79,14 @@ class MaxwellGrid {
     MaxwellGridDiagnostics diagnostics_;
     double ix_, iy_, electricX_, electricY_, magneticX_, magneticY_;
     double electricScale_, magneticScale_, speed_, rate_, limit_;
-    MaxwellGridDiagnostics measure(const MaxwellFieldState &state, double h) const;
+    MaxwellGridDiagnostics measure(const MaxwellFieldState &state, double h,
+                                   double *electricModifiedPart = nullptr) const;
+    struct StepPlan {
+        double h, time;
+        std::size_t count;
+    };
+    StepPlan plan(double dt, std::size_t passesPerSubstep) const;
+    void waveStep(MaxwellFieldState &state, double h) const;
     double divergenceAt(const MaxwellFieldState &state, std::size_t i, std::size_t j) const;
 };
 } // namespace PhysicsEngine

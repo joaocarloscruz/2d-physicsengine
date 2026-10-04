@@ -1,9 +1,10 @@
 # Periodic homogeneous TMz Maxwell fields
 
-`MaxwellGrid` propagates double-precision Ez, Hx and Hy in a uniform, lossless
-periodic medium. It is independent of Engine/World and the prescribed-field
-`ChargedParticle` module. There are no charges, currents, particle-field
-coupling, interfaces, conductors, absorbing boundaries or 3D field components.
+`MaxwellGrid` propagates double-precision Ez, Hx and Hy in a uniform periodic
+medium. `step` remains lossless; the explicit
+[Ohmic step](maxwell-ohmic.md) adds a homogeneous scalar constitutive current. It is independent of Engine/World and the prescribed-field
+`ChargedParticle` module. There are no imposed charges/currents, particle-field coupling, material
+interfaces, finite-conductor geometry, absorbing boundaries or 3D components.
 The native API and [owned WebAssembly API](webassembly.md#periodic-tmz-maxwell-fields)
 expose the same bounded model.
 
