@@ -5,6 +5,7 @@
 #include "physics/core/charged_particle.h"
 #include "physics/core/joints.h"
 #include "physics/core/softbody.h"
+#include "physics/core/thermal_network.h"
 #include "physics/core/forces/gravity.h"
 #include "physics/core/forces/drag.h"
 #include "physics/core/collisions/continuous_collision.h"

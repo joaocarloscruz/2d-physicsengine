@@ -36,6 +36,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/world.cpp
     ${PHYSICS_SRC_DIR}/core/joints.cpp
     ${PHYSICS_SRC_DIR}/core/softbody.cpp
+    ${PHYSICS_SRC_DIR}/core/thermal_network.cpp
     ${PHYSICS_SRC_DIR}/core/state_export.cpp
     ${PHYSICS_SRC_DIR}/core/spatial_queries.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
@@ -100,7 +101,10 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(replay_experiment PRIVATE PhysicsEngine::Engine)
         add_executable(softbody_rope examples/softbody_rope.cpp)
         target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
+        add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
+        target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
+            add_test(NAME thermal_network_smoke COMMAND thermal_network_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
@@ -169,6 +173,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
+        ${TESTS_SRC_DIR}/test_thermal_network.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
         ${TESTS_SRC_DIR}/test_state_export.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp

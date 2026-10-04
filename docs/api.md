@@ -3,8 +3,8 @@
 Include `physics/physics.h` and link `PhysicsEngine::Engine`. Supported consumer
 types are `Engine`, `World`, `RigidBody`, shapes/materials, force generators,
 `SimulationConfig`, statistics, fixed-step runner, listeners/events, joints,
-particle systems, standalone `SoftBody` mass-spring networks, fluid
-solvers/containers/coupling, point/ray/sweep queries, and export
+particle systems, standalone `SoftBody` mass-spring and `ThermalNetwork`
+conduction networks, fluid solvers/containers/coupling, point/ray/sweep queries, and export
 functions. Solver caches, constraint preparation, and broad/narrow-phase
 implementation headers are internal interfaces without compatibility guarantees.
 
@@ -50,6 +50,10 @@ The standalone `SoftBody` module stages each step and leaves particle state and
 substep diagnostics unchanged when numerical or work-budget checks fail. Its
 validated state, finite anchors and integration limits are described in
 [soft-bodies.md](soft-bodies.md).
+
+`ThermalNetwork` also stages steps and preserves queued powers and energy
+accounting on failure. Its units, temperature bounds and reservoir bookkeeping
+are described in [thermal-networks.md](thermal-networks.md).
 
 Legacy public body fields are retained for source compatibility. Direct mutation
 bypasses validation and wake tracking; use setters and `Wake()` for application
