@@ -46,7 +46,7 @@ double Sum(std::initializer_list<double> values) {
 struct Line {
     DVector reference,direction;
     Vector2 start,displacement,targetDisplacement;
-    double startProjection,endProjection,length;
+    double startProjection,length;
     Line(Vector2 a,Vector2 da,Vector2 db)
         : start(a),displacement(da),targetDisplacement(db) {
         const DVector motion=Double(da)-Double(db);
@@ -57,11 +57,7 @@ struct Line {
         else
             reference={std::fma(-static_cast<double>(a.y),motion.x/motion.y,a.x),0};
         startProjection=Dot(direction,Double(a)-reference);
-        const DVector relativeEnd{Sum({a.x,da.x,-static_cast<double>(db.x),-reference.x}),
-                                  Sum({a.y,da.y,-static_cast<double>(db.y),-reference.y})};
-        endProjection=Dot(direction,relativeEnd);
     }
-    bool includes(double projection) const { return projection>=startProjection&&projection<=endProjection; }
     double fraction(double projection) const { return std::clamp((projection-startProjection)/length,0.0,1.0); }
     DVector endpointRelativeTo(DVector point) const {
         return {Sum({start.x,displacement.x,-static_cast<double>(targetDisplacement.x),-point.x}),
@@ -92,18 +88,6 @@ std::optional<DiskHit> DiskEntry(const Line& line,DVector center,double radius) 
     const DVector offset=DVector{-line.direction.y,line.direction.x}*perpendicular-line.direction*halfChord;
     return DiskHit{projection,centerProjection,-halfChord,offset*(1/radius)};
 }
-// First intersection of a moving point and a stationary disk, in double precision.
-float DiskTime(Vector2 offset, Vector2 motion, float radius) {
-    const double a = static_cast<double>(motion.x)*motion.x + static_cast<double>(motion.y)*motion.y;
-    const double b = static_cast<double>(offset.x)*motion.x + static_cast<double>(offset.y)*motion.y;
-    const double c = static_cast<double>(offset.x)*offset.x + static_cast<double>(offset.y)*offset.y
-        - static_cast<double>(radius)*radius;
-    if (c <= 0) return 0;
-    if (a == 0 || b >= 0) return std::numeric_limits<float>::infinity();
-    const double discriminant = b*b - a*c;
-    if (discriminant < 0) return std::numeric_limits<float>::infinity();
-    return static_cast<float>(c / (-b + std::sqrt(discriminant)));
-}
 }
 
 SweepHit SweepCircleCircle(Vector2 a, Vector2 da, float ra,
@@ -133,47 +117,58 @@ SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
     Validate(center); Validate(displacement); Validate(polygonDisplacement);
     ValidateRadius(radius);
     Polygon validated(vertices);
-    const Vector2 motion = displacement-polygonDisplacement;
-    double signedArea = 0;
-    for (std::size_t i=0; i<vertices.size(); ++i)
-        signedArea += vertices[i].cross(vertices[(i+1)%vertices.size()]);
+    const DVector motion=Double(displacement)-Double(polygonDisplacement);
+    const double winding=Cross(Double(vertices[1])-Double(vertices[0]),Double(vertices[2])-Double(vertices[0]))>0?1:-1;
     bool inside = true;
-    float closestDistance = std::numeric_limits<float>::infinity();
-    Vector2 closestPoint;
-    SweepHit result;
-    auto accept = [&](float t, Vector2 normal) {
-        if (t >= 0 && t <= 1 && (!result.hit || t < result.fraction))
-            result = {true, t, normal, center+displacement*t+normal*radius};
-    };
+    double closestDistance = std::numeric_limits<double>::infinity();
+    DVector closestPoint{};
     for (std::size_t i=0; i<vertices.size(); ++i) {
-        const Vector2 v = vertices[i];
-        const Vector2 edge = vertices[(i+1)%vertices.size()]-v;
-        const float length = edge.magnitude();
-        const Vector2 tangent = edge/length;
-        const Vector2 outward = Vector2(tangent.y, -tangent.x)*(signedArea > 0 ? 1.0f : -1.0f);
-        const float distance = (center-v).dot(outward);
+        const DVector v=Double(vertices[i]),edge=Double(vertices[(i+1)%vertices.size()])-v;
+        const double length=std::hypot(edge.x,edge.y);
+        const DVector tangent=edge*(1/length),outward=DVector{tangent.y,-tangent.x}*winding;
+        const double distance=Dot(Double(center)-v,outward);
         inside = inside && distance <= 0;
-        const Vector2 closest = v+tangent*std::clamp((center-v).dot(tangent), 0.0f, length);
-        const float d2 = (closest-center).magnitudeSquared();
-        if (d2 < closestDistance) { closestDistance = d2; closestPoint = closest; }
-        const float speed = motion.dot(outward);
-        if (speed < 0) {
-            const float t = (radius-distance)/speed;
-            const float projection = (center+motion*t-v).dot(tangent);
-            if (projection >= 0 && projection <= length) accept(t, outward*-1.0f);
-        }
-        const float t = DiskTime(center-v, motion, radius);
-        if (t <= 1) {
-            const Vector2 direction = v-center-motion*t;
-            if (direction.magnitudeSquared() > 0) accept(t, direction.normalized());
-        }
+        const DVector closest=v+tangent*std::clamp(Dot(Double(center)-v,tangent),0.0,length);
+        const DVector delta=closest-Double(center);
+        const double distanceToEdge=std::hypot(delta.x,delta.y);
+        if (distanceToEdge<closestDistance) {closestDistance=distanceToEdge;closestPoint=closest;}
     }
-    if (inside || closestDistance <= radius*radius) {
-        Vector2 normal = closestPoint-center;
-        if (inside) normal = normal*-1.0f;
-        normal = normal.magnitudeSquared() > 0 ? normal.normalized() : Vector2(1, 0);
-        return {true, 0, normal, closestPoint};
+    if (inside || closestDistance <= radius) {
+        const DVector delta=(closestPoint-Double(center))*(inside?-1:1);
+        const double length=std::hypot(delta.x,delta.y);
+        const DVector normal=length>0?delta*(1/length):DVector{1,0};
+        return {true,0,Store(normal),Store(closestPoint)};
     }
-    return result;
+    if (motion.x==0&&motion.y==0) return {};
+    const Line line(center,displacement,polygonDisplacement);
+    struct Candidate { double projection,baseProjection,localProjection; DVector point,offset,normal; };
+    std::optional<Candidate> best;
+    const auto accept=[&](const Candidate& candidate) {
+        if (!best||candidate.projection<best->projection) best=candidate;
+    };
+    for (std::size_t i=0;i<vertices.size();++i) {
+        const DVector v=Double(vertices[i]),edge=Double(vertices[(i+1)%vertices.size()])-v;
+        const double length=std::hypot(edge.x,edge.y);
+        const DVector tangent=edge*(1/length),outward=DVector{tangent.y,-tangent.x}*winding;
+        if (Dot(outward,line.direction)<0
+            && Dot(Double(center)-v,outward)>=radius
+            && Dot(line.endpointRelativeTo(v),outward)<=radius) {
+            const DVector offset=v+outward*radius;
+            const double along=Cross(offset-line.reference,line.direction)/Cross(line.direction,tangent);
+            if (along>=0&&along<=length) {
+                const DVector contactOffset=tangent*along;
+                const double baseProjection=Dot(v-line.reference,line.direction);
+                const double localProjection=Dot(contactOffset+outward*radius,line.direction);
+                accept({baseProjection+localProjection,baseProjection,localProjection,v,contactOffset,outward*(-1)});
+            }
+        }
+        // Preserve stored edge-then-vertex traversal for exact feature ties.
+        // Finite face strips and vertex disks form the rounded expansion.
+        if (const auto corner=DiskEntry(line,v,radius))
+            accept({corner->projection,corner->centerProjection,corner->localProjection,v,{},corner->outward*(-1)});
+    }
+    if (!best) return {};
+    return {true,static_cast<float>(line.fraction(best->projection)),Store(best->normal),
+        Store(line.translated(best->point,best->offset,best->baseProjection,best->localProjection))};
 }
 }

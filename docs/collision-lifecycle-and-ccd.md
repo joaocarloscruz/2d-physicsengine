@@ -31,6 +31,19 @@ rounding the fraction. Initially overlapping circles retain the A-surface point
 along the A-to-B center direction; coincident centers use normal (+1,0).
 Unrepresentable returned float vectors throw `std::overflow_error`.
 
+Circle/polygon geometry uses double finite offset faces and vertex disks, with
+near-feature endpoint checks and a rounded expansion. Edges, winding, closest
+points and relative displacements are calculated from the original inputs before
+float arithmetic can overflow or underflow. Regular contact points lie on the
+translated polygon feature. Initial polygon overlap retains its closest-point
+convention: outside the polygon the normal points toward that point; inside it
+points away from that point; zero distance uses (+1,0). Exact closest-point ties
+use the first stored edge. Regular feature ties retain stored edge-then-vertex
+traversal, comparing double line parameters before fraction conversion.
+The vector-of-vertices overload still validates strict convexity in either
+winding using the Polygon constructor; validation costs O(vertices²), followed
+by O(vertices) sweep geometry. Neither helper changes World CCD policy.
+
 `SweepHit::fraction` is still a float. On enormous displacement, it can round
 away a small impact-time offset even when the helper correctly classifies the
 hit and retains a local contact point. Interpolating with that fraction can yield

@@ -16,6 +16,8 @@ struct SweepHit {
 // Initial circle/circle overlap reports the A surface along the center direction
 // (coincident fallback +X). Helper geometry can retain a local contact even when
 // the public float fraction cannot reproduce that contact by interpolation.
+// Initial polygon overlap returns the closest stored-edge point; outside normal
+// points toward it, inside normal points away from it (zero-distance fallback +X).
 SweepHit SweepCircleCircle(Vector2 a, Vector2 displacementA, float radiusA,
     Vector2 b, Vector2 displacementB, float radiusB);
 SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
