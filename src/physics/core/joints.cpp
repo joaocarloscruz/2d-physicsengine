@@ -73,15 +73,16 @@ struct Proposal {
 };
 struct AngularChange {
     double a = 0, b = 0;
+    bool absolute = false;
 };
 Proposal Propose(const RigidBody &b, D2 r, D2 impulse, double angularImpulse, bool position,
-                 const double *angularChange) {
+                 const double *angularChange, bool absoluteAngular = false) {
     const Vector2 linear = position ? b.position : b.velocity;
     const float angular = position ? b.orientation : b.angularVelocity;
     if (b.IsStatic())
         return {linear, angular};
     return {CheckedVector(Double(linear) + impulse * b.inverseMass),
-            CheckedFloat(double(angular) +
+            CheckedFloat(angularChange && absoluteAngular ? *angularChange : double(angular) +
                          (angularChange ? *angularChange
                                         : b.inverseInertia * (r.cross(impulse) + angularImpulse)))};
 }
@@ -93,9 +94,11 @@ void Apply(RigidBody &a, RigidBody &b, D2 ra, D2 rb, D2 impulse, bool position,
     Checked(impulse.y);
     Checked(angularImpulse);
     const auto pa =
-        Propose(a, ra, impulse * -1, -angularImpulse, position, change ? &change->a : nullptr);
+        Propose(a, ra, impulse * -1, -angularImpulse, position, change ? &change->a : nullptr,
+                change && change->absolute);
     const auto pb =
-        Propose(b, rb, impulse, angularImpulse, position, change ? &change->b : nullptr);
+        Propose(b, rb, impulse, angularImpulse, position, change ? &change->b : nullptr,
+                change && change->absolute);
     // Publish neither endpoint until both complete linear/angular proposals pass.
     if (!a.IsStatic()) {
         if (position) {
@@ -166,42 +169,54 @@ HingeImpulse SolveHingeMass(const RigidBody &a, const RigidBody &b, D2 ra, D2 rb
             {-ia * angularRhs / k33 - weight * difference,
              ib * angularRhs / k33 - weight * difference}};
 }
-AngularChange FixedAngularChange(const RigidBody &a, const RigidBody &b, D2 ra, D2 rb, D2 rhs,
-                                 double angular) {
+HingeImpulse SolveHingeVelocity(const RigidBody& a,const RigidBody& b,D2 ra,D2 rb,double target) {
+    const double m=double(a.inverseMass)+b.inverseMass,ia=a.inverseInertia,ib=b.inverseInertia,
+        angularMass=ia+ib,weight=ia*ib/angularMass;
+    const D2 d=ra-rb,dv=Double(b.velocity)-Double(a.velocity),base=dv*-1;
+    const D2 lever=rb+d*(ia/angularMass);
+    const double shared=(ib*a.angularVelocity+ia*b.angularVelocity)/angularMass;
+    const D2 jd{-d.y,d.x},jl{-lever.y,lever.x};
+    const double determinant=Checked(m*(m+weight*d.dot(d)));
+    if(determinant<=0) throw std::overflow_error("Joint hinge mass is singular.");
+    // Reduced RHS is -dv + J*d*shared - J*lever*target. Keep J*d
+    // separate through the adjugate: d dot J*d is identically zero.
+    const D2 numerator=base*m+d*(weight*d.dot(base))+jd*(m*shared)
+        -jl*(m*target)+d*(weight*ra.cross(rb)*target);
+    const D2 linear{Checked(numerator.x/determinant),Checked(numerator.y/determinant)};
+    const double angularRhs=target-(double(b.angularVelocity)-a.angularVelocity);
+    const double common=weight*d.cross(linear);
+    return {linear,Checked(angularRhs/angularMass-lever.cross(linear)),
+        {Checked(shared-ia/angularMass*target-common),Checked(shared+ib/angularMass*target-common),true}};
+}
+HingeImpulse FixedHingeVelocity(const RigidBody &a,const RigidBody &b,D2 ra,D2 rb,double angular) {
     const double m = double(a.inverseMass) + b.inverseMass;
     const double ia = a.inverseInertia, ib = b.inverseInertia, cross = ra.cross(rb);
     const double determinant =
         Checked(m * (m + ia * ra.dot(ra) + ib * rb.dot(rb)) + ia * ib * cross * cross);
-    // Expanded torque numerators for K^-1(rhs-k*angular), including the extra
-    // angular impulse. Preserve their small translational terms at long levers.
-    const double ta =
-        (m * ra.cross(rhs) + ib * cross * rb.dot(rhs) + angular * m * (m + ib * rb.dot(rb - ra))) /
-        determinant;
-    const double tb =
-        (m * rb.cross(rhs) - ia * cross * ra.dot(rhs) + angular * m * (m + ia * ra.dot(ra - rb))) /
-        determinant;
-    return {-ia * ta, ib * tb};
+    if(determinant<=0) throw std::overflow_error("Joint point mass is singular.");
+    const D2 d=ra-rb,dv=Double(b.velocity)-Double(a.velocity),jrb{-rb.y,rb.x},jd{-d.y,d.x};
+    const double wa=a.angularVelocity,wb=b.angularVelocity,shared=ib*wa+ia*wb;
+    const D2 translation=dv*(-m)-ra*(ia*ra.dot(dv))-rb*(ib*rb.dot(dv));
+    const D2 rotation=jrb*(m*(wa-wb-(ia+ib)*angular))+jd*(m*(wa-ia*angular))
+        +(rb*shared+d*(ia*wb+ia*ib*angular))*cross;
+    const D2 numerator=translation+rotation;
+    const D2 linear{Checked(numerator.x/determinant),Checked(numerator.y/determinant)};
+    // Recover final angular states directly. Forming full point speeds and
+    // then adding a nearly -omega correction erases a small surviving spin.
+    const double finalA=Checked((m*m*wa+m*(rb.dot(rb)*shared+ia*rb.dot(d)*wb+ia*ra.cross(dv)
+        -ia*angular*(m-ib*rb.dot(d)))+ia*ib*cross*rb.dot(dv))/determinant);
+    const double finalB=Checked((m*m*wb+m*(ra.dot(ra)*shared-ib*ra.dot(d)*wa-ib*rb.cross(dv)
+        +ib*angular*(m+ia*ra.dot(d)))+ia*ib*cross*ra.dot(dv))/determinant);
+    return {linear,angular,{finalA,finalB,true}};
 }
 void SolveCoupledVelocity(RigidBody &a, RigidBody &b, const Geometry &g, double targetSpeed,
                           double &accumulated, double minimum, double maximum) {
     const D2 ra = g.ra, rb = g.rb;
-    const D2 rhs = (PointVelocity(b, rb) - PointVelocity(a, ra)) * -1;
-    const double speed = static_cast<double>(b.angularVelocity) - a.angularVelocity;
-    const auto candidate = SolveHingeMass(a, b, ra, rb, rhs, targetSpeed - speed);
+    const auto candidate = SolveHingeVelocity(a,b,ra,rb,targetSpeed);
     const double next = std::clamp(Checked(accumulated + candidate.angular), minimum, maximum);
     const double angular = next - accumulated;
-    const double k13 = -static_cast<double>(a.inverseInertia) * ra.y -
-                       static_cast<double>(b.inverseInertia) * rb.y;
-    const double k23 =
-        static_cast<double>(a.inverseInertia) * ra.x + static_cast<double>(b.inverseInertia) * rb.x;
-    const D2 linear =
-        angular == candidate.angular
-            ? candidate.linear
-            : SolvePointMass(a, b, ra, rb, {rhs.x - k13 * angular, rhs.y - k23 * angular});
-    const auto change = angular == candidate.angular
-                            ? candidate.change
-                            : FixedAngularChange(a, b, ra, rb, rhs, angular);
-    Apply(a, b, ra, rb, linear, false, angular, &change);
+    const auto accepted=angular==candidate.angular?candidate:FixedHingeVelocity(a,b,ra,rb,angular);
+    Apply(a,b,ra,rb,accepted.linear,false,angular,&accepted.change);
     accumulated = next;
 }
 } // namespace
@@ -314,9 +329,7 @@ void RevoluteJoint::solveVelocity() {
     }
     if (limitsEnabled && angularMass > 0) {
         if (lowerLimit == upperLimit) {
-            const auto impulse = SolveHingeMass(
-                *a, *b, g.ra, g.rb, (PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)) * -1,
-                -(static_cast<double>(b->angularVelocity) - a->angularVelocity));
+            const auto impulse = SolveHingeVelocity(*a,*b,g.ra,g.rb,0);
             Apply(*a, *b, g.ra, g.rb, impulse.linear, false, impulse.angular, &impulse.change);
         } else {
             const double angle = getAngle();
