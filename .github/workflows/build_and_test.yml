@@ -17,6 +17,8 @@ jobs:
   native:
     name: Native build and tests
     strategy:
+      # Retain evidence from both compiler/math-library implementations.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
