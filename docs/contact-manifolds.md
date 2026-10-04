@@ -14,10 +14,11 @@ small motion while the same features touch. Callers may compare identifiers for
 equality across frames, but should not interpret their bit layout.
 
 The solver stores accumulated normal and tangent impulses per feature. When a
-patch persists, matching points are warm-started independently; disappeared or
-new features do not inherit unrelated impulses. Positional correction is
-applied once using the manifold's maximum penetration, while velocity and
-friction impulses are solved at every point.
+patch persists, disappeared or new features do not inherit unrelated impulses.
+Matched two-point warm impulses are combined before publication. Two-point
+normal constraints are solved together, followed by sequential tangent friction;
+position correction visits each point separately. See the [contact solver](contact-solver.md)
+for active sets, conditioning and fallback behavior.
 
 For compatibility, `CollisionManifold::contactPoint` is the first clipped point
 and `CollisionManifold::penetration` is the maximum point penetration. New code

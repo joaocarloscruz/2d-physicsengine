@@ -78,6 +78,11 @@ in the same contact patch, other contacts and prior World work are not rolled
 back. These internal corrections preserve pending loads and do not issue
 external wake requests.
 
+For two-point patches, both normal impulses and the complete pair velocity
+correction are published together. Warm starting also combines both points.
+Tangent and positional corrections remain separate; see the
+[normal block contract](contact-solver.md#coupled-two-point-normal-impulses).
+
 The contact solver rejects nonfinite consumed legacy body/manifold/cache values,
 invalid dynamic inverse mass/inertia, nonzero static inverse properties and
 invalid friction/restitution. Contact normals retain the existing finite unit
