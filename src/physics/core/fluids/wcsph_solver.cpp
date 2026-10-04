@@ -142,6 +142,7 @@ void WcsphSolver::prepareState(
         : 0;
     lastStatistics.boundaryCandidateCount = 0;
     if (particles.empty()) {
+        diagnostics = {};
         lastStatistics.neighbors = FluidNeighborStatistics{};
         lastStatistics.minimumDensity = 0.0f;
         lastStatistics.maximumDensity = 0.0f;
@@ -455,6 +456,7 @@ void WcsphSolver::prepareState(
     }
 
     lastStatistics.neighbors = grid.getLastStatistics();
+    diagnostics = MeasureFluidDiagnostics(particles, pairs);
     lastStatistics.stableTimeStep = getStableTimeStep(particles);
 }
 
@@ -651,6 +653,7 @@ void WcsphSolver::stepInternal(
     }
     prepareState(particles, boundaryParticles);
     lastStatistics.substepCount = substeps;
+    diagnostics.substeps = substeps;
 }
 
 const WcsphConfig& WcsphSolver::getConfig() const {

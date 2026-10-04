@@ -4,6 +4,7 @@
 #include "fluid_particle.h"
 #include "fluid_particle_spatial_grid.h"
 #include "fluid_boundary.h"
+#include "fluid_solver.h"
 
 #include <cstdint>
 #include <functional>
@@ -43,7 +44,7 @@ struct WcsphStatistics {
     float maximumBoundaryPenetration = 0.0f;
 };
 
-class WcsphSolver {
+class WcsphSolver : public IFluidSolver {
 public:
     using SubstepCallback = std::function<void(float)>;
 
@@ -57,7 +58,8 @@ public:
         std::vector<FluidParticle>& particles,
         const std::vector<FluidBoundaryParticle>& boundaryParticles
     );
-    void step(std::vector<FluidParticle>& particles, float deltaTime);
+    void step(std::vector<FluidParticle>& particles, float deltaTime) override;
+    FluidDiagnostics getDiagnostics() const override { return diagnostics; }
     void step(
         std::vector<FluidParticle>& particles,
         float deltaTime,
@@ -111,6 +113,7 @@ private:
     WcsphConfig config;
     FluidParticleSpatialGrid grid;
     WcsphStatistics lastStatistics;
+    FluidDiagnostics diagnostics;
 };
 
 }

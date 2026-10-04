@@ -27,6 +27,8 @@ endif()
 # --- Engine Library
 add_library(Engine ${ENGINE_LIBRARY_TYPE}
     src/engine.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/fluid_solver.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/dfsph_solver.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/continuous_collision.cpp
     ${PHYSICS_SRC_DIR}/core/joints.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
@@ -103,6 +105,7 @@ else()
     # --- Native Test Executable
     add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
+        ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_collision_events.cpp
@@ -149,6 +152,9 @@ else()
         benchmarks/fluid_benchmark.cpp
     )
     target_link_libraries(fluid_benchmark PRIVATE Engine)
+
+    add_executable(fluid_solver_comparison benchmarks/fluid_solver_comparison.cpp)
+    target_link_libraries(fluid_solver_comparison PRIVATE Engine)
 
     enable_testing()
     add_test(NAME engine_tests COMMAND engine_tests_runner)
