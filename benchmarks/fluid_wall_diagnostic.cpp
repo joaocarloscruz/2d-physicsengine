@@ -20,7 +20,7 @@ void WriteWork(std::ostream& out,const WorkMetrics& m,const std::vector<FluidPar
         << ",\"meanRateOverRestDensity\":" << m.meanDensityRate << ",\"bulkMeanRateOverCurrentDensity\":" << (bulk?bulkRate/bulk:0)
         << ",\"bulkRateSampleCount\":" << bulk << '}';
 }
-void WriteScene(std::ostream& out,const char* geometry,float dx,float h,SphKernelFamily family,bool initialized,const char* path) {
+void WriteScene(std::ostream& out,const char* geometry,float dx,float h,SphKernelFamily family,bool initialized,const char* path,bool signedPressure) {
     const int columns=static_cast<int>(std::lround(2/dx))-1,rows=static_cast<int>(std::lround(1.5f/dx));
     FluidParticleProperties properties; properties.restDensity=1000;properties.mass=1000*dx*dx;properties.smoothingLength=h;properties.viscosity=0;
     std::vector<FluidParticle> particles;
@@ -42,6 +42,7 @@ void WriteScene(std::ostream& out,const char* geometry,float dx,float h,SphKerne
         }
     }
     WcsphConfig config;config.speedOfSound=40;config.equationOfStateExponent=7;config.kernelFamily=family;config.externalAcceleration={0,-9.81f};
+    if(signedPressure) config.wallPressureMode=WcsphWallPressureMode::SignedBodyForce;
     config.densityMode=initialized?WcsphDensityMode::Continuity:WcsphDensityMode::Summation;config.densityDiffusion=0;
     WcsphSolver solver(h,config);solver.prepare(particles,walls);
     const auto op=Build(particles,walls,config);
@@ -103,12 +104,13 @@ void WriteScene(std::ostream& out,const char* geometry,float dx,float h,SphKerne
 }
 int main(int argc,char** argv) {
     try {
-        bool quick=false;std::string path;
+        bool quick=false,signedPressure=false;std::string path;
         for(int i=1;i<argc;++i) {
             const std::string argument=argv[i];
             if(argument=="--quick") quick=true;
+            else if(argument=="--signed-pressure") signedPressure=true;
             else if(argument=="--output" && i+1<argc) path=argv[++i];
-            else throw std::invalid_argument("Usage: fluid_wall_diagnostic [--quick] [--output report.json]");
+            else throw std::invalid_argument("Usage: fluid_wall_diagnostic [--quick] [--signed-pressure] [--output report.json]");
         }
         std::ofstream file;
         if(!path.empty()) {file.open(path);if(!file) throw std::runtime_error("Cannot open wall diagnostic output.");}
@@ -116,13 +118,14 @@ int main(int argc,char** argv) {
         out << std::setprecision(12) << "{\"schemaVersion\":1,\"quick\":" << (quick?"true":"false")
             << ",\"model\":\"prepared WCSPH radial sampled-wall pressure / continuity audit\","
             << "\"settings\":{\"rho0\":1000,\"speedOfSound\":40,\"gamma\":7,\"gravity\":[0,-9.81],\"surfaceHeight\":1.5,"
-            << "\"massPolicy\":\"nominal rho0*dx^2, no calibration\",\"viscosity\":0,\"densityDiffusion\":0,\"pressureScale\":1},"
+            << "\"massPolicy\":\"nominal rho0*dx^2, no calibration\",\"viscosity\":0,\"densityDiffusion\":0,\"pressureScale\":1,"
+            << "\"wallPressureMode\":\"" << (signedPressure?"signed body force":"legacy positive increment") << "\"},"
             << "\"constantPressurePhaseSettings\":{\"rho0\":1000,\"rho\":1010,\"speedOfSound\":20,\"gamma\":7,"
             << "\"gravity\":[0,0],\"massPolicy\":\"explicit rho*dx^2 for equal quadrature volumes\"},\"cases\":[";
         bool first=true;
         for(const char* geometry:{"flat","corner","column"})
             for(auto family:{SphKernelFamily::Poly6Spiky,SphKernelFamily::CubicSpline}) for(bool initialized:{false,true}) {
-                const auto write=[&](float dx,float h,const char* refinement) {if(!first) out << ',';first=false;WriteScene(out,geometry,dx,h,family,initialized,refinement);};
+                const auto write=[&](float dx,float h,const char* refinement) {if(!first) out << ',';first=false;WriteScene(out,geometry,dx,h,family,initialized,refinement,signedPressure);};
                 write(0.1f,0.25f,"fixed-ratio coarse");
                 if(!quick) {
                     write(0.05f,0.125f,"fixed-ratio");write(0.025f,0.0625f,"fixed-ratio");

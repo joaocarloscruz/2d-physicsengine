@@ -234,6 +234,10 @@ A separate small opt-in signed-extrapolation experiment is justified by the
 affine-field oracle, but must retain reconstruction tests and report its work
 exchange; it must not be presented as the wall-balance solution.
 
+That experiment is now available through
+[`WcsphWallPressureMode::SignedBodyForce`](wall-pressure-modes.md). The original
+legacy audit and evidence above remain the baseline.
+
 Acceptance for a later solver implementation must include constant-pressure
 phase/disorder invariance, flat-wall zero tangent flux, joint translation and
 rotation, fixed/moving-wall pressure-work balance with explicit reactions,

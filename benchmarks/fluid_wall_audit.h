@@ -85,7 +85,11 @@ inline Operators Build(const std::vector<PhysicsEngine::FluidParticle>& p,
             if(radius==0 || radius>=p[i].smoothingLength) continue;
             const D2 gradient=ToDouble(SphKernels2D::PressureGradient(displacement,p[i].smoothingLength,config.kernelFamily));
             if(gradient.norm()==0) continue;
-            const double pressure=denominator[j]>0 ? numerator[j]/denominator[j] : p[i].pressure;
+            double pressure=denominator[j]>0 ? numerator[j]/denominator[j] : p[i].pressure;
+            if(config.wallPressureMode==WcsphWallPressureMode::SignedBodyForce) {
+                pressure=denominator[j]>0 ? signedNumerator[j]/denominator[j] : p[i].pressure;
+                if(config.clampNegativePressure) pressure=std::max(0.0,pressure);
+            }
             const double volume=static_cast<double>(p[i].mass)/p[i].density;
             const D2 force=gradient*(-volume*b[j].volume*(p[i].pressure+pressure)*b[j].pressureScale);
             op.walls.push_back({i,j,gradient,force,pressure}); op.wallForces[i]=op.wallForces[i]+force;

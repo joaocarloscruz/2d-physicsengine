@@ -209,6 +209,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
         ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
+        ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
@@ -282,4 +283,7 @@ elseif(BUILD_TESTING)
     add_test(NAME fluid_wall_diagnostic_smoke COMMAND fluid_wall_diagnostic --quick
         --output ${CMAKE_BINARY_DIR}/fluid-wall-quick.json)
     set_tests_properties(fluid_wall_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
+    add_test(NAME fluid_signed_wall_diagnostic_smoke COMMAND fluid_wall_diagnostic --quick --signed-pressure
+        --output ${CMAKE_BINARY_DIR}/fluid-wall-signed-quick.json)
+    set_tests_properties(fluid_signed_wall_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
 endif()

@@ -17,6 +17,11 @@ enum class WcsphDensityMode {
     Continuity
 };
 
+enum class WcsphWallPressureMode {
+    LegacyPositiveIncrement,
+    SignedBodyForce
+};
+
 struct WcsphConfig {
     Vector2 externalAcceleration = Vector2(0.0f, -9.81f);
     float speedOfSound = 20.0f;
@@ -29,6 +34,7 @@ struct WcsphConfig {
     float densityDiffusion = 0.1f;
 
     SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;
+    WcsphWallPressureMode wallPressureMode = WcsphWallPressureMode::LegacyPositiveIncrement;
 
     void Validate() const;
 };

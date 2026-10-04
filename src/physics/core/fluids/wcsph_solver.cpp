@@ -78,6 +78,9 @@ void ValidateBoundaryParticle(const FluidBoundaryParticle& particle) {
 
 void WcsphConfig::Validate() const {
     SphKernels2D::ValidateFamily(kernelFamily);
+    if (wallPressureMode != WcsphWallPressureMode::LegacyPositiveIncrement
+        && wallPressureMode != WcsphWallPressureMode::SignedBodyForce)
+        throw std::invalid_argument("WCSPH wall pressure mode is not recognized.");
     if (!std::isfinite(externalAcceleration.x)
         || !std::isfinite(externalAcceleration.y)) {
         throw std::invalid_argument(
@@ -349,19 +352,26 @@ void WcsphSolver::prepareState(
             if (distance <= 0.0f) {
                 continue;
             }
-            const Vector2 direction = displacement / distance;
-            const float normalExternalAcceleration = std::max(
-                (config.externalAcceleration - boundaryParticle.acceleration)
-                    .dot(direction * -1.0f),
-                0.0f
-            );
             const float weight = SphKernels2D::DensityWeight(
                 displacement,
                 particle.smoothingLength,
                 config.kernelFamily
             );
-            const double extrapolatedPressure = particle.pressure
-                + particle.density * distance * normalExternalAcceleration;
+            double extrapolatedPressure;
+            if (config.wallPressureMode == WcsphWallPressureMode::SignedBodyForce) {
+                const double dx = double(particle.position.x) - boundaryParticle.position.x;
+                const double dy = double(particle.position.y) - boundaryParticle.position.y;
+                const double ax = double(config.externalAcceleration.x) - boundaryParticle.acceleration.x;
+                const double ay = double(config.externalAcceleration.y) - boundaryParticle.acceleration.y;
+                extrapolatedPressure = particle.pressure - double(particle.density) * (ax * dx + ay * dy);
+            } else {
+                const Vector2 direction = displacement / distance;
+                const float normalExternalAcceleration = std::max(
+                    (config.externalAcceleration - boundaryParticle.acceleration)
+                        .dot(direction * -1.0f), 0.0f);
+                extrapolatedPressure = particle.pressure
+                    + particle.density * distance * normalExternalAcceleration;
+            }
             wallPressureNumerator[pair.boundary] += extrapolatedPressure * weight;
             wallPressureDenominator[pair.boundary] += weight;
         }
@@ -446,23 +456,31 @@ void WcsphSolver::prepareState(
                 continue;
             }
             const double denominator = wallPressureDenominator[pair.boundary];
-            const float wallPressure = denominator > 0.0
-                ? static_cast<float>(
-                    wallPressureNumerator[pair.boundary] / denominator
-                )
+            double wallPressure = denominator > 0.0
+                ? wallPressureNumerator[pair.boundary] / denominator
                 : particle.pressure;
+            const bool signedPressure = config.wallPressureMode == WcsphWallPressureMode::SignedBodyForce;
+            if (signedPressure && config.clampNegativePressure)
+                wallPressure = std::max(0.0, wallPressure);
             const Vector2 pressureGradient = SphKernels2D::PressureGradient(
                 displacement,
                 particle.smoothingLength,
                 config.kernelFamily
             );
             if (boundaryParticle.pressureScale > 0.0f) {
-                const float pressureScale = -particle.volume
-                    * boundaryParticle.volume
-                    * (particle.pressure + wallPressure)
-                    * boundaryParticle.pressureScale;
-                particle.force = particle.force
-                    + pressureGradient * pressureScale;
+                if (signedPressure) {
+                    // Keep extrapolated pressure and force products in double;
+                    // only the stored resultant force needs to fit Vector2.
+                    const double scale = -double(particle.volume) * boundaryParticle.volume
+                        * (particle.pressure + wallPressure) * boundaryParticle.pressureScale;
+                    particle.force = SphViscosity::CheckedVector(
+                        double(particle.force.x) + pressureGradient.x * scale,
+                        double(particle.force.y) + pressureGradient.y * scale);
+                } else {
+                    const float pressureScale = -particle.volume * boundaryParticle.volume
+                        * (particle.pressure + static_cast<float>(wallPressure)) * boundaryParticle.pressureScale;
+                    particle.force = particle.force + pressureGradient * pressureScale;
+                }
             }
             if (boundaryParticle.pressureScale > 0.0f) {
                 const Vector2 direction = displacement / distance;
