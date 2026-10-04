@@ -73,3 +73,5 @@ existing contacts/joints happens before the next step's force integration. Movin
 or filtering a static support wakes previously connected bodies. Registered gravity
 does not continuously wake resting bodies. If application code changes a force
 generator in place or directly edits legacy state fields, call `Wake()` explicitly.
+
+Native [prismatic joints](prismatic-joints.md) lock transverse motion and relative orientation while allowing translation along an axis fixed to body A.

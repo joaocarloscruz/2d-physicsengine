@@ -14,3 +14,4 @@
 #include "physics/core/fluids/coupled_fluid_simulation.h"
 #include "physics/core/state_export.h"
 #include "physics/core/spatial_queries.h"
+#include "physics/core/prismatic_joint.h"

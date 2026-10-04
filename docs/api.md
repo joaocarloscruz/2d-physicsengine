@@ -80,3 +80,5 @@ Migration from the previous unversioned API: replace shape casts such as
 `static_cast<Circle*>(body.shape)` with `static_cast<const Circle*>(body.shape.get())`.
 Source shape lifetime management is no longer necessary. Default `Material{}` is
 now valid. Null registrations and non-finite state setters now throw consistently.
+
+Prismatic slider joints: see [prismatic-joints.md](prismatic-joints.md); public header `physics/core/prismatic_joint.h`.
