@@ -1,5 +1,6 @@
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/rigidbody.h"
+#include "normal_contact_block.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -119,14 +120,16 @@ void SynchronizeCache(const CollisionManifold &m, ContactImpulseCache &cache) {
     for (std::uint8_t i = 0; i < cache.contactCount; ++i)
         ValidateImpulse(cache.contacts[i].impulse);
     const auto previous = cache;
+    bool matched[2]{};
     cache = ContactImpulseCache{};
     cache.contactCount = EffectiveContactCount(m);
     for (std::uint8_t i = 0; i < cache.contactCount; ++i) {
         const auto p = EffectiveContact(m, i);
         cache.contacts[i].featureId = p.featureId;
         for (std::uint8_t old = 0; old < previous.contactCount; ++old)
-            if (previous.contacts[old].featureId == p.featureId) {
+            if (!matched[old] && previous.contacts[old].featureId == p.featureId) {
                 cache.contacts[i].impulse = previous.contacts[old].impulse;
+                matched[old] = true;
                 break;
             }
     }
@@ -175,6 +178,21 @@ void ApplyPair(RigidBody *a, RigidBody *b, DVector ra, DVector rb, DVector impul
 void ApplyVelocityImpulse(RigidBody *a, RigidBody *b, DVector point, DVector impulse) {
     ApplyPair(a, b, point - DVector(a->position), point - DVector(b->position), impulse, false);
 }
+void ApplyCombinedVelocity(RigidBody *a, RigidBody *b, DVector impulse,
+                           double torqueA, double torqueB) {
+    ValidateBody(*a); ValidateBody(*b);
+    Checked(impulse.x); Checked(impulse.y); Checked(torqueA); Checked(torqueB);
+    // Both torque sums are complete before any float state conversion. No
+    // intermediate contact correction or cache is visible on failure.
+    const Proposal pa = a->IsStatic() ? Proposal{a->velocity,a->angularVelocity}
+        : Proposal{CheckedVector(DVector(a->velocity)-impulse*a->inverseMass),
+                   CheckedFloat(double(a->angularVelocity)-torqueA*a->inverseInertia)};
+    const Proposal pb = b->IsStatic() ? Proposal{b->velocity,b->angularVelocity}
+        : Proposal{CheckedVector(DVector(b->velocity)+impulse*b->inverseMass),
+                   CheckedFloat(double(b->angularVelocity)+torqueB*b->inverseInertia)};
+    if(!a->IsStatic()) { a->velocity=pa.linear; a->angularVelocity=pa.angular; }
+    if(!b->IsStatic()) { b->velocity=pb.linear; b->angularVelocity=pb.angular; }
+}
 void PublishImpulse(ContactConstraint &c, ContactConstraintPoint &p, std::uint8_t index,
                     ContactImpulse impulse) {
     p.impulse = impulse;
@@ -182,6 +200,73 @@ void PublishImpulse(ContactConstraint &c, ContactConstraintPoint &p, std::uint8_
         c.cache->contacts[index].impulse = impulse;
 }
 } // namespace
+
+void ContactSolverDetail::SynchronizeFeatureCache(const CollisionManifold& manifold,
+                                                 ContactImpulseCache& cache) {
+    SynchronizeCache(manifold,cache);
+}
+
+bool ContactSolverDetail::SolveNormalBlock(ContactConstraint &c) {
+    if(c.pointCount!=2) return false;
+    ValidateBody(*c.bodyA); ValidateBody(*c.bodyB);
+    const DVector n=c.normal;
+    DVector points[2]; double ca[2],cb[2],vn[2],old[2],b[2];
+    for(int i=0;i<2;++i) {
+        ValidateImpulse(c.points[i].impulse);
+        points[i]=ConstraintPointPosition(c,c.points[i]);
+        ca[i]=(points[i]-DVector(c.bodyA->position)).cross(n);
+        cb[i]=(points[i]-DVector(c.bodyB->position)).cross(n);
+        vn[i]=Checked((PointVelocity(c.bodyB,points[i])-PointVelocity(c.bodyA,points[i])).dot(n));
+        old[i]=c.points[i].impulse.normal;
+    }
+    const double m=double(c.bodyA->inverseMass)+c.bodyB->inverseMass,
+        ia=c.bodyA->inverseInertia,ib=c.bodyB->inverseInertia;
+    const double k11=Checked(m+ia*ca[0]*ca[0]+ib*cb[0]*cb[0]),
+        k22=Checked(m+ia*ca[1]*ca[1]+ib*cb[1]*cb[1]),
+        k12=Checked(m+ia*ca[0]*ca[1]+ib*cb[0]*cb[1]);
+    const double scale=std::max({k11,k22,std::abs(k12)});
+    if(scale==0) return false;
+    b[0]=Checked(vn[0]-c.points[0].velocityBias-Checked(k11*old[0]+k12*old[1]));
+    b[1]=Checked(vn[1]-c.points[1].velocityBias-Checked(k12*old[0]+k22*old[1]));
+    const double deltaA=ca[0]-ca[1],deltaB=cb[0]-cb[1],cross=ca[0]*cb[1]-ca[1]*cb[0];
+    // Positive terms avoid catastrophic cancellation in k11*k22-k12*k12.
+    const double determinant=Checked(m*ia*deltaA*deltaA+m*ib*deltaB*deltaB+ia*ib*cross*cross);
+    const double a11=k11/scale,a22=k22/scale,a12=k12/scale,
+        det=determinant/scale/scale;
+    constexpr double eps=128*std::numeric_limits<double>::epsilon();
+    double accepted[2]{};
+    auto admissible=[&](double x1,double x2,bool active1,bool active2) {
+        Checked(x1); Checked(x2);
+        const double impulseScale=std::max({std::abs(x1),std::abs(x2),std::abs(b[0]/k11),std::abs(b[1]/k22)});
+        const double xtol=eps*impulseScale;
+        if(x1 < -xtol || x2 < -xtol) return false;
+        x1=std::max(x1,0.0); x2=std::max(x2,0.0);
+        const double w1=Checked(k11*x1+k12*x2+b[0]),w2=Checked(k12*x1+k22*x2+b[1]);
+        const double t1=eps*Checked(std::abs(k11*x1)+std::abs(k12*x2)+std::abs(b[0])),
+            t2=eps*Checked(std::abs(k12*x1)+std::abs(k22*x2)+std::abs(b[1]));
+        if(w1 < -t1 || w2 < -t2 || (active1&&std::abs(w1)>t1) || (active2&&std::abs(w2)>t2)) return false;
+        accepted[0]=x1; accepted[1]=x2; return true;
+    };
+    bool solved=false;
+    if(det>eps*(a11+a22)*(a11+a22))
+        solved=admissible((-a22*(b[0]/scale)+a12*(b[1]/scale))/det,
+            (a12*(b[0]/scale)-a11*(b[1]/scale))/det,true,true);
+    if(!solved) solved=admissible(-b[0]/k11,0,true,false);
+    if(!solved) solved=admissible(0,-b[1]/k22,false,true);
+    if(!solved) solved=admissible(0,0,false,false);
+    if(!solved) {
+        // Bounded projected scalar sweep for an ill-conditioned/inadmissible
+        // block. It is an approximation, staged just like the exact active sets.
+        accepted[0]=std::max(Checked(old[0]+(c.points[0].velocityBias-vn[0])/k11),0.0);
+        accepted[1]=std::max(Checked(old[1]+(c.points[1].velocityBias-vn[1]-k12*(accepted[0]-old[0]))/k22),0.0);
+    }
+    const double d1=Checked(accepted[0]-old[0]),d2=Checked(accepted[1]-old[1]);
+    ApplyCombinedVelocity(c.bodyA,c.bodyB,n*Checked(d1+d2),
+        Checked(ca[0]*d1+ca[1]*d2),Checked(cb[0]*d1+cb[1]*d2));
+    for(std::uint8_t i=0;i<2;++i)
+        PublishImpulse(c,c.points[i],i,{accepted[i],c.points[i].impulse.tangent});
+    return true;
+}
 
 ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &m,
                                                        ContactImpulseCache &cache,
@@ -233,6 +318,18 @@ ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &
 void CollisionResolver::WarmStart(ContactConstraint &c) {
     if (!c.bodyA || !c.bodyB)
         return;
+    if(c.pointCount==2) {
+        DVector sum; double ta=0,tb=0;
+        for(std::uint8_t i=0;i<2;++i) {
+            const auto& p=c.points[i]; ValidateImpulse(p.impulse);
+            const auto point=ConstraintPointPosition(c,p);
+            const auto impulse=DVector(c.normal)*p.impulse.normal+DVector(c.tangent)*p.impulse.tangent;
+            sum=sum+impulse;
+            ta+= (point-DVector(c.bodyA->position)).cross(impulse);
+            tb+= (point-DVector(c.bodyB->position)).cross(impulse);
+        }
+        ApplyCombinedVelocity(c.bodyA,c.bodyB,sum,ta,tb); return;
+    }
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         const auto &p = c.points[i];
         ValidateImpulse(p.impulse);
@@ -244,19 +341,26 @@ void CollisionResolver::WarmStart(ContactConstraint &c) {
 void CollisionResolver::SolveVelocity(ContactConstraint &c) {
     if (!c.bodyA || !c.bodyB)
         return;
+    const bool block=ContactSolverDetail::SolveNormalBlock(c);
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         auto &p = c.points[i];
         const auto worldPoint = ConstraintPointPosition(c, p);
         auto relative = PointVelocity(c.bodyB, worldPoint) - PointVelocity(c.bodyA, worldPoint);
-        const double normalVelocity = Checked(relative.dot(c.normal));
-        const double normal = std::max(
-            Checked(p.impulse.normal + p.normalMass * (-normalVelocity + p.velocityBias)), 0.0);
-        ApplyVelocityImpulse(c.bodyA, c.bodyB, worldPoint,
-                             DVector(c.normal) * (normal - p.impulse.normal));
-        PublishImpulse(c, p, i, {normal, p.impulse.tangent});
+        if (!block) {
+            const double normalVelocity = Checked(relative.dot(c.normal));
+            const double normal = std::max(
+                Checked(p.impulse.normal + p.normalMass * (-normalVelocity + p.velocityBias)), 0.0);
+            ApplyVelocityImpulse(c.bodyA, c.bodyB, worldPoint,
+                                 DVector(c.normal) * (normal - p.impulse.normal));
+            PublishImpulse(c, p, i, {normal, p.impulse.tangent});
+        }
         relative = PointVelocity(c.bodyB, worldPoint) - PointVelocity(c.bodyA, worldPoint);
         const double tangentVelocity = Checked(relative.dot(c.tangent));
-        if (std::abs(tangentVelocity) > c.velocityTolerance) {
+        bool solveTangent = std::abs(tangentVelocity) > c.velocityTolerance;
+        if (block)
+            solveTangent = solveTangent || std::abs(p.impulse.tangent) >
+                Checked(p.impulse.normal * c.staticFriction);
+        if (solveTangent) {
             const double candidate = Checked(p.impulse.tangent - p.tangentMass * tangentVelocity);
             const double maximumStatic = Checked(p.impulse.normal * c.staticFriction);
             double tangent = candidate;
