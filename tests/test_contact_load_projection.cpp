@@ -160,6 +160,10 @@ TEST_CASE("Experimental kinetic friction integrates its constant deceleration", 
     REQUIRE(pair.second->position.x == Catch::Approx(.75).epsilon(0).margin(2e-6));
     REQUIRE(pair.second->velocity.x == Catch::Approx(1).epsilon(0).margin(2e-6));
     REQUIRE(pair.second->angularVelocity == Catch::Approx(0).epsilon(0).margin(2e-6));
+    const double kinetic=.5*pair.second->mass*pair.second->velocity.magnitudeSquared()
+        +.5*pair.second->inertia*pair.second->angularVelocity*pair.second->angularVelocity;
+    // Work of the constant Coulomb force: 2 - mu*m*g*x = .5.
+    REQUIRE(kinetic==Catch::Approx(.5).epsilon(0).margin(2e-6));
 }
 TEST_CASE("Experimental separating load releases support and returns to ballistic flight",
           "[contact-load]") {

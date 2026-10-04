@@ -280,3 +280,9 @@ on Windows). It prints deterministic JSON with the stored float dt/gravity/angle
 all three displacement terms and peak velocity/rotation. A successful exit and
 the CTest smoke entry confirm bounded finite execution, not physical acceptance;
 the tool does not require future implementations to preserve today's drift.
+
+The bounded [frozen-contact load experiment](contact-load-integration.md) compares
+a separate diagnostic adapter against these unchanged fixtures. It removes the
+isolated incline displacement term but worsens several stack and terminal-speed
+metrics and retains within-step stopping error. Its full paired evidence is
+committed; production defaults remain unchanged.
