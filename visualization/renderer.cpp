@@ -8,19 +8,21 @@
 namespace PhysicsEngine {
 namespace Visualization {
 
-Renderer::Renderer(int width, int height, const std::string& title)
+Renderer::Renderer(int width, int height, const std::string& title, bool visible)
     : window(sf::VideoMode(sf::Vector2u(width, height)), title),
       world(nullptr),
       zoom(40.0f), // 40 pixels per meter
       cameraCenter(0.0f, 0.0f),
       draggedBody(nullptr),
-      draggedBodyOriginalMass(0.0f),
       isPaused(false),
       timeAccumulator(0.0f),
       showDebugInfo(true) {
     
+    window.setVisible(visible);
     window.setVerticalSyncEnabled(true);
     window.setFramerateLimit(60);
+    fontAvailable = font.openFromFile("C:/Windows/Fonts/arial.ttf") ||
+        font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
 }
 
 Renderer::~Renderer() {}
@@ -29,7 +31,7 @@ void Renderer::setWorld(World* world) {
     this->world = world;
 }
 
-void Renderer::run() {
+void Renderer::run(std::size_t frameLimit, const std::string& capturePath) {
     if (!world) {
         std::cerr << "Error: World not set!" << std::endl;
         return;
@@ -38,14 +40,26 @@ void Renderer::run() {
     setupInitialScene();
     clock.restart();
     
+    std::size_t frames = 0;
     while (window.isOpen()) {
         processEvents();
+        if (!window.isOpen()) break;
         
         float deltaTime = clock.restart().asSeconds();
+        lastFrameTime = deltaTime;
         deltaTime = std::min(deltaTime, 0.1f); // Cap at 100ms to prevent spiral of death
         
         update(deltaTime);
         render();
+        if (frameLimit && ++frames >= frameLimit) {
+            if (!capturePath.empty()) {
+                sf::Texture capture(window.getSize());
+                capture.update(window);
+                if (!capture.copyToImage().saveToFile(capturePath))
+                    throw std::runtime_error("Could not save visualizer capture.");
+            }
+            window.close();
+        }
     }
 }
 
@@ -98,6 +112,7 @@ void Renderer::processEvents() {
                 isPaused = !isPaused;
             } else if (keyPressed->code == sf::Keyboard::Key::R) {
                 // Reset scene
+                draggedBody = nullptr;
                 world->clearBodies();
                 shapes.clear();
                 setupInitialScene();
@@ -150,6 +165,11 @@ void Renderer::update(float deltaTime) {
     
     while (timeAccumulator >= fixedTimeStep) {
         world->step(fixedTimeStep);
+        if (draggedBody) {
+            draggedBody->SetPosition(screenToWorld(sf::Mouse::getPosition(window)) + dragOffset);
+            draggedBody->SetVelocity({0, 0});
+            draggedBody->SetAngularVelocity(0);
+        }
         timeAccumulator -= fixedTimeStep;
     }
 }
@@ -164,11 +184,10 @@ void Renderer::render() {
     
     // Render debug info
     if (showDebugInfo) {
-        if (font.openFromFile("C:/Windows/Fonts/arial.ttf") || 
-            font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")) {
+        if (fontAvailable) {
             
             std::string info = "Bodies: " + std::to_string(world->getBodies().size()) + "\n";
-            info += "FPS: " + std::to_string(static_cast<int>(1.0f / clock.getElapsedTime().asSeconds())) + "\n";
+            info += "FPS: " + std::to_string(static_cast<int>(1.0f / std::max(lastFrameTime, 1e-6f))) + "\n";
             info += isPaused ? "[PAUSED]" : "[RUNNING]";
             info += "\n\nControls:\n";
             info += "Left Click: Drag bodies\n";
@@ -327,9 +346,7 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
                 draggedBody = body.get();
                 dragOffset = body->GetPosition() - worldPos;
                 
-                // Make body kinematic (infinite mass) so it doesn't collide
-                draggedBodyOriginalMass = draggedBody->GetMass();
-                draggedBody->SetMass(0.0f);  // Infinite mass (inverseMass = 0)
+                // Position-control the selected body while retaining valid mass.
                 draggedBody->SetVelocity(Vector2(0, 0));
                 draggedBody->SetAngularVelocity(0);
                 break;
@@ -344,8 +361,6 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
 
 void Renderer::handleMouseReleased(sf::Mouse::Button button) {
     if (button == sf::Mouse::Button::Left && draggedBody) {
-        // Restore original mass (this also recalculates inertia)
-        draggedBody->SetMass(draggedBodyOriginalMass);
         draggedBody = nullptr;
     }
 }
