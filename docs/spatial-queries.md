@@ -161,5 +161,46 @@ They neither advance the
 simulation nor rely on possibly stale broad-phase pairs. Simulation objects
 remain unsynchronized; do not mutate a World concurrently with queries.
 They do not enable circle CCD in `World::step`, and support neither rotating
-circle paths nor polygon shape casts. This API is native C++; WebAssembly
-bindings and accelerated shape casts are separate future work.
+circle paths nor polygon shape casts. Accelerated shape casts are separate
+future work.
+
+## JavaScript queries and result ownership
+
+The WASM module provides `queryPoint(engine, point, filter?)`,
+`queryCircle(engine, center, radius, filter?)`, `rayCastAll` / `rayCastNearest`
+`(engine, start, end, filter?)`, and `sweepCircleAll` / `sweepCircleNearest`
+`(engine, start, end, radius, filter?)`. They use the native Engine overloads
+and the geometry, sorting and filtering rules above. A supplied filter must
+contain both `categoryBits` and `maskBits`, each a finite integer in
+`[0, 4294967295]`. Invalid or fractional values are rejected before unsigned
+conversion. Omit the filter for the native all-bits defaults.
+
+All functions return an **owned result collection**, including nearest queries
+(size zero on a miss, one on a hit). Release every collection with `.delete()`.
+Collections expose `.size()`, `.getBodyId(index)` and `.getBody(index)`.
+IDs are exact JavaScript `BigInt` values, matching `RigidBody.getId()`; convert
+them to strings for JSON. Indices must be finite nonnegative integers smaller
+than the result size. Ray and sweep collections also expose `.getHit(index)`.
+
+```js
+const results = physics.sweepCircleNearest(engine,
+    {x: 0, y: 0}, {x: 4, y: 0}, 0.5);
+try {
+    if (results.size()) {
+        const id = results.getBodyId(0);
+        const hit = results.getHit(0); // Plain copied object; no delete().
+        console.log(id.toString(), hit.fraction, hit.contactPoint);
+        const body = results.getBody(0); // Explicit shared-ownership handle.
+        try { console.log(body.getPosition()); }
+        finally { body.delete(); }
+    }
+} finally { results.delete(); }
+```
+
+Hit objects and their nested vectors are independent snapshots. Editing one or
+moving its body does not alter stored hit geometry. Collections retain bodies
+after removal, `engine.clearBodies()`, Engine deletion, or deletion of earlier
+JavaScript body handles. A handle returned by `getBody` independently retains
+that body after collection deletion and must itself be deleted. No borrowed
+native arrays or live memory views are exposed. Result classes are created by
+the query functions, not constructed directly.

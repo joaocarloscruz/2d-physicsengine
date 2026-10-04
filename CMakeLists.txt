@@ -132,6 +132,7 @@ if(EMSCRIPTEN)
         src/wasm/thermal_bindings.cpp
         src/wasm/gravity_bindings.cpp
         src/wasm/wave_bindings.cpp
+        src/wasm/query_bindings.cpp
     )
 
     target_link_libraries(physics_engine_wasm PRIVATE Engine embind)

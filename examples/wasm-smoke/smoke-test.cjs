@@ -1,6 +1,82 @@
 const assert = require("node:assert/strict");
 const createPhysicsEngineModule = require("./physics_engine.js");
 
+function testQueries(physics) {
+    const engine = new physics.Engine();
+    const material = {density: 1, restitution: 0, staticFriction: 0, dynamicFriction: 0};
+    const shape = new physics.Circle(1);
+    const first = physics.createRigidBody(shape, material, {x: 2, y: 0}, true);
+    const second = physics.createRigidBody(shape, material, {x: 2, y: 0}, false);
+    shape.delete();
+    // Reversed registration must not change stable-ID ties.
+    engine.addBody(second); engine.addBody(first);
+    const firstId = first.getId(), secondId = second.getId();
+    assert.equal(typeof firstId, "bigint"); assert.ok(firstId < secondId);
+    const start = {x: 0, y: 0}, end = {x: 4, y: 0}, center = {x: 2, y: 0};
+    const all = [physics.queryPoint(engine, center), physics.queryCircle(engine, {x: 3.5, y: 0}, 0.5),
+        physics.rayCastAll(engine, start, end), physics.sweepCircleAll(engine, start, end, 0.5)];
+    for (const results of all) {
+        assert.equal(results.size(), 2);
+        assert.equal(results.getBodyId(0), firstId); assert.equal(results.getBodyId(1), secondId);
+        for (const bad of [-1, 0.5, NaN, Infinity, 2, 2**32, 2**32 + 1]) {
+            assert.throws(() => results.getBodyId(bad)); assert.throws(() => results.getBody(bad));
+            if (results.getHit) assert.throws(() => results.getHit(bad));
+        }
+    }
+    assert.deepEqual(all[2].getHit(0), {fraction: 0.25, point: {x: 1, y: 0}, normal: {x: -1, y: 0}});
+    assert.deepEqual(all[3].getHit(0), {fraction: 0.125, center: {x: 0.5, y: 0}, contactPoint: {x: 1, y: 0}, normal: {x: -1, y: 0}});
+    const nearestRay = physics.rayCastNearest(engine, start, end), nearestSweep = physics.sweepCircleNearest(engine, start, end, 0.5);
+    for (const results of [nearestRay, nearestSweep]) {
+        assert.equal(results.size(), 1); assert.equal(results.getBodyId(0), firstId); results.delete();
+    }
+    const calls = [f => physics.queryPoint(engine, center, f), f => physics.queryCircle(engine, center, 0.1, f),
+        f => physics.rayCastAll(engine, start, end, f), f => physics.rayCastNearest(engine, start, end, f),
+        f => physics.sweepCircleAll(engine, start, end, 0.5, f), f => physics.sweepCircleNearest(engine, start, end, 0.5, f)];
+    first.setCollisionCategoryBits(2); first.setCollisionMaskBits(4);
+    second.setCollisionCategoryBits(4); second.setCollisionMaskBits(2);
+    for (const call of calls) {
+        const matched = call({categoryBits: 4, maskBits: 2});
+        assert.equal(matched.size(), 1); assert.equal(matched.getBodyId(0), firstId); matched.delete();
+        for (const filter of [{categoryBits: 0, maskBits: 0xffffffff}, {categoryBits: 2, maskBits: 2}]) {
+            const empty = call(filter); assert.equal(empty.size(), 0); empty.delete();
+        }
+        for (const field of ["categoryBits", "maskBits"]) for (const bad of [-1, 0.5, NaN, Infinity, 2**32, 2**32 + 2])
+            assert.throws(() => call({categoryBits: 0xffffffff, maskBits: 0xffffffff, [field]: bad}));
+    }
+    const rayCopy = all[2].getHit(0); rayCopy.point.x = 99; rayCopy.normal.x = 99;
+    const sweepCopy = all[3].getHit(0); sweepCopy.center.x = 99;
+    first.setPosition({x: 20, y: 0});
+    engine.clearBodies(); first.delete(); second.delete(); engine.delete();
+    assert.equal(all[2].getHit(0).point.x, 1); assert.equal(all[3].getHit(0).center.x, 0.5);
+    const retained = all[0].getBody(0);
+    for (const results of all) { assert.equal(results.getBodyId(0), firstId); results.delete(); }
+    assert.deepEqual(retained.getPosition(), {x: 20, y: 0}); retained.delete();
+
+    const polygonEngine = new physics.Engine(), box = physics.Polygon.makeBox(2, 2);
+    const polygon = physics.createRigidBody(box, material, {x: 0, y: 0}, true);
+    box.delete(); polygonEngine.addBody(polygon); polygon.delete();
+    const a = {x: 2, y: 2}, b = {x: 1.8, y: 1.8};
+    const cornerMiss = physics.sweepCircleNearest(polygonEngine, a, b, 1);
+    assert.equal(cornerMiss.size(), 0); cornerMiss.delete();
+    const cornerHit = physics.sweepCircleNearest(polygonEngine, a, {x: 0, y: 0}, 1);
+    const hit = cornerHit.getHit(0);
+    assert.ok(Math.abs(hit.fraction - (1 - 1/Math.sqrt(2))/2) < 1e-12);
+    assert.deepEqual(hit.contactPoint, {x: 1, y: 1});
+    assert.ok(Math.abs(hit.normal.x - 1/Math.sqrt(2)) < 1e-7); cornerHit.delete();
+    polygonEngine.clearBodies();
+    for (const result of [physics.queryPoint(polygonEngine, a), physics.queryCircle(polygonEngine, a, 0),
+        physics.rayCastNearest(polygonEngine, a, b), physics.sweepCircleNearest(polygonEngine, a, b, 0)]) {
+        assert.equal(result.size(), 0); assert.throws(() => result.getBody(0)); result.delete();
+    }
+    for (const bad of [-1, NaN, Infinity]) {
+        assert.throws(() => physics.queryCircle(polygonEngine, a, bad));
+        assert.throws(() => physics.sweepCircleAll(polygonEngine, a, b, bad));
+    }
+    assert.throws(() => physics.queryPoint(polygonEngine, {x: NaN, y: 0}));
+    assert.throws(() => physics.rayCastAll(polygonEngine, a, {x: Infinity, y: 0}));
+    polygonEngine.delete();
+}
+
 function testWaves(physics) {
     const defaults = new physics.WaveMembrane(3, 3, 1, 1);
     const config = defaults.getConfig();
@@ -192,6 +268,7 @@ async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
     testWaves(physics);
+    testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
     for (const key of ["maxSubstepsPerAdvance", "solverIterations", "maximumCcdImpacts"])
@@ -567,7 +644,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, and membrane waves");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, and membrane waves");
 }
 
 main().catch((error) => {

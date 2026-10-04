@@ -3,6 +3,11 @@
 The WebAssembly target exposes the engine's basic simulation API to JavaScript
 through Emscripten's Embind library.
 
+Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
+`rayCastNearest`, `sweepCircleAll` and `sweepCircleNearest`. They accept an Engine
+and return owned collections with exact BigInt body IDs, retained body handles
+and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
+
 ## Owned scalar-wave grids
 
 `WaveMembrane` exposes the standalone native uniform membrane solver. Construct
