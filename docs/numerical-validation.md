@@ -1,12 +1,18 @@
 # Numerical validation and scalar precision
 
-The engine uses `float` for simulation state and geometry, and `double` for the
-fixed-step wall-clock accumulator. This is an explicit operating policy rather
-than a claim that single precision is universally sufficient.
+Precision is module-specific. Rigid bodies, ordinary particles and SPH use
+`float` state and geometry; the fixed-step wall-clock accumulator uses `double`.
+Soft-body positions/velocities also use float `Vector2`, with double masses,
+spring coefficients, queued forces and diagnostic accumulation. Standalone
+charged particles, N-body gravity, thermal networks, membranes, elastic and
+electromagnetic fields, electrostatics, MAC/scalar grids and ideal-gas grids use
+double state. These choices do not imply that either precision is sufficient
+at every scale; each module documents its representability limits.
 
 ## Validation profiles
 
-The release-mode `numerical_validation` executable writes machine-readable
+The release-mode `numerical_validation` executable checks the rigid/particle
+float operating profile and writes machine-readable
 JSON containing expected values, actual values, absolute errors, tolerances,
 pass/fail status, and float-versus-double timing measurements.
 
@@ -21,6 +27,12 @@ normal native CI run gates on it and publishes its JSON in the GitHub job
 summary. The manually triggered `Extended Numerical Validation` workflow runs
 ten times as many drift and scalar-comparison steps and publishes a separate
 job summary.
+
+Its accuracy table below does not cover every standalone module. Their
+independent physical oracles, refinement measurements, conservation/dissipation
+audits and failure tests are linked from the
+[capability map](physics-capabilities.md) and included in the broader native
+test suite. Browser parity has separate physical and ownership checks.
 
 ## Published accuracy budget
 
@@ -57,7 +69,7 @@ as the normal operating envelope.
 
 ## Precision decision
 
-Single precision remains the engine scalar for the current API:
+Single precision remains the rigid-body, ordinary-particle and SPH scalar:
 
 - normal-scale trajectories and collision invariants fit the published error
   budget;
