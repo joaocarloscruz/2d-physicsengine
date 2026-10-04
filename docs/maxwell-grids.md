@@ -189,6 +189,33 @@ a nonzero sample was measured. Near the physical CFL or extreme scales, a
 quadratic-form subtraction can also lose its positive remainder and fail honestly.
 There is no arbitrary absolute field, energy or divergence tolerance floor.
 
+All three field means use a binary-scaled compensated reduction in the same
+fused diagnostic sweep. Power-of-two scaling retains supported represented
+samples exactly during normalization; Neumaier compensation preserves ordinary
+signed cancellation. Final division by the cell count stages the normalized
+mantissa and combined exponent, so it does not divide each raw field sample by
+N. Constants retain their stored value even in the subnormal range. Means
+observe the actual represented fields after either stepping path; they do not
+correct the fields to enforce an ideal continuum mean after storage roundoff.
+
+This is a finite-range observer, not an exact arbitrary-precision summation.
+Normalization/rescaling that erases any contribution (including partial
+underflow), an overflowing final result or a nonzero final mean that underflows
+throws before publication. Extreme mixed dynamic ranges can therefore be
+rejected even when separate aggregate energy fits. Work counts, allocation
+budgets, original wave arithmetic and explicit Ohmic split arithmetic remain
+unchanged; no physical unit floor is introduced.
+
+The regression controls use 512x512 unit-spacing samples with eps=mu=1e308,
+uniform signed Ez/Hx/Hy of magnitude 6e-319 or 7e-319, and independently weighted
+aggregate energy. Electric energy is denorm_min while all three means equal
+their stored constants before/after wave and zero-conductivity steps. The old
+per-entry division gave zero for 6e-319 and 1.295163e-318 for 7e-319. Four-cell
+`[1e16,1,-1e16,0]` controls preserve the independent .25 residual under every
+ordering and sign; separate stored-value oracles check observations after wave
+and positive-conductivity evolution. These attained controls do not imply exact
+discrete-mean preservation for arbitrary floating-point evolution.
+
 ## Reproduce
 
 ```cpp

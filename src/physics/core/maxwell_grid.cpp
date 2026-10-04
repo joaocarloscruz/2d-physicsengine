@@ -16,6 +16,53 @@ double Positive(double value) {
         throw std::invalid_argument("Maxwell coefficient must be positively representable.");
     return value;
 }
+// Scaling avoids per-sample division underflow; compensation retains ordinary
+// signed cancellation. Reject erased normalized/rescaled terms rather than
+// silently presenting a mean from a different set of samples.
+class ScaledMean {
+    int exponent_ = 0;
+    bool nonzero_ = false;
+    double sum_ = 0, correction_ = 0;
+    static double Rescale(double x, int exponent) {
+        const double result = Checked(std::scalbn(x, exponent));
+        if (std::scalbn(result, -exponent) != x)
+            throw std::overflow_error("Maxwell mean scaling erases a contribution.");
+        return result;
+    }
+
+  public:
+    void add(double x) {
+        if (x == 0)
+            return;
+        const int exponent = std::ilogb(std::abs(x));
+        if (!nonzero_) {
+            nonzero_ = true;
+            exponent_ = exponent;
+        } else if (exponent > exponent_) {
+            sum_ = Rescale(sum_, exponent_ - exponent);
+            correction_ = Rescale(correction_, exponent_ - exponent);
+            exponent_ = exponent;
+        }
+        const double term = Rescale(x, -exponent_);
+        const double next = sum_ + term;
+        correction_ +=
+            std::abs(sum_) >= std::abs(term) ? (sum_ - next) + term : (term - next) + sum_;
+        sum_ = next;
+    }
+    double value(std::size_t count) const {
+        if (!nonzero_)
+            return 0;
+        const double normalized = Checked(sum_ + correction_);
+        if (normalized == 0)
+            return 0;
+        int exponent;
+        const double mantissa = std::frexp(normalized, &exponent);
+        const double result = Checked(std::scalbn(mantissa / double(count), exponent + exponent_));
+        if (result == 0)
+            throw std::overflow_error("Maxwell mean underflows float64 range.");
+        return result;
+    }
+};
 struct Coefficients {
     double ix, iy, ex, ey, mx, my, electricScale, magneticScale, speed, rate, limit;
 };
@@ -131,6 +178,7 @@ MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h
     d.modifiedEnergyStep = h;
     const auto nx = config_.columns, ny = config_.rows, n = nx * ny;
     double electricNorm = 0, magneticNorm = 0, correctionNorm = 0;
+    ScaledMean meanEz, meanHx, meanHy;
     bool nonzeroElectric = false, nonzeroMagnetic = false, nonzeroCorrection = false;
     const double hx = 0.5 * h * magneticX_, hy = 0.5 * h * magneticY_, rootN = std::sqrt(double(n));
     for (std::size_t j = 0; j < ny; ++j)
@@ -141,9 +189,9 @@ MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h
             magneticNorm = Checked(std::hypot(magneticNorm, Checked(magneticScale_ * s.hy[k])));
             nonzeroElectric = nonzeroElectric || s.ez[k] != 0;
             nonzeroMagnetic = nonzeroMagnetic || s.hx[k] != 0 || s.hy[k] != 0;
-            d.meanEz = Checked(d.meanEz + s.ez[k] / n);
-            d.meanHx = Checked(d.meanHx + s.hx[k] / n);
-            d.meanHy = Checked(d.meanHy + s.hy[k] / n);
+            meanEz.add(s.ez[k]);
+            meanHx.add(s.hx[k]);
+            meanHy.add(s.hy[k]);
             d.maxAbsEz = std::max(d.maxAbsEz, std::abs(s.ez[k]));
             d.maxAbsHx = std::max(d.maxAbsHx, std::abs(s.hx[k]));
             d.maxAbsHy = std::max(d.maxAbsHy, std::abs(s.hy[k]));
@@ -159,6 +207,9 @@ MaxwellGridDiagnostics MaxwellGrid::measure(const MaxwellFieldState &s, double h
                 correctionNorm = Checked(std::hypot(correctionNorm, Checked(magneticScale_ * y)));
             }
         }
+    d.meanEz = meanEz.value(n);
+    d.meanHx = meanHx.value(n);
+    d.meanHy = meanHy.value(n);
     if (d.maxAbsMagneticDivergence > 0 && d.magneticDivergenceRms == 0)
         throw std::overflow_error("Maxwell magnetic-divergence RMS underflows.");
     d.electricEnergy = NormEnergy(electricNorm, nonzeroElectric);

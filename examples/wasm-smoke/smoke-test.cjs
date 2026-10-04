@@ -963,6 +963,7 @@ async function main() {
     testScalarTransport(physics);
     testMaxwell(physics);
     require("./maxwell-ohmic-tests.cjs").smoke(physics);
+    require("./maxwell-mean-tests.cjs").smoke(physics);
     require("./elastic-wave-tests.cjs").smoke(physics);
     require("./electrostatic-tests.cjs").smoke(physics);
     testQueries(physics);
