@@ -233,3 +233,95 @@ TEST_CASE("Prismatic overflow stages both endpoint corrections", "[prismatic][va
     REQUIRE(a->velocity==av); REQUIRE(b->velocity==bv);
     REQUIRE(a->angularVelocity==aw); REQUIRE(b->angularVelocity==bw);
 }
+
+TEST_CASE("Prismatic simultaneous angle and line solve retains small linear speeds", "[prismatic][prismatic-numerics]") {
+    for (float lever : {1e10f,1e20f,1e30f}) for (float mass : {1e-30f,1.f,1e30f})
+    for (float angle : {0.f,.37f}) {
+        World world(SliderConfig(1));
+        auto a=SliderBody({},true), b=SliderBody();
+        a->SetOrientation(angle); b->SetOrientation(angle); b->SetMass(mass);
+        const double c=std::cos(double(angle)), s=std::sin(double(angle));
+        b->SetVelocity({float(3*c-s),float(3*s+c)}); b->SetAngularVelocity(1);
+        const double axial=c*b->velocity.x+s*b->velocity.y;
+        auto joint=std::make_shared<PrismaticJoint>(a,b,Vector2{1,0},Vector2{lever,0},Vector2{lever,0});
+        world.addBody(a); world.addBody(b); world.addJoint(joint); world.step(0);
+        REQUIRE(b->velocity.x==Catch::Approx(c*axial).epsilon(0).margin(5e-7));
+        REQUIRE(b->velocity.y==Catch::Approx(s*axial).epsilon(0).margin(5e-7));
+        REQUIRE(std::abs(b->angularVelocity)<1e-7);
+        REQUIRE(a->velocity==Vector2{}); REQUIRE(a->angularVelocity==0);
+    }
+}
+
+TEST_CASE("Prismatic observers retain relative local anchors at huge common translations", "[prismatic][prismatic-numerics]") {
+    for (float offset : {0.f,1e30f,-1e30f}) {
+        auto a=SliderBody({offset,offset},true), b=SliderBody({offset,offset});
+        PrismaticJoint joint(a,b,{1,0},{},{1,2});
+        REQUIRE(joint.getTranslation()==1); REQUIRE(joint.getTransverseError()==2);
+        a->SetOrientation(.37f); b->SetOrientation(.37f);
+        REQUIRE(joint.getTranslation()==Catch::Approx(1).epsilon(0).margin(1e-14));
+        REQUIRE(joint.getTransverseError()==Catch::Approx(2).epsilon(0).margin(1e-14));
+    }
+}
+
+TEST_CASE("Prismatic shared anchors preserve isolated unequal mass momentum and energy", "[prismatic][prismatic-numerics]") {
+    for (float lever : {0.f,1e20f,1e30f}) {
+        World world(SliderConfig(1));
+        auto a=std::make_shared<RigidBody>(Circle(1),Material{},Vector2{-3,0});
+        auto b=std::make_shared<RigidBody>(Circle(1),Material{},Vector2{1,0});
+        a->SetMass(1); b->SetMass(3); a->SetCollisionMaskBits(0); b->SetCollisionMaskBits(0);
+        a->SetVelocity({0,-1}); b->SetVelocity({0,1});
+        auto joint=std::make_shared<PrismaticJoint>(a,b,Vector2{1,0},Vector2{lever,0},Vector2{lever,0});
+        world.addBody(a); world.addBody(b); world.addJoint(joint); world.step(0);
+        // COM speed=1/2, total inertia about COM=14, L=6, so omega=3/7.
+        REQUIRE(a->velocity.y==Catch::Approx(-11./14).epsilon(0).margin(1e-7));
+        REQUIRE(b->velocity.y==Catch::Approx(13./14).epsilon(0).margin(1e-7));
+        REQUIRE(a->angularVelocity==Catch::Approx(3./7).epsilon(0).margin(1e-7));
+        REQUIRE(b->angularVelocity==Catch::Approx(3./7).epsilon(0).margin(1e-7));
+        REQUIRE(double(a->mass)*a->velocity.y+double(b->mass)*b->velocity.y==Catch::Approx(2).epsilon(0).margin(2e-7));
+        REQUIRE(AngularMomentum(*a,*b)==Catch::Approx(6).epsilon(0).margin(3e-7));
+        const double energy=.5*(double(a->mass)*a->velocity.y*a->velocity.y+double(b->mass)*b->velocity.y*b->velocity.y
+            +double(a->inertia)*a->angularVelocity*a->angularVelocity+double(b->inertia)*b->angularVelocity*b->angularVelocity);
+        REQUIRE(energy==Catch::Approx(25./14).epsilon(0).margin(3e-7));
+    }
+}
+
+TEST_CASE("Prismatic long shared anchors retain coupled stops and force caps", "[prismatic][prismatic-numerics]") {
+    SECTION("stops remove outward and permit inward velocity") {
+        for (float sign : {-1.f,1.f}) for (bool locked : {false,true}) {
+            World world(SliderConfig(1)); auto a=SliderBody({},true), b=SliderBody();
+            auto joint=std::make_shared<PrismaticJoint>(a,b,Vector2{1,0},Vector2{1e30f,0},Vector2{1e30f,0});
+            const float lower=locked || sign<0 ? 0.f : -1.f;
+            const float upper=locked || sign>0 ? 0.f : 1.f;
+            joint->setLimits(true,lower,upper);
+            b->SetVelocity({sign*2,1}); b->SetAngularVelocity(1);
+            world.addBody(a); world.addBody(b); world.addJoint(joint); world.step(0);
+            REQUIRE(b->velocity.x==0); REQUIRE(b->velocity.y==0); REQUIRE(b->angularVelocity==0);
+            b->SetVelocity({-sign,0}); world.step(0);
+            REQUIRE(b->velocity.x==(locked ? 0.f : -sign));
+        }
+    }
+    SECTION("motor force is a per-step cap with huge opposing angular impulse") {
+        for (float lever : {1e20f,1e30f}) for (int iterations : {1,20}) {
+            World world(SliderConfig(iterations)); auto a=SliderBody({},true), b=SliderBody();
+            auto joint=std::make_shared<PrismaticJoint>(a,b,Vector2{1,0},Vector2{0,lever},Vector2{0,lever});
+            joint->setMotor(true,10,3); b->SetVelocity({0,1});
+            world.addBody(a); world.addBody(b); world.addJoint(joint); world.step(.125f);
+            REQUIRE(b->velocity.x==Catch::Approx(.375).epsilon(0).margin(1e-7));
+            REQUIRE(b->velocity.y==0); REQUIRE(b->angularVelocity==0);
+            REQUIRE(joint->getMotorForce()==3);
+        }
+    }
+}
+
+TEST_CASE("Prismatic solvers reject corrupted static inverse properties before correction", "[prismatic][prismatic-numerics]") {
+    for (bool inertia : {false,true}) {
+        World world(SliderConfig(1)); auto a=SliderBody({},true), b=SliderBody();
+        auto joint=std::make_shared<PrismaticJoint>(a,b);
+        world.addBody(a); world.addBody(b); world.addJoint(joint);
+        b->SetVelocity({1,2}); b->SetAngularVelocity(3);
+        if (inertia) a->inverseInertia=1; else a->inverseMass=1;
+        REQUIRE_THROWS_AS(world.step(0),std::invalid_argument);
+        REQUIRE(b->velocity==Vector2{1,2}); REQUIRE(b->angularVelocity==3);
+        REQUIRE(a->velocity==Vector2{}); REQUIRE(a->angularVelocity==0);
+    }
+}

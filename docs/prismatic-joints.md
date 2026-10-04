@@ -66,3 +66,36 @@ saturated motor F, velocity increases by F*dt/m each step. Since World advances
 positions before joint velocity solving, after N steps its displacement is
 F/m * dt^2 * N*(N-1)/2. This converges to continuous acceleration as dt decreases;
 the first driven step changes velocity without advancing position.
+
+## Relative geometry and constraint arithmetic
+
+Anchor separation is formed as `(positionB-positionA) + (rotatedAnchorB-rotatedAnchorA)`.
+Small local offsets therefore survive a common world translation that would
+erase them from separately assembled world anchors. Public body positions still
+use floats; offsets already lost in the inputs cannot be recovered.
+
+The angular row is eliminated before accumulating the velocity right-hand side.
+Let `n` be the transverse normal, `e` the slide axis, `d = positionB-positionA`,
+`s = d cross n`, `x = d cross e`, and `ia`, `ib` the inverse inertias. The reduced
+velocity targets are `-n dot (vB-vA) + s*w` and
+`targetSpeed-e dot (vB-vA) + x*w`, where
+`w = (ib*omegaA + ia*omegaB)/(ia+ib)`. This avoids subtracting enormous common
+anchor-speed terms to recover a small linear velocity. The reduced matrix is
+`m*I + weight*[s,x]*[s,x]^T`, with `m` the inverse-mass sum and
+`weight = ia*ib/(ia+ib)`. Its positive determinant and expanded adjugate avoid
+subtracting large nearly equal mass-matrix products.
+
+Both angular corrections are also recovered from the eliminated row and lever
+differences, rather than adding a huge anchor torque to its opposing angular
+impulse. Capped motor/stop impulses use the same reduction. Corrections stage
+both bodies before publishing either, retain static state, and reject nonzero
+static inverse properties. This is per-correction atomicity; previous World
+integration, other joints and earlier corrections are not rolled back.
+
+Regression cases compare free sliding, locked/one-sided stops and capped drives
+with analytical velocities, including shared anchors up to `1e30`, mass scales
+`1e-30` through `1e30`, rotated axes and common translations. An isolated unequal
+mass pair checks linear momentum, angular momentum and the expected kinetic
+energy loss independently. These checks do not establish full World accuracy at
+arbitrary scales: float state, rotational linearization and position correction
+remain limiting factors.
