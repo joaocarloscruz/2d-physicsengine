@@ -33,7 +33,7 @@ Coefficients Validate(std::size_t width,std::size_t height,double dx,double dy,c
     // omega_max <= 2*sqrt(wx+wy). Verlet requires h*omega_max<2.
     const double frequency=Positive(std::hypot(std::sqrt(wx),std::sqrt(wy)));
     const double cfl=Positive(c.cflSafety/frequency);
-    const double limit=std::nextafter(std::min(c.maxSubstep,cfl),0.0);
+    const double limit=std::min(c.maxSubstep,std::nextafter(cfl,0.0));
     Positive(limit);
     return {wx,wy,kinetic,sx,sy,limit};
 }

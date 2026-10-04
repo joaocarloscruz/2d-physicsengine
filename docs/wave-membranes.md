@@ -66,8 +66,9 @@ solutions. Large gamma*h can reduce accuracy despite stability.
 
 The two-dimensional wave bound is
 c²*h²*(1/dx²+1/dy²) <= 1, as derived by [Langtangen and Linge](https://hplgit.github.io/fdm-book/doc/pub/book/html/._fdm-book008.html).
-`getStableTimeStep` takes the smaller of `maxSubstep` and
-`cflSafety/(c*sqrt(1/dx²+1/dy²))`, rounding it down. Safety must be strictly
+`getStableTimeStep` rounds the computed physical bound
+`cflSafety/(c*sqrt(1/dx²+1/dy²))` down, then takes the smaller of that bound and
+the exact configured `maxSubstep`. Safety must be strictly
 between zero and one; its default is 0.9. Each requested dt is partitioned into
 equal steps no larger than that bound. Substep count is rounded up without
 relaxing the CFL bound, so a request exactly on a floating-point limit may need
@@ -83,6 +84,11 @@ budgets may be changed explicitly. The default maximum substep is 0.01 seconds.
 
 Derived stencil and energy coefficients must remain positive and finite in
 double precision. Inputs outside that representable range are rejected explicitly.
+Coefficient construction can also reject extreme parameter combinations when
+an intermediate overflows or underflows, even if a rescaled formulation could
+represent the final coefficient. Individually tiny energy terms may underflow
+to zero during evaluation or be lost when added to a much larger total; energy
+diagnostics do not promise arbitrary-scale accuracy.
 Steps reject nonfinite arithmetic, unrepresentable final physical energies,
 underflowed half-step durations and time increments too small to advance the
 double clock. Finite input state can still have unrepresentable physical energy;

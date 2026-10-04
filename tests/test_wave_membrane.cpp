@@ -185,6 +185,13 @@ TEST_CASE("Wave membrane budgets and failed steps retain state loads and diagnos
     WaveMembrane exact(2,2,1,1,exactBudget); exact.step(0.0005);
     REQUIRE(exact.getDiagnostics().lastSubsteps==1); REQUIRE(exact.getDiagnostics().lastCellWork==4);
     REQUIRE_THROWS_AS(WaveMembrane(2,3,1,1,exactBudget),std::length_error);
+    exactBudget.maxSubstep=0.01;
+    WaveMembrane decimalStep(2,2,1,1,exactBudget);
+    REQUIRE(decimalStep.getStableTimeStep()==0.01);
+    decimalStep.step(0.01);
+    REQUIRE(decimalStep.getDiagnostics().lastSubsteps==1);
+    REQUIRE(decimalStep.getDiagnostics().lastSubstep==0.01);
+    REQUIRE(decimalStep.getDiagnostics().lastCellWork==4);
     auto c=Periodic(0.01); c.maxSubsteps=3; c.maxCellWork=48;
     WaveMembrane s(4,4,1,1,c); s.queueAcceleration(1,1,2); s.step(0);
     const auto beforeU=s.getDisplacements(),beforeV=s.getVelocities(),beforeLoads=s.getQueuedAccelerations();
@@ -213,6 +220,11 @@ TEST_CASE("Wave membrane CFL is strict on anisotropic grids", "[wave]") {
     REQUIRE(4*h*h*(1/0.04+1/0.25)<1);
     REQUIRE(h==Catch::Approx(0.95/(2*std::hypot(5.0,2.0))).epsilon(0).margin(2e-17));
     s.step(h*3.2); const auto d=s.getDiagnostics(); REQUIRE(d.lastSubsteps==4); REQUIRE(d.lastSubstep<=h);
+    c.maxSubsteps=1;
+    WaveMembrane tightBudget(3,4,0.2,0.5,c);
+    REQUIRE_THROWS_AS(tightBudget.step(std::nextafter(h,std::numeric_limits<double>::infinity())),std::length_error);
+    REQUIRE(tightBudget.getDiagnostics().time==0);
+    tightBudget.step(h); REQUIRE(tightBudget.getDiagnostics().lastSubsteps==1);
 }
 TEST_CASE("Wave membrane rejects nonfinite stencil state and physical energies transactionally", "[wave][validation]") {
     WaveMembrane s(2,2,1,1,Periodic()); s.setState({1e308,-1e308,0,0},std::vector<double>(4));
