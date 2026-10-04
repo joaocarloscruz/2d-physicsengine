@@ -1,76 +1,57 @@
-# Quick Start Guide for Visualization
+# Quick start for the visualizer
 
-## Requirements
+Use CMake 3.16+, a C++17-capable compiler, **SFML 3** with static Graphics,
+Window and System libraries, and an installed **PhysicsEngine 0.2** package.
+SFML 2 is incompatible. SFML 3.1's source build requires CMake 3.28+.
+Build all packages with the same compiler, architecture and runtime; a prebuilt
+MinGW SFML package cannot be linked into an MSVC application.
 
-Before building the visualization, you need to install SFML:
+From the repository root, build and install the engine into a local directory:
 
-### Windows
-1. Download SFML 2.6.x or 3.x (GCC MinGW) from https://www.sfml-dev.org/download.php
-2. Extract to a location (e.g., `C:\SFML-3.0.2`)
-3. Set the `SFML_DIR` environment variable:
-   ```powershell
-   $env:SFML_DIR = "C:\SFML-3.0.2"
-   # Or set it permanently in System Properties
-   ```
-
-### Linux
-```bash
-sudo apt-get install libsfml-dev
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel 2
+cmake --install build --config Release --prefix /absolute/path/physics-install
 ```
 
-### macOS
-```bash
-brew install sfml
+Supply that prefix and your SFML 3 installation prefix to the visualizer:
+
+```sh
+cmake -S visualization -B visualization/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/absolute/path/physics-install;/absolute/path/sfml-install"
+cmake --build visualization/build --config Release --parallel 2
 ```
 
-## Building
+On Windows, run CMake from a compiler environment. Alternatively, the PowerShell
+helper accepts portable tools and package paths explicitly, from any directory:
 
-1. Make sure the main physics engine is built first:
-   ```bash
-   cd ..
-   ./build.ps1
-   ```
+```powershell
+& C:\src\2d-physicsengine\visualization\setup-and-build.ps1 `
+    -EnginePrefix C:\deps\physics-install -SFMLPrefix C:\deps\sfml-install `
+    -CMakeExecutable C:\tools\cmake\bin\cmake.exe `
+    -CxxCompiler C:\tools\llvm-mingw\bin\clang++.exe `
+    -Generator Ninja -MakeProgram C:\tools\ninja.exe
+```
 
-2. Build the visualization:
-   ```bash
-   cd visualization
-   ./build.ps1
-   ```
+For MSVC packages, omit `-CxxCompiler` and use the matching Visual Studio
+generator, for example `-Generator 'Visual Studio 17 2022'`. With an explicit
+compiler the helper defaults to Ninja; otherwise CMake selects its default
+generator. Relative package/build paths are based on the helper's directory.
+The helper does not install dependencies or change PATH or CMAKE_PREFIX_PATH.
+It returns the configure/build command's nonzero exit code on failure.
 
-3. Run the visualization:
-   ```bash
-   ./build/PhysicsVisualization.exe
-   ```
+Run `visualization/build/PhysicsVisualization` (`.exe` on Windows). A
+multi-configuration generator places it under `visualization/build/Release/`.
+The Windows build copies a shared Engine DLL next to the executable. Your
+compiler's runtime DLLs must also be available to the loader; portable toolchains
+may require their `bin` directory on the current session's PATH.
 
-## Controls
+For an automated render check:
 
-| Key/Button | Action |
-|------------|--------|
-| **Left Mouse + Drag** | Pick up and move objects |
-| **Right Mouse Click** | Spawn a new box at cursor |
-| **Middle Mouse / C** | Spawn a new circle at cursor |
-| **Space** | Pause/unpause simulation |
-| **R** | Reset the scene |
-| **D** | Toggle debug info |
-| **Mouse Wheel** | Zoom in/out |
-| **ESC** | Exit |
+```sh
+visualization/build/PhysicsVisualization --smoke-test capture.png
+# On a Linux machine without a display:
+xvfb-run -a visualization/build/PhysicsVisualization --smoke-test capture.png
+```
 
-## Troubleshooting
-
-### CMake can't find SFML
-Make sure `SFML_DIR` is set correctly and points to the SFML installation directory (the one containing `lib` and `include` folders).
-
-### Missing DLL errors
-Copy the SFML DLLs from `SFML_DIR/bin` to the same directory as the executable, or add the bin directory to your PATH.
-
-### Linking errors
-Make sure the main physics engine (`libEngine.dll`) is built first and exists in `../build/`.
-
-## Features
-
-- **Real-time Physics**: See your 2D rigid body simulation in action
-- **Interactive**: Click and drag objects around
-- **Spawn Objects**: Add circles and boxes dynamically
-- **Visual Feedback**: Different colors for static vs dynamic bodies
-- **Rotation Visualization**: Lines show object rotation
-- **Debug Info**: Body count, FPS, and control hints
+It renders five hidden frames, writes a PNG, and exits. See [README](README.md)
+for controls, SFML source installation and troubleshooting.

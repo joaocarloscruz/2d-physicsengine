@@ -1,48 +1,62 @@
 # Physics Engine Visualization
 
-This folder contains a simple SFML-based visualization for the 2D physics engine.
+This separate SFML application displays an interactive 2D physics simulation.
+See [QUICKSTART](QUICKSTART.md) for the engine installation, visualizer build,
+PowerShell helper and hidden `--smoke-test capture.png` render check.
 
-## Prerequisites
+## Dependencies
 
-- SFML 3.x built with a compatible C++ compiler/runtime
-- CMake 3.16+ (building SFML 3.1 itself requires CMake 3.28+)
-- The installed PhysicsEngine 0.2 package
+- SFML 3 with static Graphics, Window and System libraries
+- Installed PhysicsEngine 0.2 package
+- CMake 3.16+ and a compatible C++ compiler/runtime for both packages
 
-## Building
+The visualizer consumes the installed engine through `PhysicsEngine::Engine`.
+Building the engine alone does not install its CMake package. Pass both install
+prefixes in `CMAKE_PREFIX_PATH`; `SFML_DIR`, if used, must point to the directory
+containing `SFMLConfig.cmake`, typically `<prefix>/lib/cmake/SFML`.
 
-Install the engine, then configure this directory with both package prefixes:
-```bash
-cmake --install build --prefix /path/to/physics-install
-cmake -S visualization -B visualization/build -DCMAKE_PREFIX_PATH="/path/to/physics-install;/path/to/sfml-install"
-cmake --build visualization/build --config Release
+## Build SFML locally
+
+Download the official [SFML 3.1.0 source](https://github.com/SFML/SFML/releases/tag/3.1.0)
+and build it with the same compiler/generator as the engine and visualizer.
+SFML 3.1 requires CMake 3.28+. This example installs only into a local
+prefix and selects the static libraries expected by the visualizer:
+
+```sh
+cmake -S /path/to/SFML -B /path/to/sfml-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSFML_BUILD_AUDIO=OFF -DSFML_BUILD_NETWORK=OFF -DSFML_BUILD_EXAMPLES=OFF -DSFML_BUILD_TEST_SUITE=OFF
+cmake --build /path/to/sfml-build --config Release --parallel 2
+cmake --install /path/to/sfml-build --config Release --prefix /path/to/sfml-install
 ```
+
+On Linux, the Graphics/Window modules need development packages for X11,
+Xrandr, Xcursor, Xi, udev, OpenGL, FreeType and HarfBuzz. Distribution `libsfml-dev`
+packages that provide SFML 2 do not satisfy this project. Consult SFML's
+[source build instructions](https://www.sfml-dev.org/tutorials/3.0/getting-started/build-from-source/)
+for your platform. CI builds pinned SFML 3.1.0 on Windows and Linux and checks
+the screenshot under Xvfb on Linux.
 
 ## Controls
 
-For an automated startup/render check, run
-`PhysicsVisualization --smoke-test capture.png`. It renders five hidden frames,
-writes a screenshot, and exits. Normal startup opens an interactive window.
+| Key/Button | Action |
+|------------|--------|
+| Left Mouse + Drag | Pick up and move objects |
+| Right Mouse Click | Spawn a new box at cursor |
+| Middle Mouse / C | Spawn a new circle at cursor |
+| Space | Pause/unpause simulation |
+| R | Reset the scene |
+| D | Toggle debug info |
+| Mouse Wheel | Zoom in/out |
+| ESC | Exit |
 
-- **Left Click + Drag**: Move objects around
-- **Right Click**: Add a new box at cursor position
-- **Middle Click / C**: Add a new circle at cursor position
-- **R**: Reset the simulation
-- **Space**: Pause/unpause
-- **ESC**: Exit
+## Troubleshooting
 
-## Installing SFML
-
-### Windows (MinGW)
-Download SFML from https://www.sfml-dev.org/download.php and extract it.
-
-Set the `SFML_DIR` environment variable to the SFML installation path.
-
-### Linux
-```bash
-# Build SFML 3 from source if your distribution only packages SFML 2.
-```
-
-### macOS
-```bash
-brew install sfml
-```
+- **Package not found:** verify that each prefix contains the installed CMake
+  package. SFML must be version 3 with static libraries; the engine must be 0.2.
+- **Compiler or link errors:** use packages built for the same compiler,
+  architecture, configuration and runtime. Use a new build directory when
+  changing a compiler or generator.
+- **Missing runtime DLL:** the build copies a shared Engine DLL on Windows;
+  make the compiler's runtime available in your current session or next to the
+  executable. SFML itself is linked statically.
+- **Display unavailable:** Linux smoke tests still need an OpenGL-capable
+  display, such as Xvfb with Mesa software rendering.
