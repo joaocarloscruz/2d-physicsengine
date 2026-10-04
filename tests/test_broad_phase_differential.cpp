@@ -214,3 +214,27 @@ TEST_CASE("AABB construction rejects invalid consumed state and unrepresentable 
         REQUIRE_THROWS_AS(malformed.GetAABB(), std::invalid_argument);
     }
 }
+
+TEST_CASE("Sweep bounds refresh after transforms and failed calls", "[BroadPhase][differential]") {
+    SweepAndPrune sweep;
+    auto box = std::make_shared<RigidBody>(Polygon::MakeBox(4, 1), Material{});
+    auto fixed = std::make_shared<RigidBody>(Circle(.75f), Material{}, Vector2{1.75f, 0}, true);
+    auto otherFixed = std::make_shared<RigidBody>(Circle(.75f), Material{}, Vector2{1.75f, 0}, true);
+    const std::vector<RigidBodyPtr> bodies{box, fixed, otherFixed};
+    REQUIRE(pairSet(sweep.FindPotentialCollisions(bodies)) == bruteForcePairs(bodies));
+    REQUIRE(sweep.FindPotentialCollisions(bodies).size() == 2);
+    box->SetPosition({20, 0});
+    REQUIRE(sweep.FindPotentialCollisions(bodies).empty());
+    box->SetPosition({});
+    box->SetOrientation(1.5707963267948966f);
+    REQUIRE(sweep.FindPotentialCollisions(bodies).empty());
+    fixed->SetPosition({});
+    REQUIRE(pairSet(sweep.FindPotentialCollisions(bodies)) == bruteForcePairs(bodies));
+    REQUIRE(sweep.FindPotentialCollisions(bodies).size() == 1);
+    REQUIRE_THROWS_AS(sweep.FindPotentialCollisions({nullptr}), std::invalid_argument);
+    REQUIRE_THROWS_AS(sweep.FindPotentialCollisions({box, nullptr}), std::invalid_argument);
+    box->position.x = std::numeric_limits<float>::quiet_NaN();
+    REQUIRE_THROWS_AS(sweep.FindPotentialCollisions(bodies), std::invalid_argument);
+    box->SetPosition({});
+    REQUIRE(pairSet(sweep.FindPotentialCollisions(bodies)) == bruteForcePairs(bodies));
+}

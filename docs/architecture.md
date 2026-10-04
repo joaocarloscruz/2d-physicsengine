@@ -19,6 +19,15 @@ Static bodies anchor islands without joining otherwise independent dynamic syste
 Velocity and position constraints run in separate phases. Contact impulses are
 cached by stable body IDs and contact feature IDs. Events dispatch after solving.
 
+Sweep-and-prune takes one validated AABB snapshot per body for each call and
+reuses it for endpoint sorting and pair filtering. Bounds are rebuilt on the next
+call, including after moved/rotated bodies or a failed query. This avoids repeated
+polygon transforms per candidate. Dense scenes can still produce O(N²) pairs.
+`broad_phase_benchmark` measures a fixed 500-body, 32-vertex dense fixture and
+checks all 124750 distinct pairs. On local Clang 23.1.1 Release, the same fixture
+took about 292 ms before caching and 3.1 ms after; timings exclude setup and
+verification and are machine-dependent. CTest checks pairs, not a speed threshold.
+
 Integration assumes constant force over each step: position advances by
 `v*dt + 0.5*a*dt²`, then velocity by `a*dt`. This is not a general higher-order
 Verlet solver for position-dependent forces. Contact and joint iterations are
