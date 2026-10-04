@@ -38,3 +38,11 @@ timestep is a float, comparisons use a boundary tolerance of
 step sequence once their backlog is processed, with a scheduler boundary error
 no greater than that tolerance. The native invariant test also requires
 equivalent position results within `1e-6` world units.
+#### Callback timing policy
+
+Each `FixedStepRunner::advance` snapshots the fixed timestep and maximum substep
+count at entry. Configuration changes from collision listeners apply to the
+next advance's timing policy. Other solver settings can affect later steps.
+Recursive `advance` and `reset` calls throw `std::logic_error` before changing
+the accumulator. If user callbacks throw, no rollback of physics state is
+promised; fix the callback and reset timing before resuming if necessary.

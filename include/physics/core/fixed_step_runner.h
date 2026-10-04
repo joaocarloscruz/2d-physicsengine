@@ -28,6 +28,7 @@ private:
     World& world;
     double accumulatedTime = 0.0;
     std::uint64_t totalStepCount = 0;
+    bool advancing = false;
 };
 
 }

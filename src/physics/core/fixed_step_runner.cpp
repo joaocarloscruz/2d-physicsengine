@@ -11,13 +11,19 @@ namespace PhysicsEngine {
 FixedStepRunner::FixedStepRunner(World& world) : world(world) {}
 
 FixedStepResult FixedStepRunner::advance(double elapsedTime) {
+    if (advancing) throw std::logic_error("FixedStepRunner cannot advance recursively.");
     if (!std::isfinite(elapsedTime) || elapsedTime < 0.0) {
         throw std::invalid_argument(
             "Elapsed time must be finite and non-negative."
         );
     }
 
-    const SimulationConfig& config = world.getSimulationConfig();
+    struct AdvanceGuard {
+        bool& active;
+        explicit AdvanceGuard(bool& value) : active(value) { active = true; }
+        ~AdvanceGuard() { active = false; }
+    } guard(advancing);
+    const SimulationConfig config = world.getSimulationConfig();
     const double fixedTimeStep = static_cast<double>(config.fixedTimeStep);
     const double tolerance = fixedTimeStep * 1e-6;
     if (elapsedTime > std::numeric_limits<double>::max() - accumulatedTime) {
@@ -28,7 +34,7 @@ FixedStepResult FixedStepRunner::advance(double elapsedTime) {
     std::uint32_t stepsPerformed = 0;
     while (stepsPerformed < static_cast<std::uint32_t>(config.maxSubstepsPerAdvance)
         && accumulatedTime + tolerance >= fixedTimeStep) {
-        world.step();
+        world.step(config.fixedTimeStep);
         accumulatedTime -= fixedTimeStep;
         ++stepsPerformed;
         ++totalStepCount;
@@ -48,6 +54,7 @@ FixedStepResult FixedStepRunner::advance(double elapsedTime) {
 }
 
 void FixedStepRunner::reset() {
+    if (advancing) throw std::logic_error("FixedStepRunner cannot reset during advance.");
     accumulatedTime = 0.0;
     totalStepCount = 0;
 }

@@ -161,3 +161,56 @@ TEST_CASE("Engine exposes fixed-step progress and reset", "[fixed_step][Engine]"
     REQUIRE(engine.getAccumulatedTime() == Catch::Approx(0.0));
     REQUIRE(engine.getTotalStepCount() == 0);
 }
+
+#include <functional>
+namespace {
+struct CallbackListener : ICollisionListener {
+    std::function<void()> callback;
+    void onCollisionBegin(const CollisionEvent&) override { callback(); }
+};
+void AddOverlap(World& world) {
+    world.addBody(std::make_shared<RigidBody>(Circle(1), Material{}, Vector2{}));
+    world.addBody(std::make_shared<RigidBody>(Circle(1), Material{}, Vector2(1, 0), true));
+}
+}
+
+TEST_CASE("Fixed step advance snapshots its time policy across callbacks", "[review][fixed_step]") {
+    SimulationConfig config;
+    config.fixedTimeStep = 0.1f;
+    config.maxSubstepsPerAdvance = 3;
+    config.positionCorrectionFactor = 0;
+    World world(config);
+    AddOverlap(world);
+    auto moving = std::make_shared<RigidBody>(Circle(1), Material{}, Vector2(10, 0));
+    moving->SetVelocity({1, 0}); world.addBody(moving);
+    FixedStepRunner runner(world);
+    CallbackListener listener;
+    listener.callback = [&] {
+        config.fixedTimeStep = 0.2f; config.maxSubstepsPerAdvance = 1;
+        world.setSimulationConfig(config);
+    };
+    world.addCollisionListener(&listener);
+    const auto first = runner.advance(0.3);
+    REQUIRE(first.stepsPerformed == 3);
+    REQUIRE(first.simulatedTime == Catch::Approx(0.3));
+    REQUIRE(moving->GetPosition().x == Catch::Approx(10.3f));
+    const auto second = runner.advance(0.2);
+    REQUIRE(second.stepsPerformed == 1);
+    REQUIRE(second.simulatedTime == Catch::Approx(0.2));
+    REQUIRE(moving->GetPosition().x == Catch::Approx(10.5f));
+}
+
+TEST_CASE("Recursive timing calls cannot corrupt the active accumulator", "[review][fixed_step]") {
+    SimulationConfig config; config.fixedTimeStep = 0.1f;
+    World world(config); AddOverlap(world); FixedStepRunner runner(world);
+    CallbackListener listener;
+    listener.callback = [&] {
+        CHECK_THROWS_AS(runner.advance(0.001), std::logic_error);
+        CHECK_THROWS_AS(runner.reset(), std::logic_error);
+    };
+    world.addCollisionListener(&listener);
+    const auto result = runner.advance(0.1);
+    REQUIRE(result.stepsPerformed == 1);
+    REQUIRE(result.remainingTime == Catch::Approx(0).margin(1e-8));
+    REQUIRE(runner.getTotalStepCount() == 1);
+}
