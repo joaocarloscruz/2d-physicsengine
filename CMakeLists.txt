@@ -34,6 +34,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fixed_step_runner.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
     ${PHYSICS_SRC_DIR}/core/joints.cpp
+    ${PHYSICS_SRC_DIR}/core/softbody.cpp
     ${PHYSICS_SRC_DIR}/core/state_export.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
     ${PHYSICS_SRC_DIR}/core/forces/drag.cpp
@@ -95,7 +96,10 @@ if(NOT EMSCRIPTEN)
     if(PHYSICS_BUILD_EXAMPLES)
         add_executable(replay_experiment examples/replay_experiment.cpp)
         target_link_libraries(replay_experiment PRIVATE PhysicsEngine::Engine)
+        add_executable(softbody_rope examples/softbody_rope.cpp)
+        target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
+            add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
                 -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
@@ -161,6 +165,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
+        ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
         ${TESTS_SRC_DIR}/test_state_export.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp

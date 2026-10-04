@@ -3,6 +3,7 @@
 // and headers not listed in docs/api.md are implementation interfaces.
 #include "engine.h"
 #include "physics/core/joints.h"
+#include "physics/core/softbody.h"
 #include "physics/core/forces/gravity.h"
 #include "physics/core/forces/drag.h"
 #include "physics/core/collisions/continuous_collision.h"
