@@ -55,6 +55,16 @@ int main() {
     if(projection.finalDivergenceRms>projection.targetDivergenceRms
         ||std::abs(mac.velocities().xFaces[0])>1e-12
         ||mac.velocities().yFaces!=macState.yFaces) return 1;
+    mac.setVelocities(macState);
+    PhysicsEngine::MacDiffusionConfig diffusionOptions;
+    diffusionOptions.kinematicViscosity=.25; diffusionOptions.timeStep=.5;
+    const auto diffusion=mac.diffuse(diffusionOptions);
+    const double expectedDiffused=1/(1+.25*.5*4/(.25*.25));
+    if(std::abs(mac.velocities().xFaces[0]-expectedDiffused)>1e-12
+        ||mac.velocities().yFaces!=macState.yFaces
+        ||diffusion.finalResidualRms>diffusion.targetResidualRms
+        ||mac.lastDiffusion().cellVisits!=diffusion.cellVisits
+        ||mac.lastProjection().diagnostics.cellVisits!=projection.cellVisits) return 1;
     if (std::abs(wave.getDisplacements()[0] - 0.5) > 1e-12
         || std::abs(wave.getDiagnostics().kineticEnergy - 8) > 1e-12) return 1;
     return std::abs(body->position.x-1) < 1e-6f

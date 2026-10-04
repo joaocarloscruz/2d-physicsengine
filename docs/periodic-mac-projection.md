@@ -3,8 +3,10 @@
 `PeriodicMacGrid` projects double-precision periodic face velocities onto a
 discretely divergence-free field. It is an independent component with native and
 [owned JavaScript interfaces](webassembly.md#owned-periodic-mac-projection-grids): no
-advection, viscosity, obstacles, free surfaces, time integration, or World/SPH
+advection, obstacles, free surfaces, or World/SPH
 coupling. It does not resolve the outstanding SPH #44 validation failures.
+Constant-viscosity backward-Euler [diffusion](periodic-mac-diffusion.md) is a
+separate native operation; projection itself advances no velocity time interval.
 Include `physics/physics.h` and link `PhysicsEngine::Engine` from the installed
 CMake package. [mac_projection_demo.cpp](../examples/mac_projection_demo.cpp)
 is a reproducible example; [tests](../tests/test_periodic_mac_grid.cpp) provide

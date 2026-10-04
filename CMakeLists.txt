@@ -49,6 +49,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/particles/particle_spatial_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_mac_grid.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/periodic_mac_diffusion.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle_spatial_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/sph_kernels.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/wcsph_solver.cpp
@@ -113,11 +114,14 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(wave_membrane_demo PRIVATE PhysicsEngine::Engine)
         add_executable(mac_projection_demo examples/mac_projection_demo.cpp)
         target_link_libraries(mac_projection_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(mac_diffusion_demo examples/mac_diffusion_demo.cpp)
+        target_link_libraries(mac_diffusion_demo PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
             add_test(NAME gravity_binary_smoke COMMAND gravity_binary)
             add_test(NAME thermal_network_smoke COMMAND thermal_network_demo)
             add_test(NAME wave_membrane_smoke COMMAND wave_membrane_demo)
             add_test(NAME mac_projection_smoke COMMAND mac_projection_demo)
+            add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
@@ -220,6 +224,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
         ${TESTS_SRC_DIR}/test_planar_reflected_operator.cpp
         ${TESTS_SRC_DIR}/test_periodic_mac_grid.cpp
+        ${TESTS_SRC_DIR}/test_mac_diffusion.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
