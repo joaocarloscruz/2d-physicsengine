@@ -38,7 +38,8 @@ function Invoke-CMake([string[]]$Arguments) {
 }
 
 try {
-    $cmakeCommand = (Get-Command $CMakeExecutable -CommandType Application, ExternalScript -ErrorAction Stop).Source
+    $cmakeCommand = (Get-Command $CMakeExecutable -CommandType Application, ExternalScript -ErrorAction Stop |
+        Select-Object -First 1).Source
     $sfmlPath = Get-ScriptPath $SFMLPrefix
     $enginePath = Get-ScriptPath $EnginePrefix
     foreach ($prefix in @($sfmlPath, $enginePath)) {
@@ -48,7 +49,8 @@ try {
         if ($prefix.Contains(';')) { throw 'Package prefixes must not contain semicolons.' }
     }
     if ($CxxCompiler) {
-        $CxxCompiler = (Get-Command $CxxCompiler -CommandType Application -ErrorAction Stop).Source
+        $CxxCompiler = (Get-Command $CxxCompiler -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1).Source
         # CMake's Windows default may select Visual Studio and ignore a supplied
         # MinGW/Clang compiler. Ninja explicitly uses the selected compiler.
         if (-not $Generator) { $Generator = 'Ninja' }
@@ -57,7 +59,8 @@ try {
         }
     }
     if ($MakeProgram) {
-        $MakeProgram = (Get-Command $MakeProgram -CommandType Application -ErrorAction Stop).Source
+        $MakeProgram = (Get-Command $MakeProgram -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1).Source
         if (-not $Generator) {
             throw 'Specify -Generator when supplying -MakeProgram (for example, Ninja).'
         }

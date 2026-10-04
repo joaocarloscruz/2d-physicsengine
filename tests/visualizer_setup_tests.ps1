@@ -11,12 +11,13 @@ $fakeCMake = Join-Path $scratch 'fake cmake.ps1'
 $enginePrefix = Join-Path $scratch 'engine install'
 $sfmlPrefix = Join-Path $scratch 'sfml install'
 $pwsh = (Get-Process -Id $PID).Path
+$originalPath = $env:PATH
 
 function Assert-True($Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
-function Invoke-Setup([string[]]$ExtraArguments, [string]$FailStage = '') {
+function Invoke-Setup([string[]]$ExtraArguments, [string]$FailStage = '', [string]$CMakeCommand = $fakeCMake) {
     if (Test-Path -LiteralPath $log) { Remove-Item -LiteralPath $log }
     $start = [System.Diagnostics.ProcessStartInfo]::new($pwsh)
     $start.WorkingDirectory = $scratch
@@ -28,7 +29,7 @@ function Invoke-Setup([string[]]$ExtraArguments, [string]$FailStage = '') {
     $start.Environment['CMAKE_PREFIX_PATH'] = 'existing-prefix-must-be-preserved'
     foreach ($argument in @('-NoProfile', '-File', $setupScript,
         '-EnginePrefix', $enginePrefix, '-SFMLPrefix', $sfmlPrefix,
-        '-CMakeExecutable', $fakeCMake) + $ExtraArguments) {
+        '-CMakeExecutable', $CMakeCommand) + $ExtraArguments) {
         $start.ArgumentList.Add($argument)
     }
     $process = [System.Diagnostics.Process]::Start($start)
@@ -82,6 +83,18 @@ exit 0
     $result = Invoke-Setup @('-MakeProgram', $pwsh)
     Assert-True ($result.ExitCode -ne 0 -and $result.Calls.Count -eq 0) 'MakeProgram without a generator was accepted.'
 
+    # Hosted Windows images can expose more than one CMake on PATH. Select the
+    # first match, as normal command lookup does, rather than joining all paths.
+    $firstTools = Join-Path $scratch 'first tools'
+    $secondTools = Join-Path $scratch 'second tools'
+    New-Item -ItemType Directory -Path $firstTools, $secondTools | Out-Null
+    Copy-Item -LiteralPath $fakeCMake -Destination (Join-Path $firstTools 'cmake-duplicate.ps1')
+    Copy-Item -LiteralPath $fakeCMake -Destination (Join-Path $secondTools 'cmake-duplicate.ps1')
+    $env:PATH = @($firstTools, $secondTools, $originalPath) -join [System.IO.Path]::PathSeparator
+    $result = Invoke-Setup @() '' 'cmake-duplicate.ps1'
+    Assert-True ($result.ExitCode -eq 0 -and $result.Calls.Count -eq 2) "Duplicate PATH tools failed: $($result.Output)"
+    $env:PATH = $originalPath
+
     # Missing packages and tools should fail before invoking CMake.
     Remove-Item -LiteralPath $sfmlPrefix
     $result = Invoke-Setup @()
@@ -91,6 +104,7 @@ exit 0
     Assert-True ($result.ExitCode -ne 0 -and $result.Calls.Count -eq 0) 'Missing CMake was accepted.'
     Write-Host 'Visualizer setup regression checks passed.'
 } finally {
+    $env:PATH = $originalPath
     # Delete only this test's unique directory after checking its absolute path.
     $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
     if ($scratch.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
