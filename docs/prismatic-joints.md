@@ -1,5 +1,7 @@
 # Prismatic joints
 
+Native and [WebAssembly](webassembly.md) APIs share these constraint semantics.
+
 `physics/core/prismatic_joint.h` and the supported `physics/physics.h` entry point
 export `PrismaticJoint`. Construct it with bodies A and B, a local axis on A,
 and optional local anchors on A and B, then pass it to `World::addJoint`.

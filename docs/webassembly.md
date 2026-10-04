@@ -109,6 +109,14 @@ use radians relative to the construction pose. Query settings with
 `engine.addJoint` and `engine.removeJoint`; delete it once when finished.
 See [joint behavior and limitations](joints-and-sleeping.md).
 
+`createPrismaticJoint(a, b, localAxisA, localAnchorA, localAnchorB)` returns a
+`PrismaticJoint` shared handle accepted by the same engine joint methods. It
+supports `setMotor(enabled, speed, maxForce)`, `setLimits(enabled, lower, upper)`,
+their setting getters, `getMotorForce`, `getTranslation`, `getTranslationSpeed`,
+`getTransverseError`, `getAngle`, `getReferenceAngle`, `getAxis` and `getLocalAxis`.
+Translation uses signed world distance along A's axis; limits do not subtract
+the construction translation. See [slider constraints and controls](prismatic-joints.md).
+
 `ChargedParticle` independently integrates a test charge in prescribed uniform
 fields. Use either its default neutral constructor or all four explicit arguments:
 

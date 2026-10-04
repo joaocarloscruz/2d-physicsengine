@@ -4,6 +4,7 @@
 
 #include "engine.h"
 #include "physics/core/charged_particle.h"
+#include "physics/core/prismatic_joint.h"
 #include "physics/core/material.h"
 #include "physics/core/fixed_step_runner.h"
 #include "physics/core/particles/particle_system.h"
@@ -38,6 +39,10 @@ JointPtr CreateDistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vecto
 }
 std::shared_ptr<RevoluteJoint> CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
     return std::make_shared<RevoluteJoint>(std::move(a), std::move(b), anchorA, anchorB);
+}
+std::shared_ptr<PrismaticJoint> CreatePrismaticJoint(RigidBodyPtr a, RigidBodyPtr b,
+    Vector2 axis, Vector2 anchorA, Vector2 anchorB) {
+    return std::make_shared<PrismaticJoint>(std::move(a), std::move(b), axis, anchorA, anchorB);
 }
 
 } // namespace
@@ -156,6 +161,25 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .smart_ptr<JointPtr>("JointPtr")
         .function("getAnchorA", &IJoint::getAnchorA)
         .function("getAnchorB", &IJoint::getAnchorB);
+    class_<PrismaticJoint, base<IJoint>>("PrismaticJoint")
+        .smart_ptr<std::shared_ptr<PrismaticJoint>>("PrismaticJointPtr")
+        .function("getAxis", &PrismaticJoint::getAxis)
+        .function("getLocalAxis", &PrismaticJoint::getLocalAxis)
+        .function("getTranslation", &PrismaticJoint::getTranslation)
+        .function("getTranslationSpeed", &PrismaticJoint::getTranslationSpeed)
+        .function("getTransverseError", &PrismaticJoint::getTransverseError)
+        .function("getAngle", &PrismaticJoint::getAngle)
+        .function("getReferenceAngle", &PrismaticJoint::getReferenceAngle)
+        .function("setMotor", &PrismaticJoint::setMotor)
+        .function("isMotorEnabled", &PrismaticJoint::isMotorEnabled)
+        .function("getMotorSpeed", &PrismaticJoint::getMotorSpeed)
+        .function("getMaxMotorForce", &PrismaticJoint::getMaxMotorForce)
+        .function("getMotorForce", &PrismaticJoint::getMotorForce)
+        .function("setLimits", &PrismaticJoint::setLimits)
+        .function("areLimitsEnabled", &PrismaticJoint::areLimitsEnabled)
+        .function("getLowerLimit", &PrismaticJoint::getLowerLimit)
+        .function("getUpperLimit", &PrismaticJoint::getUpperLimit);
+    function("createPrismaticJoint", &CreatePrismaticJoint);
     class_<RevoluteJoint, base<IJoint>>("RevoluteJoint")
         .smart_ptr<std::shared_ptr<RevoluteJoint>>("RevoluteJointPtr")
         .function("setMotor", &RevoluteJoint::setMotor)
