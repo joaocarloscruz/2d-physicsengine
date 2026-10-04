@@ -58,6 +58,14 @@ int main() {
     PhysicsEngine::MaxwellGridConfig maxwellConfig;
     maxwellConfig.columns=2; maxwellConfig.rows=2;
     PhysicsEngine::MaxwellGrid maxwell(maxwellConfig);
+    PhysicsEngine::PeriodicElectrostaticGrid electrostatic({2,2,1,1,2});
+    const auto electrostaticDiagnostics=electrostatic.solve({1,-1,1,-1});
+    const auto electrostaticSnapshot=electrostatic.getSnapshot();
+    if(std::abs(electrostaticSnapshot.potential[0]-.125)>1e-12
+        ||std::abs(electrostaticSnapshot.field.xFaces[0]+.25)>1e-12
+        ||std::abs(electrostaticDiagnostics.fieldEnergy-.25)>1e-12
+        ||electrostaticDiagnostics.finalGaussRms>electrostaticDiagnostics.targetGaussRms
+        ||electrostaticSnapshot.originalCharge!=std::vector<double>{1,-1,1,-1}) return 1;
     PhysicsEngine::ElasticWaveGridConfig elasticConfig;
     elasticConfig.columns=2;elasticConfig.rows=2;
     PhysicsEngine::ElasticWaveGrid elastic(elasticConfig);

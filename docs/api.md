@@ -35,6 +35,11 @@ clock and diagnostic snapshots. It does not advect the velocity field.
 synchronous double fields, strict CFL/work bounds, a fixed-step modified energy
 and transactional publication. There is no charge or particle-field coupling.
 
+`PeriodicElectrostaticGrid` supports an independent [neutral periodic static
+Poisson solve](periodic-electrostatic-grids.md), with prescribed charge, explicit
+roundoff-only neutrality correction, copied snapshots, stored Gauss/energy audits
+and bounded transactional work. It advances no clock and has no particle coupling.
+
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
 

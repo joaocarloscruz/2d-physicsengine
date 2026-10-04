@@ -47,6 +47,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/thermal_network.cpp
     ${PHYSICS_SRC_DIR}/core/wave_membrane.cpp
     ${PHYSICS_SRC_DIR}/core/maxwell_grid.cpp
+    ${PHYSICS_SRC_DIR}/core/periodic_electrostatic_grid.cpp
     ${PHYSICS_SRC_DIR}/core/elastic_wave_grid.cpp
     ${PHYSICS_SRC_DIR}/core/state_export.cpp
     ${PHYSICS_SRC_DIR}/core/spatial_queries.cpp
@@ -131,6 +132,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(scalar_transport_demo PRIVATE PhysicsEngine::Engine)
         add_executable(maxwell_grid_demo examples/maxwell_grid_demo.cpp)
         target_link_libraries(maxwell_grid_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(electrostatic_grid_demo examples/electrostatic_grid_demo.cpp)
+        target_link_libraries(electrostatic_grid_demo PRIVATE PhysicsEngine::Engine)
         add_executable(elastic_wave_demo examples/elastic_wave_demo.cpp)
         target_link_libraries(elastic_wave_demo PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
@@ -142,6 +145,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
             add_test(NAME scalar_transport_smoke COMMAND scalar_transport_demo)
             add_test(NAME maxwell_grid_smoke COMMAND maxwell_grid_demo)
+            add_test(NAME electrostatic_grid_smoke COMMAND electrostatic_grid_demo)
             add_test(NAME elastic_wave_smoke COMMAND elastic_wave_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
@@ -272,6 +276,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_periodic_mac_grid.cpp
         ${TESTS_SRC_DIR}/test_mac_diffusion.cpp
         ${TESTS_SRC_DIR}/test_scalar_transport.cpp
+        ${TESTS_SRC_DIR}/test_electrostatic_grid.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
