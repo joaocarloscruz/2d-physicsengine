@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(Engine CXX)
 
 # Source directory for library
@@ -55,6 +55,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
 )
 
 if(WIN32)
+    target_compile_definitions(Engine PUBLIC _USE_MATH_DEFINES)
     set_target_properties(Engine PROPERTIES
         WINDOWS_EXPORT_ALL_SYMBOLS ON
     )
@@ -98,7 +99,7 @@ if(EMSCRIPTEN)
     )
 else()
     # --- Native Test Executable
-    add_executable(run_tests
+    add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
         ${TESTS_SRC_DIR}/test_math.cpp
         ${TESTS_SRC_DIR}/test_rigidbody.cpp
@@ -130,7 +131,8 @@ else()
         ${TESTS_SRC_DIR}/catch_amalgamated.cpp
     )
 
-    target_link_libraries(run_tests PRIVATE Engine)
+    set_target_properties(engine_tests_runner PROPERTIES OUTPUT_NAME run_tests)
+    target_link_libraries(engine_tests_runner PRIVATE Engine)
 
     add_executable(numerical_validation
         ${TESTS_SRC_DIR}/numerical_validation.cpp
@@ -143,7 +145,7 @@ else()
     target_link_libraries(fluid_benchmark PRIVATE Engine)
 
     enable_testing()
-    add_test(NAME engine_tests COMMAND run_tests)
+    add_test(NAME engine_tests COMMAND engine_tests_runner)
     add_test(
         NAME numerical_validation_fast
         COMMAND numerical_validation
