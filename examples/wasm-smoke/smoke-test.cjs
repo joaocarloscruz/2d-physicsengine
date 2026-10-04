@@ -1,8 +1,76 @@
 const assert = require("node:assert/strict");
 const createPhysicsEngineModule = require("./physics_engine.js");
 
+function testGravity(physics) {
+    const defaults = new physics.NBodyGravity();
+    const config = defaults.getConfig();
+    assert.equal(config.gravitationalStrength, 1);
+    config.maxSubstep = 0.002;
+    assert.equal(defaults.getConfig().maxSubstep, 0.01);
+    defaults.delete();
+    const orbit = new physics.NBodyGravity(config);
+    assert.equal(orbit.addParticle({x: -0.5, y: 0}, {x: 0, y: -Math.SQRT1_2}, 1), 0);
+    assert.equal(orbit.addParticle({x: 0.5, y: 0}, {x: 0, y: Math.SQRT1_2}, 1), 1);
+    assert.equal(orbit.getParticleCount(), 2);
+    orbit.step(0.5);
+    const p = orbit.getParticle(0), d = orbit.getDiagnostics();
+    assert.ok(Math.hypot(p.position.x + 0.5 * Math.cos(Math.SQRT2 * 0.5),
+                         p.position.y + 0.5 * Math.sin(Math.SQRT2 * 0.5)) < 3e-6);
+    assert.ok(Math.abs(d.totalEnergy + 0.5) < 2e-6);
+    assert.ok(Math.hypot(d.momentum.x, d.momentum.y) < 1e-13);
+    assert.ok(d.lastSubsteps >= 250 && d.lastPairWork >= d.lastSubsteps);
+    p.position.x = 99; d.centerOfMass.y = 99;
+    assert.notEqual(orbit.getParticle(0).position.x, 99);
+    assert.notEqual(orbit.getDiagnostics().centerOfMass.y, 99);
+    const before = orbit.getParticle(0);
+    for (const index of [-1, 0.5, NaN, Infinity, 2, 2**32]) {
+        assert.throws(() => orbit.getParticle(index));
+        assert.throws(() => orbit.setState(index, {x: 0, y: 0}, {x: 0, y: 0}));
+        assert.throws(() => orbit.applyImpulse(index, {x: 0, y: 0}));
+    }
+    assert.throws(() => orbit.setState(0, {x: Infinity, y: 0}, {x: 0, y: 0}));
+    for (const key of ["maxParticles", "maxSubsteps", "maxPairWork"])
+        for (const value of [-1, 0, 1.5, NaN, Infinity, 2**32])
+            assert.throws(() => orbit.setConfig({...config, [key]: value}));
+    assert.throws(() => new physics.NBodyGravity({...config, maxPairWork: 0.5}));
+    assert.deepEqual(orbit.getParticle(0), before);
+    assert.deepEqual(orbit.getConfig(), config);
+    orbit.setConfig({...config, maxPairWork: 1});
+    assert.throws(() => orbit.step(0.002));
+    assert.deepEqual(orbit.getParticle(0), before);
+    assert.equal(orbit.getDiagnostics().lastPairWork, d.lastPairWork);
+    orbit.setConfig(config);
+    orbit.step(0);
+    assert.deepEqual(orbit.getParticle(0), before);
+    assert.equal(orbit.getDiagnostics().lastPairWork, 0);
+    orbit.delete();
+    assert.equal(p.position.x, 99); // Plain snapshot remains usable after deletion.
+    assert.equal(before.mass, 1);
+
+    const free = new physics.NBodyGravity({...config, gravitationalStrength: 0});
+    free.addParticle({x: 1e10, y: 0});
+    free.addParticle({x: 1e10, y: 0}); // G=0 coincidence is allowed.
+    free.setState(0, {x: 1e10, y: 0}, {x: 0, y: 2});
+    free.applyImpulse(0, {x: 0, y: 1});
+    free.step(0.1);
+    assert.ok(Math.abs(free.getParticle(0).position.y - 0.3) < 1e-13);
+    assert.equal(free.getParticle(0).velocity.y, 3);
+    free.delete();
+
+    const singular = new physics.NBodyGravity(config);
+    singular.addParticle({x: 0, y: 0}); singular.addParticle({x: 0, y: 0});
+    assert.throws(() => singular.step(0.002));
+    assert.equal(singular.getParticle(0).position.x, 0);
+    singular.setConfig({...config, softening: 0.1});
+    singular.step(0.002);
+    assert.equal(singular.getParticle(0).velocity.x, 0);
+    assert.ok(Math.abs(singular.getDiagnostics().potentialEnergy + 10) < 1e-12);
+    singular.delete();
+}
+
 async function main() {
     const physics = await createPhysicsEngineModule();
+    testGravity(physics);
     const soft = new physics.SoftBody();
     const softConfig = soft.getConfig();
     assert.equal(softConfig.maxParticles, 100000);
@@ -350,7 +418,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, and thermal conservation/accounting");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, and N-body gravity");
 }
 
 main().catch((error) => {

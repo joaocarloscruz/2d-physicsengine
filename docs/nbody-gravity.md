@@ -5,7 +5,8 @@ masses in double-precision `Vector2d` coordinates. It uses ordinary three-dimens
 inverse-square gravity restricted to a plane, rather than a two-dimensional
 Poisson/logarithmic potential. There is no coupling to `World`, fluids, soft bodies
 or electromagnetic particles, and no contact, accretion, cosmological expansion,
-relativistic correction or JavaScript binding.
+relativistic correction. An owned standalone JavaScript binding is described in
+[WebAssembly usage](webassembly.md#n-body-gravity).
 
 For separation d from particle i to j and softening length epsilon:
 

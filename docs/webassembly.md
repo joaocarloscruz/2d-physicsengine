@@ -219,3 +219,35 @@ Zero time retains pending powers; a successful positive step consumes them,
 including loads on fixed-temperature nodes. Thermostats track the compensating
 reservoir heat separately. See [thermal units, conservation and numerical
 scope](thermal-networks.md). Delete each owned network once when finished.
+
+## N-body gravity
+
+`NBodyGravity` owns a standalone double-precision planar gravity simulation.
+It has default and full-configuration constructors. The default `G=1` uses
+reduced units; consult [native gravity](nbody-gravity.md) for physical scope,
+Plummer softening, integration accuracy and encounter/work limits.
+
+```javascript
+const orbit = new physics.NBodyGravity();
+const gravityConfig = orbit.getConfig();
+gravityConfig.maxSubstep = 0.002;
+orbit.setConfig(gravityConfig);
+orbit.addParticle({x: -0.5, y: 0}, {x: 0, y: -Math.SQRT1_2}, 1);
+orbit.addParticle({x:  0.5, y: 0}, {x: 0, y:  Math.SQRT1_2}, 1);
+orbit.step(0.5);
+const first = orbit.getParticle(0);
+const metrics = orbit.getDiagnostics();
+orbit.delete();
+console.log(first.position, metrics.totalEnergy); // Copied values remain valid.
+```
+
+`addParticle(position)` defaults to zero velocity and unit mass. The other
+form is `addParticle(position, velocity, mass)`. Use `getParticleCount()`,
+`getParticle(index)`, `setState(index, position, velocity)`,
+`applyImpulse(index, impulse)`, `getConfig()`, `setConfig(config)`,
+`getDiagnostics()` and `step(dt)` for interaction. Index and count-budget
+arguments must be finite nonnegative integers in the native index range;
+zero budgets are rejected. Snapshots are copied plain values, including nested
+position/velocity/diagnostic vectors. Failed steps preserve particles and the
+previous successful work counters. No Engine registration or implicit World
+coupling is involved. Delete the owned simulation handle when finished.
