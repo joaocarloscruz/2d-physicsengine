@@ -11,6 +11,36 @@
 
 using namespace PhysicsEngine;
 
+TEST_CASE("Particle integration combines extreme acceleration and tiny time in double", "[particle-numerics]") {
+    Particle p({}, {}, 1e-20f);
+    p.ApplyForce({1e30f, -1e30f});
+    const float dt = 1e-30f;
+    const double ax = static_cast<double>(p.force.x) / p.mass;
+    p.Integrate(dt);
+    REQUIRE(p.position.x == Catch::Approx(0.5 * ax * dt * dt).epsilon(1e-6));
+    REQUIRE(p.position.y == Catch::Approx(-0.5 * ax * dt * dt).epsilon(1e-6));
+    REQUIRE(p.velocity.x == Catch::Approx(ax * dt).epsilon(1e-6));
+    REQUIRE(p.velocity.y == Catch::Approx(-ax * dt).epsilon(1e-6));
+    REQUIRE(p.force.x == 0);
+}
+
+TEST_CASE("Particle overflow retains its complete state and queued forces", "[particle-numerics]") {
+    const float large = std::numeric_limits<float>::max();
+    Particle p({1, 2}, {large, 3}, 1);
+    p.ApplyForce({large, 4});
+    REQUIRE_THROWS_AS(p.ApplyForce({large, 5}), std::overflow_error);
+    REQUIRE(p.force.x == large);
+    REQUIRE(p.force.y == 4);
+    REQUIRE_THROWS_AS(p.Integrate(2), std::overflow_error);
+    REQUIRE(p.position.x == 1);
+    REQUIRE(p.position.y == 2);
+    REQUIRE(p.velocity.x == large);
+    REQUIRE(p.velocity.y == 3);
+    REQUIRE(p.force.x == large);
+    REQUIRE(p.force.y == 4);
+    REQUIRE(p.inverseMass == 1);
+}
+
 TEST_CASE("Particle integrates force without rigid-body state", "[Particle]") {
     Particle particle(Vector2(0.0f, 0.0f), Vector2(0.0f, 0.0f), 1.0f);
     particle.ApplyForce(Vector2(2.0f, 0.0f));

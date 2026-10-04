@@ -1,6 +1,7 @@
 #include "physics/core/particles/particle.h"
 
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace PhysicsEngine {
@@ -10,6 +11,12 @@ void ValidateVector(const Vector2& value) {
     if (!std::isfinite(value.x) || !std::isfinite(value.y))
         throw std::invalid_argument("Particle state and forces must be finite.");
 }
+float CheckedFloat(double value) {
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
+        throw std::overflow_error("Particle result exceeds finite float range.");
+    return static_cast<float>(value);
+}
+Vector2 CheckedVector(double x, double y) { return {CheckedFloat(x), CheckedFloat(y)}; }
 }
 
 Particle::Particle(
@@ -31,8 +38,9 @@ Particle::Particle(
 
 void Particle::ApplyForce(const Vector2& appliedForce) {
     ValidateVector(appliedForce);
-    const Vector2 nextForce = force + appliedForce;
-    ValidateVector(nextForce);
+    ValidateVector(force);
+    const Vector2 nextForce = CheckedVector(static_cast<double>(force.x) + appliedForce.x,
+                                           static_cast<double>(force.y) + appliedForce.y);
     force = nextForce;
 }
 
@@ -45,11 +53,13 @@ void Particle::Integrate(float deltaTime) {
     if (!std::isfinite(mass) || mass <= 0 || !std::isfinite(1.0f / mass))
         throw std::invalid_argument("Particle mass must have a finite positive reciprocal.");
     const float nextInverseMass = 1.0f / mass;
-    const Vector2 acceleration = force * nextInverseMass;
-    const Vector2 nextPosition = position + velocity * deltaTime
-        + acceleration * (0.5f * deltaTime * deltaTime);
-    const Vector2 nextVelocity = velocity + acceleration * deltaTime;
-    ValidateVector(nextPosition); ValidateVector(nextVelocity);
+    const double dt = deltaTime;
+    const double ax = static_cast<double>(force.x) / mass;
+    const double ay = static_cast<double>(force.y) / mass;
+    const Vector2 nextPosition = CheckedVector(
+        position.x + velocity.x * dt + 0.5 * ax * dt * dt,
+        position.y + velocity.y * dt + 0.5 * ay * dt * dt);
+    const Vector2 nextVelocity = CheckedVector(velocity.x + ax * dt, velocity.y + ay * dt);
     position = nextPosition;
     velocity = nextVelocity;
     inverseMass = nextInverseMass;
