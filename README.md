@@ -8,7 +8,7 @@ periodic TMz electromagnetic fields with optional Ohmic evolution,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
-scalar transport, static electrostatics, lossless and Ohmic Maxwell fields
+scalar transport, ideal-gas flow, static electrostatics, lossless and Ohmic Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,

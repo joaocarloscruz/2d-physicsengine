@@ -26,8 +26,8 @@ trajectory or plausible animation does not establish accuracy for a new scene.
 Native APIs are installed through `PhysicsEngine::Engine` and the
 `physics/physics.h` entry point. Rigid bodies/joints, particles, soft bodies,
 thermal networks, charged particles, gravity, membrane and elastic waves, MAC projection/viscosity,
-scalar transport, electrostatics, lossless/Ohmic Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
-SPH solvers, rigid-fluid coupling and the ideal-gas grid currently require the native API.
+scalar transport, ideal-gas flow, electrostatics, lossless/Ohmic Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
+SPH solvers and rigid-fluid coupling currently require the native API.
 Binding coverage does not imply all native observers or internal details are exposed.
 The [WASM exception boundary](wasm-exception-boundary.md) preserves resources
 across repeated validation failures and uses a pinned SDK with stress checks.
@@ -38,6 +38,9 @@ accounting. Simply sharing positions does not implement a physical coupling.
 WCSPH's [rigid coupling](fluid-rigid-coupling.md) is an explicit supported path;
 the experimental [planar reflected-source operator](planar-reflected-experiment.md)
 remains a diagnostic prototype with documented consistency limits.
+The [bounded planar contact interval](planar-contact-interval.md) experiment
+resolves stopping and restart times for eligible prescribed-plane inputs;
+it has no World bridge and does not resolve production stack regressions.
 
 ## Reproduce and extend
 
