@@ -23,11 +23,15 @@ int main() {
     thermal.addNode(300, 2);
     thermal.applyPower(0, 4);
     thermal.step(0.5);
+    PhysicsEngine::NBodyGravity gravity;
+    gravity.addParticle({}, {2, 0});
+    gravity.step(0.25);
     return std::abs(body->position.x-1) < 1e-6f
         && !PhysicsEngine::ExportWorldJson(world).empty()
         && hit && hit->body == body && std::abs(hit->hit.fraction - 1.0 / 3.0) < 1e-6
         && points.size() == 1 && points[0] == body
         && std::abs(charge.getVelocity().x - std::cos(1.0)) < 1e-12
         && std::abs(soft.getParticles()[0].position.x - 0.5f) < 1e-6f
-        && std::abs(thermal.getNodes()[0].temperature - 301) < 1e-10 ? 0 : 1;
+        && std::abs(thermal.getNodes()[0].temperature - 301) < 1e-10
+        && std::abs(gravity.getParticles()[0].position.x - 0.5) < 1e-12 ? 0 : 1;
 }

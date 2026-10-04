@@ -11,6 +11,9 @@ implementation headers are internal interfaces without compatibility guarantees.
 The native `ChargedParticle`, `UniformElectromagneticField` and `Vector2d` types
 support [prescribed-field electromagnetic particle motion](electromagnetic-particles.md).
 
+`NBodyGravity` supports independent [planar Newtonian point-mass gravity](nbody-gravity.md)
+with bounded pair work, optional Plummer softening and transactional stepping.
+
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
 

@@ -3,6 +3,7 @@
 // and headers not listed in docs/api.md are implementation interfaces.
 #include "engine.h"
 #include "physics/core/charged_particle.h"
+#include "physics/core/nbody_gravity.h"
 #include "physics/core/joints.h"
 #include "physics/core/softbody.h"
 #include "physics/core/thermal_network.h"

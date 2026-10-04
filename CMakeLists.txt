@@ -31,6 +31,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
     ${PHYSICS_SRC_DIR}/core/charged_particle.cpp
+    ${PHYSICS_SRC_DIR}/core/nbody_gravity.cpp
     ${PHYSICS_SRC_DIR}/core/simulation_config.cpp
     ${PHYSICS_SRC_DIR}/core/fixed_step_runner.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
@@ -104,7 +105,10 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
         target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(gravity_binary examples/gravity_binary.cpp)
+        target_link_libraries(gravity_binary PRIVATE PhysicsEngine::Engine)
         if(BUILD_TESTING)
+            add_test(NAME gravity_binary_smoke COMMAND gravity_binary)
             add_test(NAME thermal_network_smoke COMMAND thermal_network_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
@@ -166,6 +170,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_polygon_centering.cpp
         ${TESTS_SRC_DIR}/test_contact_numerics.cpp
         ${TESTS_SRC_DIR}/test_charged_particle.cpp
+        ${TESTS_SRC_DIR}/test_nbody_gravity.cpp
         ${TESTS_SRC_DIR}/test_world.cpp
         ${TESTS_SRC_DIR}/test_forces.cpp
         ${TESTS_SRC_DIR}/test_engine.cpp
