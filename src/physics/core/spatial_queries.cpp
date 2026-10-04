@@ -1,6 +1,7 @@
 #include "physics/core/spatial_queries.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/world.h"
+#include "engine.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -353,7 +354,9 @@ std::optional<SweptCircleHit> SweepCircle(const RigidBody& body, Vector2 start, 
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
     return SweepCircle(*body.shape, start, end, radius, body.GetPosition(), body.GetOrientation());
 }
-std::vector<RigidBodyPtr> QueryPoint(const World& world, Vector2 point, QueryFilter filter) {
+namespace {
+template<class Scene>
+std::vector<RigidBodyPtr> PointResults(const Scene& world, Vector2 point, QueryFilter filter) {
     Validate(point);
     std::vector<RigidBodyPtr> result;
     for (const auto& body : world.getBodies())
@@ -363,7 +366,8 @@ std::vector<RigidBodyPtr> QueryPoint(const World& world, Vector2 point, QueryFil
     });
     return result;
 }
-std::vector<RigidBodyPtr> QueryCircle(const World& world, Vector2 center, float radius, QueryFilter filter) {
+template<class Scene>
+std::vector<RigidBodyPtr> CircleResults(const Scene& world, Vector2 center, float radius, QueryFilter filter) {
     Validate(center); ValidateRadius(radius);
     std::vector<RigidBodyPtr> result;
     for (const auto& body : world.getBodies())
@@ -373,7 +377,8 @@ std::vector<RigidBodyPtr> QueryCircle(const World& world, Vector2 center, float 
     });
     return result;
 }
-std::vector<WorldRayHit> RayCastAll(const World& world, Vector2 start, Vector2 end, QueryFilter filter) {
+template<class Scene>
+std::vector<WorldRayHit> RayResults(const Scene& world, Vector2 start, Vector2 end, QueryFilter filter) {
     Validate(start); Validate(end);
     std::vector<WorldRayHit> result;
     for (const auto& body : world.getBodies()) {
@@ -383,7 +388,8 @@ std::vector<WorldRayHit> RayCastAll(const World& world, Vector2 start, Vector2 e
     std::sort(result.begin(), result.end(), Earlier);
     return result;
 }
-std::optional<WorldRayHit> RayCastNearest(const World& world, Vector2 start, Vector2 end, QueryFilter filter) {
+template<class Scene>
+std::optional<WorldRayHit> NearestRay(const Scene& world, Vector2 start, Vector2 end, QueryFilter filter) {
     Validate(start); Validate(end);
     std::optional<WorldRayHit> result;
     for (const auto& body : world.getBodies()) {
@@ -395,7 +401,8 @@ std::optional<WorldRayHit> RayCastNearest(const World& world, Vector2 start, Vec
     }
     return result;
 }
-std::vector<WorldSweptCircleHit> SweepCircleAll(const World& world, Vector2 start, Vector2 end,
+template<class Scene>
+std::vector<WorldSweptCircleHit> SweepResults(const Scene& world, Vector2 start, Vector2 end,
     float radius, QueryFilter filter) {
     Validate(start); Validate(end); ValidateRadius(radius);
     std::vector<WorldSweptCircleHit> result;
@@ -406,7 +413,8 @@ std::vector<WorldSweptCircleHit> SweepCircleAll(const World& world, Vector2 star
     std::sort(result.begin(), result.end(), EarlierSweep);
     return result;
 }
-std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& world, Vector2 start, Vector2 end,
+template<class Scene>
+std::optional<WorldSweptCircleHit> NearestSweep(const Scene& world, Vector2 start, Vector2 end,
     float radius, QueryFilter filter) {
     Validate(start); Validate(end); ValidateRadius(radius);
     std::optional<WorldSweptCircleHit> result;
@@ -419,4 +427,18 @@ std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& world, Vector
     }
     return result;
 }
+} // namespace
+
+std::vector<RigidBodyPtr> QueryPoint(const World& s, Vector2 p, QueryFilter f) { return PointResults(s,p,f); }
+std::vector<RigidBodyPtr> QueryPoint(const Engine& s, Vector2 p, QueryFilter f) { return PointResults(s,p,f); }
+std::vector<RigidBodyPtr> QueryCircle(const World& s, Vector2 p, float r, QueryFilter f) { return CircleResults(s,p,r,f); }
+std::vector<RigidBodyPtr> QueryCircle(const Engine& s, Vector2 p, float r, QueryFilter f) { return CircleResults(s,p,r,f); }
+std::vector<WorldRayHit> RayCastAll(const World& s, Vector2 a, Vector2 b, QueryFilter f) { return RayResults(s,a,b,f); }
+std::vector<WorldRayHit> RayCastAll(const Engine& s, Vector2 a, Vector2 b, QueryFilter f) { return RayResults(s,a,b,f); }
+std::optional<WorldRayHit> RayCastNearest(const World& s, Vector2 a, Vector2 b, QueryFilter f) { return NearestRay(s,a,b,f); }
+std::optional<WorldRayHit> RayCastNearest(const Engine& s, Vector2 a, Vector2 b, QueryFilter f) { return NearestRay(s,a,b,f); }
+std::vector<WorldSweptCircleHit> SweepCircleAll(const World& s, Vector2 a, Vector2 b, float r, QueryFilter f) { return SweepResults(s,a,b,r,f); }
+std::vector<WorldSweptCircleHit> SweepCircleAll(const Engine& s, Vector2 a, Vector2 b, float r, QueryFilter f) { return SweepResults(s,a,b,r,f); }
+std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& s, Vector2 a, Vector2 b, float r, QueryFilter f) { return NearestSweep(s,a,b,r,f); }
+std::optional<WorldSweptCircleHit> SweepCircleNearest(const Engine& s, Vector2 a, Vector2 b, float r, QueryFilter f) { return NearestSweep(s,a,b,r,f); }
 }

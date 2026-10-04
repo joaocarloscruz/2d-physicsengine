@@ -4,6 +4,10 @@ Include `physics/physics.h` (or `physics/core/spatial_queries.h`) and link the
 installed `PhysicsEngine::Engine` target. Queries support circles and strictly
 convex polygons without requiring narrow-phase headers.
 
+Every scene query below accepts either `World` or `Engine`. The overloads use
+the same scans and return the same retained bodies and copied geometry; no
+access to Engine's private World is required.
+
 ```cpp
 using namespace PhysicsEngine;
 World world;

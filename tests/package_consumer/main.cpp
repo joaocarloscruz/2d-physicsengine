@@ -11,6 +11,19 @@ int main() {
     const auto points = PhysicsEngine::QueryPoint(world, {1, 0});
     const auto circles = PhysicsEngine::QueryCircle(world, {1, 0}, 0.25f);
     const auto circleHit = PhysicsEngine::SweepCircleNearest(world, {-2, 0}, {4, 0}, 0.5f);
+    PhysicsEngine::Engine engine;
+    engine.addBody(body);
+    if (PhysicsEngine::QueryPoint(engine, {1, 0}) != points
+        || PhysicsEngine::QueryCircle(engine, {1, 0}, 0.25f) != circles
+        || PhysicsEngine::RayCastAll(engine, {-2, 0}, {4, 0}).size() != 1
+        || PhysicsEngine::SweepCircleAll(engine, {-2, 0}, {4, 0}, 0.5f).size() != 1) return 1;
+    const auto engineRay = PhysicsEngine::RayCastNearest(engine, {-2, 0}, {4, 0});
+    const auto engineSweep = PhysicsEngine::SweepCircleNearest(engine, {-2, 0}, {4, 0}, 0.5f);
+    engine.clearBodies();
+    if (!engineRay || !engineSweep || engineRay->body != body || engineSweep->body != body
+        || !PhysicsEngine::QueryPoint(engine, {1, 0}).empty()
+        || std::abs(engineRay->hit.fraction - 1.0 / 3.0) > 1e-6
+        || std::abs(engineSweep->hit.fraction - 0.25) > 1e-6) return 1;
     auto support = std::make_shared<PhysicsEngine::RigidBody>(PhysicsEngine::Circle(1), PhysicsEngine::Material{}, PhysicsEngine::Vector2{}, true);
     PhysicsEngine::PrismaticJoint slider(support, body);
     if (std::abs(slider.getTranslation() - 1) > 1e-6) return 1;

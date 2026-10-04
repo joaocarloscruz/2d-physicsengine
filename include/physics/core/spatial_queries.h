@@ -8,6 +8,7 @@
 
 namespace PhysicsEngine {
 class World;
+class Engine;
 
 // Query categories and masks use the same mutual agreement as body collisions.
 // The default accepts every body whose category and mask are both nonzero.
@@ -87,4 +88,14 @@ std::vector<WorldSweptCircleHit> SweepCircleAll(const World& world, Vector2 star
     Vector2 end, float radius, QueryFilter filter = {});
 std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& world,
     Vector2 start, Vector2 end, float radius, QueryFilter filter = {});
+
+// Engine overloads share exactly the same scans, filtering and ownership rules.
+std::vector<RigidBodyPtr> QueryPoint(const Engine& engine, Vector2 point, QueryFilter filter = {});
+std::vector<RigidBodyPtr> QueryCircle(const Engine& engine, Vector2 center, float radius, QueryFilter filter = {});
+std::vector<WorldRayHit> RayCastAll(const Engine& engine, Vector2 start, Vector2 end, QueryFilter filter = {});
+std::optional<WorldRayHit> RayCastNearest(const Engine& engine, Vector2 start, Vector2 end, QueryFilter filter = {});
+std::vector<WorldSweptCircleHit> SweepCircleAll(const Engine& engine, Vector2 start,
+    Vector2 end, float radius, QueryFilter filter = {});
+std::optional<WorldSweptCircleHit> SweepCircleNearest(const Engine& engine, Vector2 start,
+    Vector2 end, float radius, QueryFilter filter = {});
 }
