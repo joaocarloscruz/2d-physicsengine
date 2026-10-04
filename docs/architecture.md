@@ -115,6 +115,18 @@ See [scalar waves](wave-membranes.md) for layout, forcing and convergence.
 Both modules own independent state. They do not automatically exchange loads
 with World, fluids, thermal graphs or deformable bodies.
 
+## Elastic continuum waves
+
+`ElasticWaveGrid` owns double-precision staggered velocity and stress on a
+homogeneous periodic grid. Plane-strain isotropic constitutive rates pair with
+negative-adjoint strain/divergence operators; synchronous symmetric stepping
+resolves longitudinal P and transverse S modes under a bounded CFL limit.
+Diagnostics distinguish physical energy from the fixed-substep modified
+invariant and measure local strain compatibility and field means. Arbitrary
+supported prestress is accepted without projection onto displacement-compatible
+strain. This small-strain model has no displacement tracking, interfaces,
+plasticity, fracture or automatic coupling. See [elastic waves](elastic-wave-grid.md).
+
 ## Conservative scalar transport
 
 `PeriodicScalarTransport` owns cell-average scalar density and copied periodic

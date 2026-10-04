@@ -14,6 +14,7 @@ trajectory or plausible animation does not establish accuracy for a new scene.
 | [Periodic MAC grid](periodic-mac-projection.md) | Double face velocities, periodic pressure projection and [implicit constant viscosity](periodic-mac-diffusion.md) | Discrete Fourier modes, temporal/spatial refinement, means, pressure gauge, actual stored residuals and energy/dissipation identities | Separate projection/diffusion operations; no advection, obstacles or free surface |
 | [Scalar transport](periodic-scalar-transport.md) | Conservative periodic cell-average density transport with frozen MAC face velocities | Independent donor matrices and Fourier modes, first-order refinement, mass, positivity and CFL checks | First-order numerical diffusion; no velocity advection, automatic pressure projection, obstacles or complete fluid timestep |
 | [Soft bodies](soft-bodies.md) | Mass-spring networks, axial damping, fixed anchors and external loads | Oscillator phase/refinement, momentum, damping and bounded step tests | Spring networks are not calibrated continuum solids; no self-contact, tearing or fluid coupling |
+| [Elastic waves](elastic-wave-grid.md) | Homogeneous isotropic periodic plane strain, staggered velocity/stress, P and S waves | Independent negative-adjoint incidence and Fourier operators, second-order continuum refinement, fixed-step modified energy, stress compatibility and means | Linear small strain; no displacement tracking, interfaces, forcing, damping, free surfaces, plasticity or fracture |
 | [Thermal networks](thermal-networks.md) | Lumped heat capacities, conduction, reciprocal Stefan–Boltzmann exchange, queued power and fixed-temperature reservoirs | Analytical exponential/radiative cooling, first-order refinement, maximum principle and energy accounting | Caller-supplied exchange coefficients; no geometry/view-factor solver, spectral transport, moving heat transport, phase change or automatic mechanical coupling |
 | [Charged particles](electromagnetic-particles.md) | Nonrelativistic planar motion in prescribed uniform electric and magnetic fields | Cyclotron radius/handedness, crossed-field drift, work and step composition | Fields do not respond to particles; no relativistic dynamics or particle-field coupling |
 | [Maxwell grid](maxwell-grids.md) | Homogeneous lossless periodic TMz, synchronous double Ez/Hx/Hy fields and bounded CFL stepping | Independent Fourier maps, traveling polarization, second-order temporal/spatial refinement, fixed-step modified energy and div H preservation | No sources, charge coupling, material interfaces, conductors, absorbing boundaries or 3D components |
@@ -22,9 +23,9 @@ trajectory or plausible animation does not establish accuracy for a new scene.
 
 Native APIs are installed through `PhysicsEngine::Engine` and the
 `physics/physics.h` entry point. Rigid bodies/joints, particles, soft bodies,
-thermal networks, charged particles, gravity, waves, MAC projection/viscosity,
-Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
-SPH solvers, rigid-fluid coupling and scalar transport currently require the native API. Binding
+thermal networks, charged particles, gravity, membrane waves, MAC projection/viscosity,
+scalar transport, Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
+SPH solvers, rigid-fluid coupling and elastic waves currently require the native API. Binding
 coverage does not imply all native observers or internal details are exposed.
 The [WASM exception boundary](wasm-exception-boundary.md) preserves resources
 across repeated validation failures and uses a pinned SDK with stress checks.
@@ -48,5 +49,5 @@ The [coverage roadmap](https://github.com/joaocarloscruz/2d-physicsengine/issues
 tracks additions and open numerical work. New models should specify their
 equations, units, boundaries, independent physical oracle, refinement behavior,
 conservation/dissipation properties and bounded failure behavior before being
-described as supported. General solid elasticity, compressible gases, radiation,
+described as supported. Nonlinear solids, compressible gases, spectral radiation transport,
 phase change, 3D, relativistic and quantum models require separate formulations.

@@ -3,9 +3,10 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
-viscosity, conservative scalar transport, and periodic TMz electromagnetic fields.
+viscosity, conservative scalar transport, periodic TMz electromagnetic fields,
+and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
-charged particles, gravity, waves, periodic projection/viscosity, Maxwell fields
+charged particles, gravity, membrane waves, periodic projection/viscosity, scalar transport, Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
@@ -98,6 +99,8 @@ oscillating physical field energy with the fixed-step modified invariant and
 reports magnetic divergence. These are separate bounded operations/models.
 `scalar_transport_demo` measures conservative donor-cell transport and its
 first-order numerical diffusion under a frozen periodic face-velocity field.
+`elastic_wave_demo` measures a plane-strain P wave's physical and modified energy,
+strain compatibility and bounded work on a homogeneous periodic grid.
 `rigid_contact_benchmark --quick` measures resting
 contacts, stacks, friction and isolated impacts against physical oracles; its
 finite output includes substantial stack drift in difficult configurations.
@@ -116,6 +119,8 @@ finite output includes substantial stack drift in difficult configurations.
 - [Thermal conduction and radiation networks](docs/thermal-networks.md)
 - [Planar Newtonian N-body gravity](docs/nbody-gravity.md)
 - [Scalar waves and membranes](docs/wave-membranes.md)
+- [Periodic elastic P/S waves and plane-strain compatibility](docs/elastic-wave-grid.md)
+- [Conservative periodic scalar transport](docs/periodic-scalar-transport.md)
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
 - [Periodic MAC viscosity and dissipation](docs/periodic-mac-diffusion.md)
 - [Periodic homogeneous TMz electromagnetic fields](docs/maxwell-grids.md)
