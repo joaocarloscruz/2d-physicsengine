@@ -206,6 +206,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_physics_validation.cpp
         ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
+        ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
@@ -238,6 +239,8 @@ elseif(BUILD_TESTING)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
     add_executable(fluid_consistency_diagnostic benchmarks/fluid_consistency_diagnostic.cpp)
     target_link_libraries(fluid_consistency_diagnostic PRIVATE Engine)
+    add_executable(fluid_wall_diagnostic benchmarks/fluid_wall_diagnostic.cpp)
+    target_link_libraries(fluid_wall_diagnostic PRIVATE Engine)
 
     enable_testing()
     add_test(NAME engine_tests COMMAND engine_tests_runner)
@@ -273,4 +276,7 @@ elseif(BUILD_TESTING)
     set_tests_properties(fluid_cubic_diagnostic_smoke PROPERTIES
         LABELS "fast;numerical;diagnostic"
     )
+    add_test(NAME fluid_wall_diagnostic_smoke COMMAND fluid_wall_diagnostic --quick
+        --output ${CMAKE_BINARY_DIR}/fluid-wall-quick.json)
+    set_tests_properties(fluid_wall_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
 endif()
