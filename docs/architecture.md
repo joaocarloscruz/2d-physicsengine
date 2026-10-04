@@ -36,6 +36,12 @@ free-surface fluid-only density/divergence projections. The common `IFluidSolver
 interface supports interchangeable fluid-only experiments; WCSPH's boundary and
 coupling overloads remain method-specific.
 
+The legacy poly6/spiky kernel combination remains the default. An explicit
+matched cubic family improves nominal lattice rest in the tested regime while
+preserving caller masses and rest densities. Perturbed neighborhoods and sampled
+wall startup retain limitations; see [kernel experiments](cubic-kernel-experiments.md).
+The nine legacy physical targets tracked in issue #44 remain expected failures.
+
 ## Deformable bodies
 
 `SoftBody` is an independent mass-spring network with fixed anchors, elastic links,
@@ -58,6 +64,26 @@ uniform electric and magnetic fields. Its double-precision state supports planar
 cyclotron motion and crossed-field drift. These standalone modules have no automatic
 mechanical or fluid coupling; the electromagnetic module does not evolve fields.
 See [electromagnetic particles](electromagnetic-particles.md).
+
+## Gravity and scalar waves
+
+`NBodyGravity` integrates independent point masses in double precision with
+Newtonian inverse-square gravity restricted to a plane and optional Plummer
+softening. Symmetric central pair forces and velocity Verlet support orbital
+momentum/energy checks; local encounter limits and a shared pair-work budget
+bound a staged step. This is an O(N²) model with reduced-unit G=1 by default,
+separate from World's prescribed uniform `Gravity` force generator.
+See [N-body gravity](nbody-gravity.md) for units and numerical limits.
+
+`WaveMembrane` evolves a uniform linear membrane on a double-precision rectangular
+grid with fixed or periodic edges. A symmetric spatial stencil, Verlet stepping
+and damping split are constrained by the two-dimensional wave CFL bound and
+cell/substep work budgets. Physical discrete energy and analytical mode tests
+measure accuracy; the integrator does not exactly conserve that energy.
+See [scalar waves](wave-membranes.md) for layout, forcing and convergence.
+
+Both modules own independent state. They do not automatically exchange loads
+with World, fluids, thermal graphs or deformable bodies.
 
 ## Limits
 

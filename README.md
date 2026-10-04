@@ -1,11 +1,14 @@
 # 2D Physics Engine
 
-A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies,
-with standalone thermal conduction and prescribed-field charged-particle modules.
-The rigid-body and particle interfaces also have a WebAssembly API.
+A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
+Standalone modules add thermal conduction, prescribed-field charged particles,
+planar Newtonian gravity and scalar membrane waves. WebAssembly exposes rigid
+bodies, particles, soft bodies, thermal networks, charged particles and gravity;
+see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
-distance/revolute joints with motors and angular stops, simulation islands, optional
-sleeping, a DFSPH solver, deformable networks, and CSV/JSON exports. The native library has no third-party runtime dependency
+distance, revolute and prismatic joints with drives and stops, simulation islands,
+optional sleeping, a DFSPH solver, deformable networks, and CSV/JSON exports.
+The native library has no third-party runtime dependency
 beyond the C++ runtime. Catch2 is vendored for tests; the separate visualizer uses SFML.
 
 ## Build and test
@@ -78,6 +81,11 @@ claim of superiority across all fluid scenes.
 `softbody_rope` runs a pinned ten-link elastic rope with gravity and axial damping,
 then prints energy, strain and substep diagnostics. It requires no renderer.
 
+`thermal_network_demo` reports conduction and reservoir energy accounting.
+`gravity_binary` compares a two-body orbit with its analytical period, and
+`wave_membrane_demo` measures a fixed-edge membrane mode's energy. These native
+examples run without graphics and are included in the CTest smoke checks.
+
 ## Documentation
 
 - [Architecture, units and numerical limits](docs/architecture.md)
@@ -89,6 +97,8 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [Charged particles in prescribed electromagnetic fields](docs/electromagnetic-particles.md)
 - [Thermal conduction networks](docs/thermal-networks.md)
+- [Planar Newtonian N-body gravity](docs/nbody-gravity.md)
+- [Scalar waves and membranes](docs/wave-membranes.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)
