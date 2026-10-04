@@ -121,6 +121,7 @@ if(EMSCRIPTEN)
     add_executable(physics_engine_wasm
         src/wasm/bindings.cpp
         src/wasm/softbody_bindings.cpp
+        src/wasm/thermal_bindings.cpp
     )
 
     target_link_libraries(physics_engine_wasm PRIVATE Engine embind)

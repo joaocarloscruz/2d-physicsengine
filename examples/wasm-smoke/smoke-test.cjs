@@ -7,6 +7,7 @@ async function main() {
     const softConfig = soft.getConfig();
     assert.equal(softConfig.maxParticles, 100000);
     softConfig.maxSubstep = 0.001;
+    assert.equal(soft.getConfig().maxSubstep, 0.01);
     const oscillator = new physics.SoftBody(softConfig);
     assert.equal(oscillator.addParticle({x: 0, y: 0}, {x: 0, y: 0}, 1, true), 0);
     assert.equal(oscillator.addParticle({x: 1.2, y: 0}, {x: 0, y: 0}, 1, false), 1);
@@ -18,10 +19,15 @@ async function main() {
     assert.equal(oscillator.getSpringCount(), 1);
     assert.equal(oscillator.getSpring(0).stiffness, 4);
     assert.ok(oscillator.getDiagnostics().lastSubsteps >= 1000);
+    assert.ok(Math.abs(oscillator.getDiagnostics().kineticEnergy + oscillator.getDiagnostics().elasticEnergy - 0.08) < 2e-6);
     const softSnapshot = oscillator.getParticle(1);
     softSnapshot.position.x = 99; softSnapshot.force.x = 99;
     assert.notEqual(oscillator.getParticle(1).position.x, 99);
     assert.equal(oscillator.getAccumulatedForce(1).x, 0);
+    const springCopy = oscillator.getSpring(0); springCopy.stiffness = 99;
+    assert.equal(oscillator.getSpring(0).stiffness, 4);
+    const softDiagnosticsCopy = oscillator.getDiagnostics(); softDiagnosticsCopy.totalMass = 99;
+    assert.equal(oscillator.getDiagnostics().totalMass, 2);
     for (const index of [-1, 0.5, NaN, Infinity, 2, 2**32, 2**32 + 1]) {
         assert.throws(() => oscillator.getParticle(index));
         assert.throws(() => oscillator.getAccumulatedForce(index));
@@ -76,7 +82,87 @@ async function main() {
     assert.throws(() => boundedSoft.addSpring(1, 0, 1, 1));
     assert.throws(() => boundedSoft.setConfig({...softConfig, maxParticles: 1}));
     assert.equal(boundedSoft.getParticleCount(), 2); assert.equal(boundedSoft.getSpringCount(), 1);
+    boundedSoft.setConfig({...softConfig, maxParticles: 3, maxSprings: 1});
+    boundedSoft.addParticle({x: 2, y: 0}); assert.throws(() => boundedSoft.addSpring(1, 2, 1, 1));
+    assert.equal(boundedSoft.getSpringCount(), 1);
     boundedSoft.delete();
+    const thermal = new physics.ThermalNetwork();
+    const thermalConfig = thermal.getConfig();
+    assert.equal(thermalConfig.maxNodes, 100000);
+    const conduction = new physics.ThermalNetwork(thermalConfig);
+    assert.equal(conduction.addNode(400, 2), 0); assert.equal(conduction.addNode(300, 3, false), 1);
+    assert.equal(conduction.addLink(0, 1, 1), 0);
+    const energyBefore = conduction.getDiagnostics().totalEnergy;
+    conduction.step(1);
+    const heatA = conduction.getNode(0), heatB = conduction.getNode(1);
+    assert.ok(heatA.temperature < 400 && heatA.temperature > heatB.temperature);
+    assert.ok(heatB.temperature > 300);
+    assert.ok(Math.abs(conduction.getDiagnostics().totalEnergy - energyBefore) < 1e-10);
+    assert.equal(conduction.getNodeCount(), 2); assert.equal(conduction.getLinkCount(), 1);
+    assert.equal(conduction.getLink(0).conductance, 1);
+    const linkCopy = conduction.getLink(0); linkCopy.conductance = 99;
+    assert.equal(conduction.getLink(0).conductance, 1);
+    const thermalDiagnosticsCopy = conduction.getDiagnostics(); thermalDiagnosticsCopy.totalEnergy = 99;
+    assert.ok(Math.abs(conduction.getDiagnostics().totalEnergy - energyBefore) < 1e-10);
+    heatA.temperature = 99; assert.notEqual(conduction.getNode(0).temperature, 99);
+    for (const index of [-1, 0.5, NaN, Infinity, 2, 2**32, 2**32 + 1]) {
+        assert.throws(() => conduction.getNode(index));
+        assert.throws(() => conduction.setTemperature(index, 300));
+        assert.throws(() => conduction.setFixed(index, true));
+        assert.throws(() => conduction.applyPower(index, 1));
+        assert.throws(() => conduction.clearPowers(index));
+        assert.throws(() => conduction.addLink(index, 1, 1));
+        assert.throws(() => conduction.addLink(0, index, 1));
+    }
+    for (const index of [-1, 0.5, NaN, Infinity, 1, 2**32]) assert.throws(() => conduction.getLink(index));
+    for (const field of ["maxSubsteps", "maxNodes", "maxLinks"]) {
+        for (const count of [-1, 0.5, NaN, Infinity, 0, 2**32, 2**32 + 1]) {
+            const invalid = {...thermalConfig, [field]: count};
+            assert.throws(() => conduction.setConfig(invalid));
+            assert.throws(() => new physics.ThermalNetwork(invalid));
+            assert.equal(conduction.getConfig()[field], thermalConfig[field]);
+        }
+    }
+    assert.throws(() => conduction.setTemperature(0, -1));
+    assert.throws(() => conduction.addLink(1, 0, 1));
+    assert.throws(() => conduction.applyPower(0, Infinity));
+    assert.throws(() => new physics.ThermalNetwork({...thermalConfig, safetyFactor: 2}));
+    thermal.addNode(300, 2); thermal.applyPower(0, 4); thermal.step(0);
+    assert.equal(thermal.getNode(0).externalPower, 4);
+    const heatingConfig = thermal.getConfig(); heatingConfig.maxSubsteps = 2; thermal.setConfig(heatingConfig);
+    const heatingBefore = thermal.getNode(0), heatingDiagnostics = thermal.getDiagnostics();
+    for (const dt of [-1, NaN, Infinity, 0.5]) {
+        assert.throws(() => thermal.step(dt));
+        assert.deepEqual(thermal.getNode(0), heatingBefore);
+        assert.deepEqual(thermal.getDiagnostics(), heatingDiagnostics);
+    }
+    heatingConfig.maxSubsteps = 100; thermal.setConfig(heatingConfig); thermal.step(0.5);
+    assert.ok(Math.abs(thermal.getNode(0).temperature - 301) < 1e-10);
+    assert.equal(thermal.getNode(0).externalPower, 0);
+    assert.ok(Math.abs(thermal.getDiagnostics().totalExternalEnergy - 2) < 1e-12);
+    thermal.applyPower(0, -10000);
+    const coolingBefore = thermal.getNode(0), coolingDiagnostics = thermal.getDiagnostics();
+    assert.throws(() => thermal.step(0.5));
+    assert.deepEqual(thermal.getNode(0), coolingBefore); assert.deepEqual(thermal.getDiagnostics(), coolingDiagnostics);
+    thermal.clearPowers(0); assert.equal(thermal.getNode(0).externalPower, 0);
+    thermal.applyPower(0, 1); thermal.clearPowers(); assert.equal(thermal.getNode(0).externalPower, 0);
+    thermal.setFixed(0, true); thermal.applyPower(0, 4); thermal.step(0.5);
+    assert.ok(Math.abs(thermal.getNode(0).temperature - 301) < 1e-10);
+    assert.ok(Math.abs(thermal.getNode(0).reservoirHeat + 2) < 1e-12);
+    assert.ok(Math.abs(thermal.getDiagnostics().totalReservoirHeat + 2) < 1e-12);
+    thermal.setFixed(0, false); thermal.setTemperature(0, 350);
+    const retainedNode = thermal.getNode(0), retainedLink = conduction.getLink(0);
+    thermal.delete(); conduction.delete();
+    assert.equal(retainedNode.temperature, 350); assert.equal(retainedLink.second, 1); assert.equal(heatA.temperature, 99);
+    const boundedHeat = new physics.ThermalNetwork({...thermalConfig, maxNodes: 2, maxLinks: 1});
+    boundedHeat.addNode(300, 1); boundedHeat.addNode(300, 1); boundedHeat.addLink(0, 1, 1);
+    assert.throws(() => boundedHeat.addNode(300, 1));
+    assert.throws(() => boundedHeat.setConfig({...thermalConfig, maxNodes: 1}));
+    assert.equal(boundedHeat.getNodeCount(), 2); assert.equal(boundedHeat.getLinkCount(), 1);
+    boundedHeat.setConfig({...thermalConfig, maxNodes: 3, maxLinks: 1});
+    boundedHeat.addNode(300, 1); assert.throws(() => boundedHeat.addLink(1, 2, 1));
+    assert.equal(boundedHeat.getLinkCount(), 1);
+    boundedHeat.delete();
     const charge = new physics.ChargedParticle({x: 0, y: 0}, {x: 2, y: 0}, 3, 6);
     charge.step(Math.PI / 8, {electric: {x: 0, y: 0}, magnetic: 2});
     assert.ok(Math.abs(charge.getPosition().x - 0.5) < 1e-12);
@@ -264,7 +350,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, and electromagnetic motion");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, and thermal conservation/accounting");
 }
 
 main().catch((error) => {

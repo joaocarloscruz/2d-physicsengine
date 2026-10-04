@@ -179,3 +179,43 @@ complete object returned by `getConfig` when changing settings. A failed step
 preserves state and queued loads; `step(0)` retains loads without integration,
 and a successful positive step consumes them. See [native units and numerical
 scope](soft-bodies.md). Delete each owned simulation once when finished.
+
+## Owned thermal networks
+
+`ThermalNetwork` is a standalone heat-capacity graph, independent of `Engine`
+storage. It does not automatically heat rigid bodies, deform a soft body or
+couple to fluids. Use default construction or a complete configuration object:
+
+```javascript
+const heat = new physics.ThermalNetwork();
+try {
+    const hot = heat.addNode(400, 2); // Kelvin, J/K; fixed defaults to false.
+    const cold = heat.addNode(300, 3, false);
+    heat.addLink(hot, cold, 1); // W/K
+    heat.applyPower(cold, 4); // W, queued for the next positive step.
+    heat.step(0.1);
+    console.log(heat.getNode(cold), heat.getLink(0), heat.getDiagnostics());
+    const config = heat.getConfig();
+    config.maxSubstep = 0.005;
+    heat.setConfig(config);
+    // new physics.ThermalNetwork(config) also constructs a configured graph.
+} finally {
+    heat.delete();
+}
+```
+
+Topology is append-only: `getNodeCount`/`getLinkCount` and `getNode(index)`/
+`getLink(index)` expose copied snapshots. `setTemperature(index, kelvin)`,
+`setFixed(index, fixed)`, `applyPower(index, watts)`, `clearPowers()` and
+`clearPowers(index)` preserve native state/load validation. `getDiagnostics`
+reports energies, thermostat heat accounting, temperature bounds and accepted
+substeps. `getConfig` returns a complete copied object for `setConfig` or the
+configured constructor. All getters produce plain JS values with no borrowed
+references, vector wrappers or snapshot cleanup; they remain safe after deletion.
+
+The same checked integer input rules and native budgets as `SoftBody` apply.
+A failed step preserves temperatures, pending powers and heat accounting.
+Zero time retains pending powers; a successful positive step consumes them,
+including loads on fixed-temperature nodes. Thermostats track the compensating
+reservoir heat separately. See [thermal units, conservation and numerical
+scope](thermal-networks.md). Delete each owned network once when finished.
