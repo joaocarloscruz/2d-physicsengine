@@ -25,6 +25,11 @@ and transactional publication after checking actual final divergence. Its separa
 velocity residual and energy/dissipation identity before publication. Both
 operations keep owning diagnostic snapshots; neither is a complete fluid step.
 
+`PeriodicScalarTransport` provides independent [conservative periodic scalar
+transport](periodic-scalar-transport.md) with frozen MAC face velocities,
+first-order donor-cell fluxes, outflow CFL/work bounds and transactional scalar,
+clock and diagnostic snapshots. It does not advect the velocity field.
+
 `MaxwellGrid` and its configuration/state/diagnostic types support independent
 [periodic homogeneous TMz electromagnetic fields](maxwell-grids.md), with
 synchronous double fields, strict CFL/work bounds, a fixed-step modified energy

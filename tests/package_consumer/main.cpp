@@ -80,6 +80,14 @@ int main() {
         ||diffusion.finalResidualRms>diffusion.targetResidualRms
         ||mac.lastDiffusion().cellVisits!=diffusion.cellVisits
         ||mac.lastProjection().diagnostics.cellVisits!=projection.cellVisits) return 1;
+    PhysicsEngine::PeriodicScalarTransport scalar({2,2,.25,.5});
+    scalar.setState({1,2,1,2});
+    scalar.setVelocities({{.25,.25,.25,.25},{0,0,0,0}});
+    const auto transported=scalar.step(.1);
+    if(std::abs(scalar.state()[0]-1.1)>1e-12 ||std::abs(scalar.state()[1]-1.9)>1e-12
+        ||!transported.discreteDivergenceFree ||!transported.nonnegativeInput ||scalar.time()!=.1
+        ||scalar.lastStep().cellVisits!=transported.cellVisits
+        ||std::abs(transported.integratedScalarDrift)>transported.conservationRoundoffAllowance) return 1;
     if (std::abs(wave.getDisplacements()[0] - 0.5) > 1e-12
         || std::abs(wave.getDiagnostics().kineticEnergy - 8) > 1e-12) return 1;
     return std::abs(body->position.x-1) < 1e-6f
