@@ -8,6 +8,9 @@ solvers/containers/coupling, point/ray/sweep queries, and export
 functions. Solver caches, constraint preparation, and broad/narrow-phase
 implementation headers are internal interfaces without compatibility guarantees.
 
+The native `ChargedParticle`, `UniformElectromagneticField` and `Vector2d` types
+support [prescribed-field electromagnetic particle motion](electromagnetic-particles.md).
+
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
 

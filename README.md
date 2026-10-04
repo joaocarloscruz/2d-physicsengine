@@ -85,6 +85,7 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 - [Native point and finite ray queries](docs/spatial-queries.md)
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
+- [Charged particles in prescribed electromagnetic fields](docs/electromagnetic-particles.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
 - [Export schema and replay](docs/state-export.md)
 - [Existing numerical validation](docs/numerical-validation.md)

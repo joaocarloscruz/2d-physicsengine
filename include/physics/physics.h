@@ -2,6 +2,7 @@
 // Supported consumer entry point. Solver caches, broad/narrow phase details,
 // and headers not listed in docs/api.md are implementation interfaces.
 #include "engine.h"
+#include "physics/core/charged_particle.h"
 #include "physics/core/joints.h"
 #include "physics/core/softbody.h"
 #include "physics/core/forces/gravity.h"
