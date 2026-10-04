@@ -54,13 +54,15 @@ float EffectiveMass(
     const Vector2& rb,
     const Vector2& direction
 ) {
-    const float raCrossDirection = ra.cross(direction);
-    const float rbCrossDirection = rb.cross(direction);
-    const float inverseMass = bodyA->GetInverseMass()
+    // Individually valid float inverse masses can overflow when added. Take
+    // the reciprocal only after accumulating the complete denominator in double.
+    const double raCrossDirection = double(ra.x) * direction.y - double(ra.y) * direction.x;
+    const double rbCrossDirection = double(rb.x) * direction.y - double(rb.y) * direction.x;
+    const double inverseMass = double(bodyA->GetInverseMass())
         + bodyB->GetInverseMass()
         + raCrossDirection * raCrossDirection * bodyA->GetInverseInertia()
         + rbCrossDirection * rbCrossDirection * bodyB->GetInverseInertia();
-    return inverseMass > 0.0f ? 1.0f / inverseMass : 0.0f;
+    return inverseMass > 0.0 ? static_cast<float>(1.0 / inverseMass) : 0.0f;
 }
 
 void SynchronizeCache(
@@ -134,11 +136,11 @@ ContactConstraint CollisionResolver::PrepareConstraint(
     constraint.tangent = ContactTangent(manifold.normal);
     constraint.pointCount = cache.contactCount;
     constraint.staticFriction = std::sqrt(
-        manifold.A->material.staticFriction
+        double(manifold.A->material.staticFriction)
             * manifold.B->material.staticFriction
     );
     constraint.dynamicFriction = std::sqrt(
-        manifold.A->material.dynamicFriction
+        double(manifold.A->material.dynamicFriction)
             * manifold.B->material.dynamicFriction
     );
     constraint.positionCorrectionFactor = config.positionCorrectionFactor;
