@@ -92,6 +92,9 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 CFL, counted work and mass/momentum/total-energy conservation diagnostics. Its
 first-order Rusanov scheme and range limits are described in
 [periodic gas dynamics](docs/periodic-euler-gas.md).
+`euler_gas_second_order_demo` compares the native opt-in
+[second-order method](docs/periodic-euler-second-order.md) against that default
+on identical moving-contact inputs, with measured error and work counts.
 `thermal_radiation_demo` measures Stefan–Boltzmann cooling, timestep convergence
 and reservoir energy accounting for a lumped body facing a cold enclosure.
 `gravity_binary` compares a two-body orbit with its analytical period, and

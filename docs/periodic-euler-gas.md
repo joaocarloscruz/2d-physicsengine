@@ -1,6 +1,6 @@
 # Periodic ideal-gas Euler grid
 
-`PeriodicEulerGasGrid` is a standalone native, first-order finite-volume solver
+`PeriodicEulerGasGrid` is a standalone finite-volume solver with a first-order default
 for a homogeneous ideal gas on a periodic rectangular grid. It evolves density,
 two momentum densities and total energy density in double precision. There are
 no sources, viscosity, heat conduction, walls, particle or rigid-body coupling,
