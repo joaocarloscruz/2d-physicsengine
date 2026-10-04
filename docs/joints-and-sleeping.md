@@ -14,6 +14,37 @@ point-mass system including angular inertia. Compliance is not yet implemented.
 Connected bodies still collide unless their collision masks exclude
 each other. The tests include analytical momentum transfer and 3,000-step pendulums.
 
+Distance and revolute solvers compute rotated levers, point velocities, effective
+masses, and impulses in double precision. No physical mass or nonzero distance is
+clamped to an arbitrary minimum; only exactly coincident distance anchors use the
+horizontal fallback direction. The point and coupled hinge solves expand their
+determinants into positive mass/lever terms to avoid cancellation at long levers.
+Coupled angular corrections use the angular row and expanded torque numerators,
+so a small net torque is preserved between large opposing lever and motor/stop
+impulses.
+Physical impulses may exceed the float range when the resulting body state is
+representable. Body positions, orientations and velocities remain float values,
+so rounding of a published state still limits constraint accuracy at extreme scales.
+
+Each correction stages both bodies' complete linear and angular results before
+publication, including the additional angular impulse from a motor or stop. A
+nonfinite intermediate or unrepresentable final component throws
+`std::overflow_error` and leaves that correction's endpoint states unchanged.
+Motor and stop accumulation advances only after successful publication. This is
+correction-level atomicity: earlier accepted corrections and World integration
+are not rolled back if a later correction fails.
+
+Construction and solver preparation reject nonfinite consumed legacy body state
+and invalid inverse properties with `std::invalid_argument`. Dynamic inverse mass
+and inverse inertia must be positive; static values must be zero. Finite legacy
+static velocities participate in relative point velocity, while static poses and
+velocities remain unchanged by joint corrections. Corrections do not request an
+external wake; existing World island and motor wake handling still applies.
+Public `IJoint::getAnchorA/B()` return checked float world positions and throw
+`std::overflow_error` when those coordinates cannot be represented. The solvers
+use their internal double geometry directly, so they can process such anchors
+when the resulting body state remains representable.
+
 ## Revolute speed motors
 
 `joint->setMotor(true, speed, maxTorque)` drives angular velocity of body B relative

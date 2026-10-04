@@ -13,7 +13,7 @@ public:
 protected:
     friend class World;
     IJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 localAnchorA, Vector2 localAnchorB);
-    virtual void prepareStep(float deltaTime) {}
+    virtual void prepareStep(float deltaTime);
     virtual bool preventsSleeping() const { return false; }
     virtual void solveVelocity() = 0;
     virtual bool solvePosition(float tolerance, float maxCorrection) = 0;

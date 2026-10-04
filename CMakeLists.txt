@@ -193,6 +193,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
+        ${TESTS_SRC_DIR}/test_joint_arithmetic.cpp
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
