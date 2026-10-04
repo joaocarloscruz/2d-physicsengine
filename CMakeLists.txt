@@ -188,6 +188,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_collision_events.cpp
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
+        ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp

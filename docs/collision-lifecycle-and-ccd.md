@@ -21,6 +21,26 @@ with a normalized time-of-impact fraction, A-to-B normal, and world-space point.
 Circle/polygon queries handle convex polygons of either winding, face impacts and
 rounded corner impacts. Both shapes may translate. Initial overlap returns time zero.
 
+The helper interval is `start + fraction * displacement`, rather than a pair of
+stored endpoints. Each input must be finite and each radius positive and finite;
+the implied endpoint may exceed float coordinate range. Circle/circle geometry
+uses double relative motion and summed radii, a supporting-line clearance test
+and a geometric disk chord instead of subtracting squared quadratic terms.
+Regular contact normals/points are constructed from the target surface before
+rounding the fraction. Initially overlapping circles retain the A-surface point
+along the A-to-B center direction; coincident centers use normal (+1,0).
+Unrepresentable returned float vectors throw `std::overflow_error`.
+
+`SweepHit::fraction` is still a float. On enormous displacement, it can round
+away a small impact-time offset even when the helper correctly classifies the
+hit and retains a local contact point. Interpolating with that fraction can yield
+a different center position. World CCD still consumes float fractions and uses
+float body trajectories; the helper correction does not establish accurate
+extreme-scale World impact positions. Double line offsets can also lose small
+details in nearly cancelling arbitrary directions. Choose meaningful coordinate
+scales and timestep convergence checks. No rotating polygon policy changes are
+implied by the helper arithmetic.
+
 World CCD processes the earliest approach, resolves its impulse, then advances the
 remaining time using the changed velocities. Collision masks apply. Each pair
 notifies at most once per World step even if multiple impacts occur. Transient
