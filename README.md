@@ -136,6 +136,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Existing numerical validation](docs/numerical-validation.md)
 - [WCSPH consistency diagnostic and formulation plan](docs/fluid-consistency-diagnostic.md)
 - [Opt-in matched cubic kernels: measurements and limits](docs/cubic-kernel-experiments.md)
+- [Opt-in Wendland C2 kernels: pressure work and disorder limits](docs/wendland-kernel-experiments.md)
 - [Sampled-wall force and pressure-work audit](docs/fluid-wall-audit.md)
 - [Opt-in signed wall-pressure extrapolation](docs/wall-pressure-modes.md)
 - [Experimental planar reflection and its measured limits](docs/planar-reflected-experiment.md)

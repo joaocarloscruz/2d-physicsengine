@@ -125,3 +125,5 @@ bias for the chosen input but cannot prove disorder healing or wall consistency.
 The independent tests cover normalization, second moment, expanded polynomial
 and finite-difference gradients, scaling, calibration, solver/wall dispatch,
 fixed-support pressure work and existing DFSPH residual/momentum controls.
+The [disorder comparison](wendland-kernel-experiments.md) records density bias,
+failed healing targets and the distinction between original and calibrated inputs.

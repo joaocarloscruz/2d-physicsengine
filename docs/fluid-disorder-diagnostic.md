@@ -1,5 +1,8 @@
 # Checkerboard disorder audit (#44)
 
+The later [Wendland comparison](wendland-kernel-experiments.md) adds an explicit
+third-family run while preserving every legacy/cubic measurement below.
+
 This diagnostic localizes the existing **Calibrated lattice heals small
 positional disorder** failure. It changes no production solver, pressure policy,
 kernel, mass, position, target or failure tag. All nine legacy expected failures
