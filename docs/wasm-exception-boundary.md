@@ -22,6 +22,24 @@ Value-object conversion cleans up partially constructed inputs and copied
 outputs even if a field accessor fails. Returned class/shared handles retain
 normal Embind ownership; callers still delete owned handles as documented.
 
+Argument conversion evaluates non-handle arguments in their original order,
+then validates/converts native class arguments, then the method receiver.
+Value-object getters and numeric coercions may delete a previously supplied
+handle; that call is rejected before entering native code, even when a separate
+clone keeps the object alive. Each user accessor is evaluated once. Instance
+property setters likewise convert their value before validating the receiver.
+The error ordering for an invalid/deleted handle and an invalid value therefore
+follows this value-first ordering. Public `clone`/`delete` overrides cannot run
+inside shared-pointer subtype conversion or its stored deleter: those paths use
+captured SDK lifetime operations. Ordinary aliases retain normal ownership.
+
+Current input value objects contain no native class-handle fields. Adding such
+fields, value arrays containing handles, or native callbacks requires a new
+lifetime review; a nested converter must not retain a borrowed pointer across
+another callback-capable conversion. Direct manipulation of Embind's `$$`
+records, proxies around native handles, and replaced global intrinsics are
+outside this contract.
+
 Native `CppException` objects are caught once, marked caught using the SDK's
 `__cxa_begin_catch`, copied into an ordinary JavaScript `Error`, then released by
 `__cxa_end_catch`. This balances both the uncaught-exception counter and native
@@ -62,6 +80,9 @@ stack pointer, native uncaught count, converted-value lifetimes and owned-object
 lifetimes across 2000 mixed exception/conversion/constructor/property/overload
 batches, 1000 array-accessor/proxy/reentrant batches and 1000 receiver-deletion
 batches. It also verifies JavaScript error identity and copied return values.
+An additional 1000 lifetime batches cover deletion during value conversion,
+raw/shared arguments, retained aliases, constructors, setters, numeric coercion,
+and shadowed lifetime methods during subtype sharing and cleanup.
 The production physics smoke suite runs in its existing order; no larger stack
 or test-only stack reset is used. Hosted WASM CI enables and runs these probes.
 

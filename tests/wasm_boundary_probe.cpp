@@ -22,6 +22,7 @@ struct Probe {
         ++liveObjects;
     }
     ~Probe() { --liveObjects; }
+    Probe(const Probe&, const Value& value) : Probe(value) {}
     Value get() const { throw std::runtime_error("probe getter"); }
     void set(const Value&) { throw std::runtime_error("probe setter"); }
     void method(const Value&) const { throw std::runtime_error("probe method"); }
@@ -48,6 +49,7 @@ EMSCRIPTEN_BINDINGS(physics_boundary_test_probes) {
     value_object<Stats>("BoundaryTestStats").field("heap", &Stats::heap)
         .field("uncaught", &Stats::uncaught).field("values", &Stats::values).field("objects", &Stats::objects);
     class_<Probe>("BoundaryTestProbe").constructor<const Value&>()
+        .constructor<const Probe&, const Value&>()
         .property("value", &Probe::get, &Probe::set)
         .class_property("staticValue", &Probe::staticValue)
         .function("method", select_overload<void(const Value&) const>(&Probe::method))

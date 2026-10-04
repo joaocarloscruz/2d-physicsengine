@@ -248,6 +248,7 @@ const createModule = require('./physics_engine.js');
         for(let i=0;i<owners.length;++i) {assert.deepEqual(snapshot(owners[i]),states[i]);owners[i].delete();}
         console.log(`PASS: scalar boundary stress; 1000 batches/21000 rejection checks, stack=${scalarStack}, live heap=${scalarBefore.heap}, uncaught=${scalarBefore.uncaught}; unchanged scalar/advector/clock/diagnostics`);
     }
+    require("./handle-lifetime-tests.cjs").stress(physics);
     require("./elastic-wave-tests.cjs").stress(physics, probe);
     require("./electrostatic-tests.cjs").stress(physics, probe);
     probe.delete();

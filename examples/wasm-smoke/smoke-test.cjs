@@ -1341,6 +1341,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
+    require("./handle-lifetime-tests.cjs").smoke(physics);
     console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves and static electrostatics");
 }
 

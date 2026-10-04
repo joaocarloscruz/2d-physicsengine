@@ -6,6 +6,55 @@ throw new Error('PhysicsEngine Embind boundary requires synchronous wasm32 JS ex
 #endif
 
 addToLibrary({
+  $physicsClassHandleMethods__deps: ['$ClassHandle'],
+  $physicsClassHandleMethods__postset: `
+    physicsClassHandleMethods.clone = ClassHandle.prototype['clone'];
+    physicsClassHandleMethods.delete = ClassHandle.prototype['delete'];
+  `,
+  $physicsClassHandleMethods: {},
+
+  // The SDK's shared-pointer subtype conversion calls public clone/delete
+  // methods. Capture the genuine operations so that this pointer-only phase
+  // cannot reenter user JS through a shadowed lifetime method.
+  $genericPointerToWireType__deps: ['$throwBindingError', '$upcastPointer',
+    '$embindRepr', '$Emval', '$physicsClassHandleMethods'],
+  $genericPointerToWireType: function(destructors, handle) {
+    let ptr;
+    if (handle === null) {
+      if (this.isReference) throwBindingError(`null is not a valid ${this.name}`);
+      if (!this.isSmartPointer) return 0;
+      ptr = this.rawConstructor();
+      if (destructors !== null) destructors.push(this.rawDestructor, ptr);
+      return ptr;
+    }
+    if (!handle || !handle.$$)
+      throwBindingError(`Cannot pass "${embindRepr(handle)}" as a ${this.name}`);
+    if (!handle.$$.ptr)
+      throwBindingError(`Cannot pass deleted object as a pointer of type ${this.name}`);
+    if (!this.isConst && handle.$$.ptrType.isConst)
+      throwBindingError(`Cannot convert argument of type ${(handle.$$.smartPtrType ? handle.$$.smartPtrType.name : handle.$$.ptrType.name)} to parameter type ${this.name}`);
+    ptr = upcastPointer(handle.$$.ptr, handle.$$.ptrType.registeredClass, this.registeredClass);
+    if (!this.isSmartPointer) return ptr;
+    if (undefined === handle.$$.smartPtr)
+      throwBindingError('Passing raw pointer to smart pointer is illegal');
+    switch (this.sharingPolicy) {
+      case 0: // NONE
+        if (handle.$$.smartPtrType !== this)
+          throwBindingError(`Cannot convert argument of type ${(handle.$$.smartPtrType ? handle.$$.smartPtrType.name : handle.$$.ptrType.name)} to parameter type ${this.name}`);
+        return handle.$$.smartPtr;
+      case 1: // INTRUSIVE
+        return handle.$$.smartPtr;
+      case 2: // BY_EMVAL
+        if (handle.$$.smartPtrType === this) return handle.$$.smartPtr;
+        const clone = physicsClassHandleMethods.clone.call(handle);
+        ptr = this.rawShare(ptr, Emval.toHandle(() => physicsClassHandleMethods.delete.call(clone)));
+        if (destructors !== null) destructors.push(this.rawDestructor, ptr);
+        return ptr;
+      default:
+        throwBindingError('Unsupported sharing policy');
+    }
+  },
+
   $physicsSizingGetters: {},
   $physicsPrepareArguments__deps: ['$physicsSizingGetters'],
   $physicsPrepareArguments: function(name, self, args) {
@@ -124,10 +173,20 @@ addToLibrary({
         // a destructor stack, including those normally using the fast path.
         const destructors = [];
         try {
-          const wired = [cppTargetFunc];
-          if (method) wired.push(argTypes[1].toWireType(destructors, this));
+          const offset = method ? 2 : 1;
+          const wired = new Array(count + offset);
+          wired[0] = cppTargetFunc;
+          // Value getters and numeric coercions can delete this or a handle
+          // passed in an earlier argument. Finish these conversions before
+          // obtaining any borrowed native pointer. registeredClass identifies
+          // both raw/reference and smart-pointer converters in the pinned SDK.
           for (let i = 0; i < count; ++i)
-            wired.push(argTypes[i + 2].toWireType(destructors, args[i]));
+            if (!argTypes[i + 2].registeredClass)
+              wired[i + offset] = argTypes[i + 2].toWireType(destructors, args[i]);
+          for (let i = 0; i < count; ++i)
+            if (argTypes[i + 2].registeredClass)
+              wired[i + offset] = argTypes[i + 2].toWireType(destructors, args[i]);
+          if (method) wired[1] = argTypes[1].toWireType(destructors, this);
           const result = cppInvokerFunc(...wired);
           return argTypes[0].isVoid ? undefined : argTypes[0].fromWireType(result);
         } finally {
@@ -217,8 +276,9 @@ addToLibrary({
           descriptor.set = function(value) { return physicsEmbindCall(() => {
             const destructors = [];
             try {
+              const converted = fieldTypes[1].toWireType(destructors, value);
               const ptr = validateThis(this, type, name + ' setter');
-              setter(setterContext, ptr, fieldTypes[1].toWireType(destructors, value));
+              setter(setterContext, ptr, converted);
             } finally { runDestructors(destructors); }
           }); };
         } else descriptor.set = () => throwBindingError(name + ' is a read-only property');
