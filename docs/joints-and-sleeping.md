@@ -106,3 +106,121 @@ does not continuously wake resting bodies. If application code changes a force
 generator in place or directly edits legacy state fields, call `Wake()` explicitly.
 
 Native [prismatic joints](prismatic-joints.md) lock transverse motion and relative orientation while allowing translation along an axis fixed to body A.
+
+## Reduced revolute velocity targets
+
+Coupled revolute motors and stops eliminate the angular row **before** forming
+the point-velocity target. Previously, constructing two full anchor velocities
+and then subtracting the shared angular term could erase a small center velocity.
+For example, a fixed radius-one support and a mass-one radius-one body at the
+origin, both local anchors (1e20,0), incident center velocity (0,1), angular
+velocity 1 and equal zero-angle stops left vy=1, omega=0 in one zero-duration
+iteration. The simultaneous constraints require both zero. The reduced target
+now preserves the center component; the same analytical test also covers anchors
+through 1e30, rotated shared levers, common world translation, and mass scales
+1e-30 through 1e30.
+
+Let J rotate vectors by +90 degrees, ra/rb be the world-oriented local levers,
+dv=vB-vA, d=ra-rb, m=invMassA+invMassB, ia/ib the inverse inertias, H=ia+ib,
+and t the desired relative angular speed (motor target or stop bias). Define
+
+```
+shared = (ib*omegaA + ia*omegaB)/H
+rbar   = rb + (ia/H)*d
+weight = ia*ib/H.
+```
+
+The angular-eliminated point target and matrix are
+
+```
+reducedRhs = -dv + J*d*shared - J*rbar*t
+S = m*I + weight*(J*d)*(J*d)^T
+det(S) = m*(m + weight*|d|²).
+```
+
+The common anchor rotation has disappeared from the zero-speed target. Applying
+the expanded adjugate keeps the shared term separate: d dot J*d is identically
+zero and must not be recovered by cancellation of large floating-point products.
+With c=ra cross rb and base=-dv, the linear impulse p is evaluated as
+
+```
+p = [m*base + weight*d*(d dot base) + m*J*d*shared
+     - m*J*rbar*t + weight*d*c*t] / det(S).
+```
+
+Here d cross rbar equals c. The angular impulse increment is
+q=(t-(omegaB-omegaA))/H - rbar cross p. Final angular states are recovered
+directly from the eliminated row:
+
+```
+omegaA_final = shared - (ia/H)*t - weight*(d cross p)
+omegaB_final = shared + (ib/H)*t - weight*(d cross p).
+```
+
+They are staged directly rather than adding a nearly -omega correction back to
+omega. Static endpoint state remains unchanged. Neither endpoint nor the
+accumulated motor/stop impulse is published before all proposed body components
+are representable.
+
+### Capped angular impulses
+
+The candidate angular impulse is still accumulated and clamped to the existing
+motor/one-sided-stop bounds. For an accepted fixed increment q, the point rows
+must be recomputed for **that** q; substituting the unconstrained angular target
+would violate the cap. The capped path uses center velocities directly, with
+
+```
+D = m*(m + ia*|ra|² + ib*|rb|²) + ia*ib*c²
+Q = ib*omegaA + ia*omegaB
+N_velocity = -m*dv - ia*ra*(ra dot dv) - ib*rb*(rb dot dv)
+N_rotation = m*J*rb*(omegaA-omegaB-H*q) + m*J*d*(omegaA-ia*q)
+             + c*[rb*Q + d*(ia*omegaB+ia*ib*q)]
+p = (N_velocity+N_rotation)/D.
+```
+
+Expanded final angular numerators also keep the center contribution separate:
+
+```
+omegaA_final = [m²*omegaA
+  + m*(|rb|²*Q + ia*(rb dot d)*omegaB + ia*(ra cross dv)
+       - ia*q*(m-ib*(rb dot d))) + ia*ib*c*(rb dot dv)] / D
+omegaB_final = [m²*omegaB
+  + m*(|ra|²*Q - ib*(ra dot d)*omegaA - ib*(rb cross dv)
+       + ib*q*(m+ia*(ra dot d))) + ia*ib*c*(ra dot dv)] / D.
+```
+
+These expressions follow by substituting the point solution into the angular
+updates before evaluating them. They retain the small surviving spin in a
+torque-capped drive or inward stop release. For fixed A, r=(R,0), mass-one B,
+inverse inertia ib, incident vy=1/omega=1 and accepted q, the independent result
+is omega_final=(1-ib*R+ib*q)/(1+ib*R²) and
+vy_final=(ib*R²-R-ib*R*q)/(1+ib*R²). At R=1e20, a zero accepted q leaves
+vy approximately 1 and omega approximately -1e-20, satisfying the point
+constraint. An upper stop allows this inward release even though incident omega
+was positive: the linear anchor coupling determines the accepted stop impulse.
+
+An additional finite offcenter unequal-mass regression uses the independent
+rational matrix
+
+```
+[9/8, -1/4, -3/4; -1/4, 9/4, 1/2; -3/4, 1/2, 3/2] * impulse
+    = [9/2, -1, 15/4].
+```
+
+Its exact uncapped solution is (17/2,-27/25,711/100); fixing angular impulse
+to 1/4 gives point impulse (657/158,-3/79). Tests compare both endpoint states,
+motor accounting, momentum, angular momentum and energy with these external
+solutions. A common-anchor unequal-mass lock also has the independent energy
+target 16.5, down from 48.5. Every absolute-margin assertion disables Catch's
+relative epsilon; relative motor-impulse checks specify their tolerance.
+
+This arithmetic change is limited to coupled **velocity** solves. Free hinge
+point constraints, distance joints and position solves retain their existing
+paths. Their original full point-speed/update arithmetic can still lose a small
+component when enormous rotations cancel; the inactive-hinge controls cover
+the representable zero-incident-spin case, not arbitrary common-rotation
+precision. No physical mass or lever floor is introduced. Float pose/velocity
+storage, offsets already lost in the inputs, unresolved differences between
+large lever products, rotational linearization and previous World operations
+remain limitations. Failure preserves the attempted correction and its
+unaccepted drive accounting, not the entire preceding World step.
