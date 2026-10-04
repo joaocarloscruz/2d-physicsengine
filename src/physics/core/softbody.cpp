@@ -14,7 +14,7 @@ struct Vec {
     Vec operator*(double s) const { return {x * s, y * s}; }
     double dot(Vec v) const { return x * v.x + y * v.y; }
 };
-struct State { Vec position, velocity; double inverseMass; };
+struct State { Vec position, velocity; double inverseMass; Vec force; };
 bool finite(const Vector2& v) { return std::isfinite(v.x) && std::isfinite(v.y); }
 bool finite(Vec v) { return std::isfinite(v.x) && std::isfinite(v.y); }
 void validateConfig(const SoftBodyConfig& c) {
@@ -46,7 +46,9 @@ double lengthAndDirection(const State& a, const State& b,
 }
 std::vector<Vec> accelerations(const std::vector<State>& state,
                                const std::vector<SoftBodySpring>& springs, Vec uniform) {
-    std::vector<Vec> result(state.size(), uniform);
+    std::vector<Vec> result(state.size());
+    for (std::size_t i = 0; i < state.size(); ++i)
+        result[i] = state[i].inverseMass == 0.0 ? Vec{0, 0} : uniform + state[i].force * state[i].inverseMass;
     for (const auto& s : springs) {
         if (s.stiffness == 0.0) continue;
         Vec n;
@@ -87,6 +89,7 @@ void dampSpring(std::vector<State>& state, const SoftBodySpring& s, double h) {
     auto& a = state[s.first];
     auto& b = state[s.second];
     const double w = a.inverseMass + b.inverseMass;
+    if (!std::isfinite(w)) throw std::runtime_error("Soft-body damping inverse mass overflow");
     if (w == 0.0) return;
     Vec n;
     lengthAndDirection(a, b, s, n);
@@ -117,7 +120,7 @@ std::size_t SoftBody::addParticle(const Vector2& position, const Vector2& veloci
         !std::isfinite(1.0 / mass) || (fixed && (velocity.x != 0.0f || velocity.y != 0.0f)))
         throw std::invalid_argument("Invalid soft-body particle");
     if (particles_.size() >= config_.maxParticles) throw std::length_error("Soft-body particle budget exceeded");
-    particles_.push_back({position, velocity, mass, fixed});
+    particles_.push_back({position, velocity, mass, fixed, {}});
     return particles_.size() - 1;
 }
 
@@ -159,6 +162,23 @@ void SoftBody::applyImpulse(std::size_t index, const Vector2& impulse) {
     if (!particle.fixed) particle.velocity = checkedVector(
         Vec{particle.velocity.x, particle.velocity.y} + Vec{impulse.x, impulse.y} * (1.0 / particle.mass));
 }
+void SoftBody::applyForce(std::size_t index, const Vector2& force) {
+    applyForce(index, double(force.x), double(force.y));
+}
+void SoftBody::applyForce(std::size_t index, double forceX, double forceY) {
+    auto& force = particles_.at(index).force;
+    if (!std::isfinite(forceX) || !std::isfinite(forceY))
+        throw std::invalid_argument("Invalid soft-body force");
+    const double x = force.x + forceX;
+    const double y = force.y + forceY;
+    if (!std::isfinite(x) || !std::isfinite(y))
+        throw std::runtime_error("Soft-body accumulated force overflow");
+    force = {x, y};
+}
+void SoftBody::clearForces() noexcept {
+    for (auto& particle : particles_) particle.force = {};
+}
+void SoftBody::clearForces(std::size_t index) { particles_.at(index).force = {}; }
 void SoftBody::setUniformAcceleration(const Vector2& acceleration) {
     if (!finite(acceleration)) throw std::invalid_argument("Invalid soft-body acceleration");
     acceleration_ = acceleration;
@@ -173,12 +193,15 @@ void SoftBody::setConfig(const SoftBodyConfig& config) {
 void SoftBody::step(double dt) {
     if (!std::isfinite(dt) || dt < 0.0) throw std::invalid_argument("Invalid soft-body timestep");
     if (dt == 0.0 || particles_.empty()) { lastSubsteps_ = 0; return; }
-    if (dt / config_.maxSubstep > static_cast<double>(config_.maxSubsteps))
+    const double requested = dt / config_.maxSubstep;
+    const double requestedRoundoff = 64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, requested);
+    if (!std::isfinite(requested) || requested > static_cast<double>(config_.maxSubsteps) + requestedRoundoff)
         throw std::runtime_error("Soft-body substep budget exceeded");
     std::vector<State> state;
     state.reserve(particles_.size());
     for (const auto& p : particles_)
-        state.push_back({{p.position.x, p.position.y}, {p.velocity.x, p.velocity.y}, p.fixed ? 0.0 : 1.0 / p.mass});
+        state.push_back({{p.position.x, p.position.y}, {p.velocity.x, p.velocity.y},
+                         p.fixed ? 0.0 : 1.0 / p.mass, {p.force.x, p.force.y}});
     double remaining = dt;
     std::size_t substeps = 0;
     while (remaining > 0.0) {
@@ -228,6 +251,7 @@ void SoftBody::step(double dt) {
     for (std::size_t i = 0; i < state.size(); ++i) {
         result[i].position = checkedVector(state[i].position);
         result[i].velocity = checkedVector(state[i].velocity);
+        result[i].force = {};
     }
     particles_.swap(result);
     lastSubsteps_ = substeps;

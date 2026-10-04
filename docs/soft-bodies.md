@@ -3,7 +3,7 @@
 `SoftBody` is a standalone, two-dimensional mass-spring simulator exposed by
 `physics/physics.h`. It runs independently of `World`, rigid bodies and fluid
 solvers. It supports ropes and planar cloth-like spring networks, finite physical
-masses, fixed anchors, uniform acceleration and per-particle impulses. It does
+masses, fixed anchors, uniform acceleration, per-particle forces and impulses. It does
 not yet implement self-collision, rigid/fluid contact, volume or area preservation,
 plasticity, tearing, material calibration or WebAssembly bindings. A spring
 network can fold, intersect and change enclosed area.
@@ -36,6 +36,17 @@ state and can be simulated independently. `setParticleState` can move a fixed
 anchor, but fixed particles must have zero velocity. `setFixed(index, true)`
 zeros velocity. Impulses on fixed particles are ignored after validating their
 inputs. Unpinning preserves zero velocity until further forces or impulses act.
+
+`applyForce(index, Vector2)` or `applyForce(index, forceX, forceY)` accumulates
+finite external force components in double precision. `getAccumulatedForce`
+and each const particle's `force` expose this pending load. The load contributes
+`force/mass` throughout every substep of the next positive-duration `step`, then
+clears on success. It is not divided by the number of substeps. A failed step
+retains all loads, and a zero-duration step retains them because no integration
+occurs. `clearForces()` explicitly clears all loads; `clearForces(index)` clears
+one. State and pin setters retain pending loads. Fixed nodes accept loads but do
+not integrate them; a successful positive-duration step consumes their loads
+along with those of dynamic nodes. Uniform acceleration persists across steps.
 
 For planar cloth, append particles in a regular grid and connect horizontal and
 vertical neighbours. Connect both diagonals of each cell for shear resistance;
@@ -103,7 +114,7 @@ search or collision pipeline.
 
 ## Validation, diagnostics and failure behavior
 
-Positions, velocities, accelerations and impulses must be finite. Mass must be
+Positions, velocities, accelerations, forces and impulses must be finite. Mass must be
 positive and have a finite reciprocal. Rest length, stiffness and damping must be
 finite and nonnegative. Self-links, missing endpoint indexes, and duplicate
 undirected links are rejected. Positive-rest active springs cannot be added with
@@ -117,7 +128,9 @@ Invalid arguments throw `std::invalid_argument`, invalid indexes throw
 `std::length_error`. Numerical overflow, positive-rest collapse, motion retry or
 substep budget exhaustion throw `std::runtime_error`. An unsuccessful `step`
 leaves every particle and `lastSubsteps` unchanged. Impulse overflow also leaves
-the particle unchanged. A successful zero timestep or empty-body step reports
+the particle unchanged. Accumulated force overflow rejects the entire new force
+addition; damping rejects an overflowing sum of endpoint inverse masses rather
+than silently skipping dissipation. A successful zero timestep or empty-body step reports
 zero substeps. Extreme finite coefficients or masses can still overflow derived
 calculations and be rejected.
 

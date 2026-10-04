@@ -8,11 +8,17 @@
 
 namespace PhysicsEngine {
 
+struct SoftBodyForce {
+    double x = 0.0;
+    double y = 0.0;
+};
+
 struct SoftBodyParticle {
     Vector2 position;
     Vector2 velocity;
     double mass = 1.0;
     bool fixed = false;
+    SoftBodyForce force; // Pending external force, constant during the next step.
 };
 
 struct SoftBodySpring {
@@ -55,6 +61,11 @@ public:
                           const Vector2& velocity = {});
     void setFixed(std::size_t index, bool fixed);
     void applyImpulse(std::size_t index, const Vector2& impulse);
+    void applyForce(std::size_t index, const Vector2& force);
+    void applyForce(std::size_t index, double forceX, double forceY);
+    void clearForces() noexcept;
+    void clearForces(std::size_t index);
+    const SoftBodyForce& getAccumulatedForce(std::size_t index) const { return particles_.at(index).force; }
     void setUniformAcceleration(const Vector2& acceleration);
     void setConfig(const SoftBodyConfig& config);
     const SoftBodyConfig& getConfig() const noexcept { return config_; }
@@ -62,7 +73,8 @@ public:
     const std::vector<SoftBodySpring>& getSprings() const noexcept { return springs_; }
     const Vector2& getUniformAcceleration() const noexcept { return acceleration_; }
     SoftBodyDiagnostics getDiagnostics() const;
-    // Finite dt >= 0. Budget, collapse and overflow failures leave state unchanged.
+    // Finite dt >= 0. Failures retain state and forces. Successful positive dt
+    // consumes forces; zero dt retains them without integrating.
     void step(double dt);
 
 private:

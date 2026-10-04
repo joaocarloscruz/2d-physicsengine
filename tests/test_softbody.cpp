@@ -159,6 +159,94 @@ TEST_CASE("SoftBody stiffness and compressed geometry reduce the timestep", "[So
     REQUIRE(std::isfinite(energy(body)));
 }
 
+TEST_CASE("SoftBody accumulated forces are constant across substeps and consumed on success", "[SoftBody]") {
+    SoftBodyConfig config;
+    config.maxSubstep = 0.01;
+    SoftBody body(config);
+    body.addParticle({}, {}, 2);
+    body.addParticle({1, 0}, {}, 3, true);
+    body.applyForce(0, {2, 0});
+    body.applyForce(0, 2.0, -8.0);
+    body.applyForce(1, 1e308, 1e308);
+    REQUIRE(body.getAccumulatedForce(0).x == 4);
+    body.step(0); // Does not consume a pending load.
+    REQUIRE(body.getAccumulatedForce(0).y == -8);
+    body.step(0.1);
+    REQUIRE(body.getDiagnostics().lastSubsteps == 10);
+    REQUIRE(body.getParticles()[0].position.x == Catch::Approx(0.01).margin(1e-8));
+    REQUIRE(body.getParticles()[0].position.y == Catch::Approx(-0.02).margin(1e-8));
+    REQUIRE(body.getParticles()[0].velocity.x == Catch::Approx(0.2).margin(1e-8));
+    REQUIRE(body.getParticles()[0].velocity.y == Catch::Approx(-0.4).margin(2e-8));
+    REQUIRE(body.getParticles()[1].position == Vector2(1, 0));
+    REQUIRE(body.getAccumulatedForce(0).x == 0);
+    REQUIRE(body.getAccumulatedForce(1).x == 0);
+    body.step(0.1);
+    REQUIRE(body.getParticles()[0].velocity.x == Catch::Approx(0.2).margin(1e-8));
+    body.applyForce(0, 3.0, 4.0);
+    body.applyForce(1, {5, 6});
+    body.clearForces(0);
+    REQUIRE(body.getAccumulatedForce(0).x == 0);
+    REQUIRE(body.getAccumulatedForce(1).x == 5);
+    body.clearForces();
+    REQUIRE(body.getAccumulatedForce(1).y == 0);
+}
+
+TEST_CASE("SoftBody force validation and failures retain pending loads", "[SoftBody]") {
+    SoftBodyConfig config;
+    config.maxSubsteps = 1;
+    SoftBody body(config);
+    body.addParticle({});
+    body.applyForce(0, {3, 4});
+    REQUIRE_THROWS_AS(body.step(0.02), std::runtime_error);
+    REQUIRE(body.getParticles()[0].position == Vector2());
+    REQUIRE(body.getAccumulatedForce(0).x == 3);
+    REQUIRE(body.getAccumulatedForce(0).y == 4);
+    REQUIRE_THROWS_AS(body.applyForce(0, std::numeric_limits<double>::infinity(), 0), std::invalid_argument);
+    REQUIRE_THROWS_AS(body.applyForce(0, {std::numeric_limits<float>::quiet_NaN(), 0}), std::invalid_argument);
+    REQUIRE_THROWS_AS(body.applyForce(1, {}), std::out_of_range);
+    REQUIRE_THROWS_AS(body.clearForces(1), std::out_of_range);
+    REQUIRE_THROWS_AS(body.getAccumulatedForce(1), std::out_of_range);
+    body.applyForce(0, 1e308, 0);
+    REQUIRE_THROWS_AS(body.applyForce(0, 1e308, 1), std::runtime_error);
+    REQUIRE(body.getAccumulatedForce(0).x == 1e308);
+    REQUIRE(body.getAccumulatedForce(0).y == 4); // No partial accumulation.
+    REQUIRE_THROWS_AS(body.step(0.01), std::runtime_error);
+    REQUIRE(body.getParticles()[0].position == Vector2());
+    REQUIRE(body.getAccumulatedForce(0).x == 1e308);
+    body.clearForces();
+    body.applyForce(0, {std::numeric_limits<float>::max(), 0});
+    body.applyForce(0, {std::numeric_limits<float>::max(), 0});
+    REQUIRE(std::isfinite(body.getAccumulatedForce(0).x));
+    REQUIRE(body.getAccumulatedForce(0).x > std::numeric_limits<float>::max());
+}
+
+TEST_CASE("SoftBody damping rejects overflowing effective inverse mass transactionally", "[SoftBody]") {
+    SoftBody body;
+    body.addParticle({0, 0}, {-1, 0}, 1e-308);
+    body.addParticle({1, 0}, {1, 0}, 1e-308);
+    body.addSpring(0, 1, 0, 0, 1);
+    body.applyForce(0, {0, 1});
+    REQUIRE_THROWS_AS(body.step(0.001), std::runtime_error);
+    REQUIRE(body.getParticles()[0].position == Vector2(0, 0));
+    REQUIRE(body.getParticles()[1].position == Vector2(1, 0));
+    REQUIRE(body.getParticles()[0].velocity == Vector2(-1, 0));
+    REQUIRE(body.getParticles()[1].velocity == Vector2(1, 0));
+    REQUIRE(body.getAccumulatedForce(0).y == 1);
+    REQUIRE(body.getDiagnostics().lastSubsteps == 0);
+}
+
+TEST_CASE("SoftBody accepts an exactly budgeted decimal timestep", "[SoftBody]") {
+    SoftBodyConfig config;
+    config.maxSubstep = 0.01;
+    config.maxSubsteps = 7;
+    SoftBody body(config);
+    body.addParticle({}, {1, 0});
+    body.step(0.07);
+    REQUIRE(body.getDiagnostics().lastSubsteps == 7);
+    REQUIRE(body.getParticles()[0].position.x == Catch::Approx(0.07).margin(1e-8));
+    REQUIRE_THROWS_AS(body.step(0.07001), std::runtime_error);
+}
+
 TEST_CASE("SoftBody positive-rest collapse and exhausted budgets roll back", "[SoftBody]") {
     SoftBodyConfig c;
     c.maxSubstep = 0.01;
