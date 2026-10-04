@@ -1,5 +1,8 @@
 # Fluid particles and neighborhoods
 
+Grid input ranges, failed rebuild behavior, and traversal budgets are documented
+in [Grid and sampling numerical limits](grid-and-sampling-limits.md).
+
 Fluid state is separate from the generic `Particle` type. `FluidParticle`
 stores the quantities required by continuum solvers: density, pressure,
 smoothing length, rest density, viscosity, and volume, in addition to position,

@@ -1,5 +1,8 @@
 # Particle systems
 
+Grid input ranges and traversal budgets are documented in
+[Grid and sampling numerical limits](grid-and-sampling-limits.md).
+
 `ParticleSystem` provides a contiguous, lightweight simulation path for large
 collections that do not need rigid-body shapes, orientation, inertia, or
 collision materials.

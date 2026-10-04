@@ -1,5 +1,7 @@
 #include "physics/core/fluids/fluid_particle_spatial_grid.h"
 
+#include "../checked_grid.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -27,19 +29,20 @@ FluidParticleSpatialGrid::CellKey FluidParticleSpatialGrid::getCell(
     const Vector2& position
 ) const {
     return {
-        static_cast<int>(std::floor(position.x / cellSize)),
-        static_cast<int>(std::floor(position.y / cellSize)),
+        CheckedGrid::Coordinate(position.x, cellSize),
+        CheckedGrid::Coordinate(position.y, cellSize),
     };
 }
 
 void FluidParticleSpatialGrid::rebuild(
     const std::vector<FluidParticle>& particles
 ) {
-    cells.clear();
-    cells.reserve(particles.size());
+    decltype(cells) rebuiltCells;
+    rebuiltCells.reserve(particles.size());
     for (std::size_t index = 0; index < particles.size(); ++index) {
-        cells[getCell(particles[index].position)].push_back(index);
+        rebuiltCells[getCell(particles[index].position)].push_back(index);
     }
+    cells.swap(rebuiltCells);
     lastStatistics = FluidNeighborStatistics{};
     lastStatistics.particleCount = particles.size();
     lastStatistics.occupiedCellCount = cells.size();
@@ -61,27 +64,29 @@ FluidParticleSpatialGrid::findNeighborPairs(
         );
     }
 
-    lastStatistics.candidatePairCount = 0;
-    lastStatistics.neighborPairCount = 0;
-    lastStatistics.maximumNeighborCount = 0;
-    const int cellRange = static_cast<int>(
-        std::ceil(interactionRadius / cellSize)
-    );
-    const float radiusSquared = interactionRadius * interactionRadius;
+    auto statistics = lastStatistics;
+    statistics.candidatePairCount = 0;
+    statistics.neighborPairCount = 0;
+    statistics.maximumNeighborCount = 0;
+    const int cellRange = CheckedGrid::Extent(interactionRadius, cellSize);
+    std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
+    std::vector<CheckedGrid::Window> windows;
+    windows.reserve(particles.size());
+    for (const auto& particle : particles) {
+        const auto window = CheckedGrid::Around(getCell(particle.position), cellRange);
+        CheckedGrid::Charge(window, remainingVisits);
+        windows.push_back(window);
+    }
     std::vector<ParticlePair> pairs;
     pairs.reserve(pairCapacityHint);
     std::vector<std::size_t> neighborCounts(particles.size(), 0);
 
     for (std::size_t first = 0; first < particles.size(); ++first) {
         const std::size_t firstPair = pairs.size();
-        const CellKey origin = getCell(particles[first].position);
-        for (int x = origin.first - cellRange;
-             x <= origin.first + cellRange;
-             ++x) {
-            for (int y = origin.second - cellRange;
-                 y <= origin.second + cellRange;
-                 ++y) {
-                const auto cell = cells.find({x, y});
+        const auto& window = windows[first];
+        for (std::int64_t x = window.minX; x <= window.maxX; ++x) {
+            for (std::int64_t y = window.minY; y <= window.maxY; ++y) {
+                const auto cell = cells.find({static_cast<int>(x), static_cast<int>(y)});
                 if (cell == cells.end()) {
                     continue;
                 }
@@ -89,10 +94,11 @@ FluidParticleSpatialGrid::findNeighborPairs(
                     if (second <= first || second >= particles.size()) {
                         continue;
                     }
-                    ++lastStatistics.candidatePairCount;
-                    const Vector2 offset = particles[second].position
-                        - particles[first].position;
-                    if (offset.magnitudeSquared() <= radiusSquared) {
+                    ++statistics.candidatePairCount;
+                    if (CheckedGrid::WithinRadius(
+                        particles[first].position.x, particles[first].position.y,
+                        particles[second].position.x, particles[second].position.y,
+                        interactionRadius)) {
                         pairs.emplace_back(first, second);
                         ++neighborCounts[first];
                         ++neighborCounts[second];
@@ -104,13 +110,14 @@ FluidParticleSpatialGrid::findNeighborPairs(
     }
 
     pairCapacityHint = std::max(pairCapacityHint, pairs.size());
-    lastStatistics.neighborPairCount = pairs.size();
+    statistics.neighborPairCount = pairs.size();
     if (!neighborCounts.empty()) {
-        lastStatistics.maximumNeighborCount = *std::max_element(
+        statistics.maximumNeighborCount = *std::max_element(
             neighborCounts.begin(),
             neighborCounts.end()
         );
     }
+    lastStatistics = statistics;
     return pairs;
 }
 

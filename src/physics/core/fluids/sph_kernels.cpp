@@ -1,5 +1,7 @@
 #include "physics/core/fluids/sph_kernels.h"
 
+#include "../checked_grid.h"
+
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -43,12 +45,13 @@ float SphKernels2D::SquareLatticeMassScale(
             "SPH lattice spacing and smoothing length must be positive and finite."
         );
     }
-    const int extent = static_cast<int>(std::ceil(
-        smoothingLength / spacing
-    ));
+    const int extent = CheckedGrid::Extent(smoothingLength, spacing);
+    std::uint64_t remainingSamples = CheckedGrid::MaximumSamples;
+    const std::int64_t limit = extent;
+    CheckedGrid::Charge(CheckedGrid::Window{-limit, limit, -limit, limit}, remainingSamples);
     double discreteDensityRatio = 0.0;
-    for (int y = -extent; y <= extent; ++y) {
-        for (int x = -extent; x <= extent; ++x) {
+    for (std::int64_t y = -static_cast<std::int64_t>(extent); y <= extent; ++y) {
+        for (std::int64_t x = -static_cast<std::int64_t>(extent); x <= extent; ++x) {
             discreteDensityRatio += static_cast<double>(spacing) * spacing
                 * DensityWeight(
                     Vector2(x * spacing, y * spacing),

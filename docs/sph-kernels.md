@@ -1,5 +1,8 @@
 # Validated 2D SPH kernels
 
+Lattice calibration input ranges and work budgets are documented in
+[Grid and sampling numerical limits](grid-and-sampling-limits.md).
+
 `SphKernels2D` provides compactly supported density, pressure, and viscosity
 kernels for the reference fluid solver. The specialized poly6, spiky, and
 viscosity forms follow the approach introduced for interactive SPH fluids by

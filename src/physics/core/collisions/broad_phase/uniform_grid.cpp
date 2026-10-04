@@ -1,5 +1,6 @@
 #include "physics/core/collisions/broad_phase/uniform_grid.h"
 #include "physics/core/types.h"
+#include "../../checked_grid.h"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -8,9 +9,7 @@
 namespace PhysicsEngine {
 
     UniformGrid::UniformGrid(float cellSize) : cellSize(cellSize) {
-        if (this->cellSize <= 0.0f) {
-            this->cellSize = 100.0f; // fallback
-        }
+        CheckedGrid::PositiveFinite(cellSize);
     }
 
     float UniformGrid::getCellSize() const {
@@ -18,36 +17,39 @@ namespace PhysicsEngine {
     }
 
     void UniformGrid::setCellSize(float size) {
-        if (size > 0.0f) {
-            cellSize = size;
-        }
+        CheckedGrid::PositiveFinite(size);
+        cellSize = size;
     }
 
     UniformGrid::CellKey UniformGrid::GetCellCoords(const Vector2& pos) const {
         return {
-            static_cast<int>(std::floor(pos.x / cellSize)),
-            static_cast<int>(std::floor(pos.y / cellSize))
+            CheckedGrid::Coordinate(pos.x, cellSize),
+            CheckedGrid::Coordinate(pos.y, cellSize)
         };
     }
 
     std::vector<CollisionPair> UniformGrid::FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) {
         std::vector<CollisionPair> potentialCollisions;
-        if (bodies.size() < 2) {
-            return potentialCollisions;
-        }
 
         GridMap grid;
+        std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
 
         // Populate grid
         for (const auto& body : bodies) {
+            if (!body || !body->shape) {
+                throw std::invalid_argument("Uniform grid requires valid rigid bodies.");
+            }
             AABB aabb = body->GetAABB();
             
             CellKey minCell = GetCellCoords(aabb.min);
             CellKey maxCell = GetCellCoords(aabb.max);
 
-            for (int x = minCell.first; x <= maxCell.first; ++x) {
-                for (int y = minCell.second; y <= maxCell.second; ++y) {
-                    grid[{x, y}].push_back(body);
+            CheckedGrid::Charge(CheckedGrid::Window{
+                minCell.first, maxCell.first, minCell.second, maxCell.second
+            }, remainingVisits);
+            for (std::int64_t x = minCell.first; x <= maxCell.first; ++x) {
+                for (std::int64_t y = minCell.second; y <= maxCell.second; ++y) {
+                    grid[{static_cast<int>(x), static_cast<int>(y)}].push_back(body);
                 }
             }
         }

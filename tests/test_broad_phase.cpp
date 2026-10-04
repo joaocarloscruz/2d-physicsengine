@@ -84,10 +84,10 @@ TEST_CASE("UniformGrid handles cell boundaries without duplicate pairs", "[Broad
 }
 
 TEST_CASE("UniformGrid validates configuration and ignores static pairs", "[BroadPhase][UniformGrid]") {
-    UniformGrid grid(0.0f);
-    REQUIRE(grid.getCellSize() == 100.0f);
+    REQUIRE_THROWS_AS(UniformGrid(0.0f), std::invalid_argument);
+    UniformGrid grid;
 
-    grid.setCellSize(-5.0f);
+    REQUIRE_THROWS_AS(grid.setCellSize(-5.0f), std::invalid_argument);
     REQUIRE(grid.getCellSize() == 100.0f);
 
     Circle shape(2.0f);

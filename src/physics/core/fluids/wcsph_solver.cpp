@@ -2,6 +2,8 @@
 
 #include "physics/core/fluids/sph_kernels.h"
 
+#include "../checked_grid.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -51,9 +53,24 @@ struct BoundaryCellHash {
 
 BoundaryCell GetBoundaryCell(const Vector2& position, float cellSize) {
     return {
-        static_cast<int>(std::floor(position.x / cellSize)),
-        static_cast<int>(std::floor(position.y / cellSize))
+        CheckedGrid::Coordinate(position.x, cellSize),
+        CheckedGrid::Coordinate(position.y, cellSize)
     };
+}
+
+void ValidateBoundaryParticle(const FluidBoundaryParticle& particle) {
+    if (!std::isfinite(particle.position.x)
+        || !std::isfinite(particle.position.y)
+        || !std::isfinite(particle.velocity.x)
+        || !std::isfinite(particle.velocity.y)
+        || !std::isfinite(particle.volume) || particle.volume <= 0.0f
+        || !std::isfinite(particle.acceleration.x)
+        || !std::isfinite(particle.acceleration.y)
+        || !std::isfinite(particle.pressureScale) || particle.pressureScale < 0.0f) {
+        throw std::invalid_argument(
+            "WCSPH boundary particles must contain valid finite state."
+        );
+    }
 }
 
 } // namespace
@@ -139,6 +156,30 @@ void WcsphSolver::prepareState(
         std::size_t boundary;
     };
     std::vector<FluidBoundaryPair> boundaryPairs;
+    // Validate coordinates and work before publishing a rebuilt neighbor grid or
+    // changing particle state. Boundary inputs are checked even for an empty fluid.
+    const float cellSize = grid.getCellSize();
+    float interactionRadius = 0.0f;
+    for (const auto& particle : particles) {
+        ValidateParticleState(particle);
+        GetBoundaryCell(particle.position, cellSize);
+        interactionRadius = std::max(interactionRadius, particle.smoothingLength);
+    }
+    if (boundaryParticles) {
+        for (const auto& particle : *boundaryParticles) {
+            ValidateBoundaryParticle(particle);
+            GetBoundaryCell(particle.position, cellSize);
+        }
+    }
+    if (!particles.empty()) {
+        const int extent = CheckedGrid::Extent(interactionRadius, cellSize);
+        std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
+        for (const auto& particle : particles) {
+            CheckedGrid::Charge(CheckedGrid::Around(
+                GetBoundaryCell(particle.position, cellSize), extent
+            ), remainingVisits);
+        }
+    }
     lastStatistics.boundaryParticleCount = boundaryParticles
         ? boundaryParticles->size()
         : 0;
@@ -153,14 +194,8 @@ void WcsphSolver::prepareState(
         return;
     }
 
-    float interactionRadius = 0.0f;
     for (FluidParticle& particle : particles) {
-        ValidateParticleState(particle);
         particle.inverseMass = 1.0f / particle.mass;
-        interactionRadius = std::max(
-            interactionRadius,
-            particle.smoothingLength
-        );
     }
     grid.rebuild(particles);
     const auto pairs = grid.findNeighborPairs(particles, interactionRadius);
@@ -174,7 +209,6 @@ void WcsphSolver::prepareState(
         }
     }
     if (boundaryParticles && !boundaryParticles->empty()) {
-        const float cellSize = grid.getCellSize();
         std::unordered_map<
             BoundaryCell,
             std::vector<std::size_t>,
@@ -183,38 +217,22 @@ void WcsphSolver::prepareState(
         boundaryCells.reserve(boundaryParticles->size());
         for (std::size_t index = 0; index < boundaryParticles->size(); ++index) {
             const FluidBoundaryParticle& boundaryParticle = (*boundaryParticles)[index];
-            if (!std::isfinite(boundaryParticle.position.x)
-                || !std::isfinite(boundaryParticle.position.y)
-                || !std::isfinite(boundaryParticle.velocity.x)
-                || !std::isfinite(boundaryParticle.velocity.y)
-                || !std::isfinite(boundaryParticle.volume)
-                || boundaryParticle.volume <= 0.0f
-                || !std::isfinite(boundaryParticle.acceleration.x)
-                || !std::isfinite(boundaryParticle.acceleration.y)
-                || !std::isfinite(boundaryParticle.pressureScale)
-                || boundaryParticle.pressureScale < 0.0f) {
-                throw std::invalid_argument(
-                    "WCSPH boundary particles must contain valid finite state."
-                );
-            }
             boundaryCells[GetBoundaryCell(boundaryParticle.position, cellSize)]
                 .push_back(index);
         }
+        std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
         for (std::size_t particleIndex = 0;
              particleIndex < particles.size();
              ++particleIndex) {
             FluidParticle& particle = particles[particleIndex];
-            const int cellRange = static_cast<int>(std::ceil(
-                particle.smoothingLength / cellSize
-            ));
-            const BoundaryCell origin = GetBoundaryCell(particle.position, cellSize);
-            for (int x = origin.first - cellRange;
-                 x <= origin.first + cellRange;
-                 ++x) {
-                for (int y = origin.second - cellRange;
-                     y <= origin.second + cellRange;
-                     ++y) {
-                    const auto cell = boundaryCells.find({x, y});
+            const int cellRange = CheckedGrid::Extent(particle.smoothingLength, cellSize);
+            const auto window = CheckedGrid::Around(
+                GetBoundaryCell(particle.position, cellSize), cellRange
+            );
+            CheckedGrid::Charge(window, remainingVisits);
+            for (std::int64_t x = window.minX; x <= window.maxX; ++x) {
+                for (std::int64_t y = window.minY; y <= window.maxY; ++y) {
+                    const auto cell = boundaryCells.find({static_cast<int>(x), static_cast<int>(y)});
                     if (cell == boundaryCells.end()) {
                         continue;
                     }

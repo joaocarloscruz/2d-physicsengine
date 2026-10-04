@@ -154,6 +154,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_engine.cpp
         ${TESTS_SRC_DIR}/test_collision.cpp
         ${TESTS_SRC_DIR}/test_broad_phase.cpp
+        ${TESTS_SRC_DIR}/test_grid_safety.cpp
         ${TESTS_SRC_DIR}/test_simulation.cpp
         ${TESTS_SRC_DIR}/test_collision_listener.cpp
         ${TESTS_SRC_DIR}/test_collision_events.cpp

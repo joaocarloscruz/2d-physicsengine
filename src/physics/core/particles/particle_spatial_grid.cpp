@@ -1,5 +1,7 @@
 #include "physics/core/particles/particle_spatial_grid.h"
 
+#include "../checked_grid.h"
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -21,16 +23,17 @@ std::size_t ParticleSpatialGrid::CellKeyHash::operator()(const CellKey& key) con
 
 ParticleSpatialGrid::CellKey ParticleSpatialGrid::getCell(const Vector2& position) const {
     return {
-        static_cast<int>(std::floor(position.x / cellSize)),
-        static_cast<int>(std::floor(position.y / cellSize)),
+        CheckedGrid::Coordinate(position.x, cellSize),
+        CheckedGrid::Coordinate(position.y, cellSize),
     };
 }
 
 void ParticleSpatialGrid::rebuild(const std::vector<Particle>& particles) {
-    cells.clear();
+    decltype(cells) rebuiltCells;
     for (std::size_t index = 0; index < particles.size(); ++index) {
-        cells[getCell(particles[index].position)].push_back(index);
+        rebuiltCells[getCell(particles[index].position)].push_back(index);
     }
+    cells.swap(rebuiltCells);
 }
 
 std::vector<ParticleSpatialGrid::ParticlePair> ParticleSpatialGrid::findPotentialPairs(
@@ -41,15 +44,22 @@ std::vector<ParticleSpatialGrid::ParticlePair> ParticleSpatialGrid::findPotentia
         throw std::invalid_argument("Particle interaction radius must be positive and finite.");
     }
 
-    const int cellRange = static_cast<int>(std::ceil(interactionRadius / cellSize));
-    const float radiusSquared = interactionRadius * interactionRadius;
+    const int cellRange = CheckedGrid::Extent(interactionRadius, cellSize);
+    std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
+    std::vector<CheckedGrid::Window> windows;
+    windows.reserve(particles.size());
+    for (const auto& particle : particles) {
+        const auto window = CheckedGrid::Around(getCell(particle.position), cellRange);
+        CheckedGrid::Charge(window, remainingVisits);
+        windows.push_back(window);
+    }
     std::set<ParticlePair> uniquePairs;
 
     for (std::size_t firstIndex = 0; firstIndex < particles.size(); ++firstIndex) {
-        const CellKey origin = getCell(particles[firstIndex].position);
-        for (int x = origin.first - cellRange; x <= origin.first + cellRange; ++x) {
-            for (int y = origin.second - cellRange; y <= origin.second + cellRange; ++y) {
-                const auto cell = cells.find({x, y});
+        const auto& window = windows[firstIndex];
+        for (std::int64_t x = window.minX; x <= window.maxX; ++x) {
+            for (std::int64_t y = window.minY; y <= window.maxY; ++y) {
+                const auto cell = cells.find({static_cast<int>(x), static_cast<int>(y)});
                 if (cell == cells.end()) {
                     continue;
                 }
@@ -59,9 +69,10 @@ std::vector<ParticleSpatialGrid::ParticlePair> ParticleSpatialGrid::findPotentia
                         continue;
                     }
 
-                    const Vector2 offset = particles[secondIndex].position
-                        - particles[firstIndex].position;
-                    if (offset.magnitudeSquared() <= radiusSquared) {
+                    if (CheckedGrid::WithinRadius(
+                        particles[firstIndex].position.x, particles[firstIndex].position.y,
+                        particles[secondIndex].position.x, particles[secondIndex].position.y,
+                        interactionRadius)) {
                         uniquePairs.emplace(firstIndex, secondIndex);
                     }
                 }

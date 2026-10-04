@@ -1,5 +1,8 @@
 # Static fluid containers
 
+Boundary sampling input ranges and work budgets are documented in
+[Grid and sampling numerical limits](grid-and-sampling-limits.md).
+
 The reference fluid boundary layer provides impermeable static circle and
 strictly convex polygon containers. It is a geometric non-penetration model:
 after each WCSPH substep, particle centers outside the permitted region are
