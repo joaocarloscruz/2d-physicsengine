@@ -4,9 +4,12 @@ Include `physics/physics.h` and link `PhysicsEngine::Engine`. Supported consumer
 types are `Engine`, `World`, `RigidBody`, shapes/materials, force generators,
 `SimulationConfig`, statistics, fixed-step runner, listeners/events, joints,
 particle systems, standalone `SoftBody` mass-spring networks, fluid
-solvers/containers/coupling, sweep queries, and export
+solvers/containers/coupling, point/ray/sweep queries, and export
 functions. Solver caches, constraint preparation, and broad/narrow-phase
 implementation headers are internal interfaces without compatibility guarantees.
+
+See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
+finite segment hits, deterministic ordering, collision filters and retained handles.
 
 ## Ownership
 

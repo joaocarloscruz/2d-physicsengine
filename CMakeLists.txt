@@ -36,6 +36,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/joints.cpp
     ${PHYSICS_SRC_DIR}/core/softbody.cpp
     ${PHYSICS_SRC_DIR}/core/state_export.cpp
+    ${PHYSICS_SRC_DIR}/core/spatial_queries.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
     ${PHYSICS_SRC_DIR}/core/forces/drag.cpp
     ${PHYSICS_SRC_DIR}/core/particles/particle.cpp
@@ -179,6 +180,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
+        ${TESTS_SRC_DIR}/test_spatial_queries.cpp
         ${TESTS_SRC_DIR}/test_simulation_config.cpp
         ${TESTS_SRC_DIR}/test_fixed_step.cpp
         ${TESTS_SRC_DIR}/test_simulation_statistics.cpp

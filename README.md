@@ -82,6 +82,7 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 - [Architecture, units and numerical limits](docs/architecture.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
+- [Native point and finite ray queries](docs/spatial-queries.md)
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)
