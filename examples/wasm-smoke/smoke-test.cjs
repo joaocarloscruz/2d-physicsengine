@@ -962,6 +962,7 @@ async function main() {
     testMacDiffusion(physics);
     testScalarTransport(physics);
     testMaxwell(physics);
+    require("./elastic-wave-tests.cjs").smoke(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
