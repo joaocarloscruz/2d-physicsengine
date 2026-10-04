@@ -2,7 +2,8 @@
 
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction, prescribed-field charged particles,
-planar Newtonian gravity, scalar membrane waves and periodic MAC velocity projection.
+planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
+viscosity, and periodic TMz electromagnetic fields.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, waves, periodic projection and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
@@ -88,7 +89,11 @@ then prints energy, strain and substep diagnostics. It requires no renderer.
 examples run without graphics and are included in the CTest smoke checks.
 
 `mac_projection_demo` reports divergence, mean flow and energy before and after
-a periodic grid projection. `rigid_contact_benchmark --quick` measures resting
+a periodic grid projection. `mac_diffusion_demo` measures implicit viscosity,
+its achieved velocity residual and dissipation. `maxwell_grid_demo` compares
+oscillating physical field energy with the fixed-step modified invariant and
+reports magnetic divergence. These are separate bounded operations/models.
+`rigid_contact_benchmark --quick` measures resting
 contacts, stacks, friction and isolated impacts against physical oracles; its
 finite output includes substantial stack drift in difficult configurations.
 
@@ -107,6 +112,8 @@ finite output includes substantial stack drift in difficult configurations.
 - [Planar Newtonian N-body gravity](docs/nbody-gravity.md)
 - [Scalar waves and membranes](docs/wave-membranes.md)
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
+- [Periodic MAC viscosity and dissipation](docs/periodic-mac-diffusion.md)
+- [Periodic homogeneous TMz electromagnetic fields](docs/maxwell-grids.md)
 - [Rigid-contact physical benchmark](docs/rigid-contact-benchmark.md)
 - [Polygon manifold geometry and scale limits](docs/polygon-manifold-numerics.md)
 - [DFSPH method and benchmark tradeoffs](docs/dfsph-solver.md)

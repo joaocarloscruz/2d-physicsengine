@@ -20,8 +20,10 @@ numeric or budget failures preserve state, queued acceleration and diagnostics.
 
 `PeriodicMacGrid` supports independent [periodic staggered velocity projection](periodic-mac-projection.md)
 with double face velocities, a zero-mean pressure gauge, bounded iterative work,
-and transactional publication after checking actual final divergence. Its
-snapshots are owning copies; this is not a complete Eulerian fluid step.
+and transactional publication after checking actual final divergence. Its separate
+[constant-viscosity diffusion](periodic-mac-diffusion.md) audits the actual stored
+velocity residual and energy/dissipation identity before publication. Both
+operations keep owning diagnostic snapshots; neither is a complete fluid step.
 
 `MaxwellGrid` and its configuration/state/diagnostic types support independent
 [periodic homogeneous TMz electromagnetic fields](maxwell-grids.md), with

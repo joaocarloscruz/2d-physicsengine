@@ -45,8 +45,12 @@ The nine legacy physical targets tracked in issue #44 remain expected failures.
 `PeriodicMacGrid` is a separate Eulerian component with double face velocities
 and compatible staggered divergence/gradient operators. It solves a bounded
 periodic pressure projection and checks the actual stored divergence before
-publishing velocities and diagnostics. It has no automatic connection to the
-SPH solvers or World; see [periodic projection](periodic-mac-projection.md).
+publishing velocities and diagnostics. A separate bounded implicit viscosity
+operation checks the actual stored velocity-equation residual, means and a
+discrete dissipation identity before publishing either component. Neither call
+includes advection or advances a shared clock. There is no automatic connection
+to SPH or World; see [periodic projection](periodic-mac-projection.md) and
+[constant viscosity](periodic-mac-diffusion.md).
 
 ## Deformable bodies
 
@@ -68,8 +72,17 @@ See [thermal networks](thermal-networks.md) for units and convergence tests.
 `ChargedParticle` analytically evolves a nonrelativistic point charge in prescribed
 uniform electric and magnetic fields. Its double-precision state supports planar
 cyclotron motion and crossed-field drift. These standalone modules have no automatic
-mechanical or fluid coupling; the electromagnetic module does not evolve fields.
+mechanical or fluid coupling; `ChargedParticle` does not evolve fields.
 See [electromagnetic particles](electromagnetic-particles.md).
+
+`MaxwellGrid` separately evolves source-free homogeneous periodic TMz fields
+Ez/Hx/Hy on a staggered rectangular grid. A symmetric magnetic-half/electric-full/
+magnetic-half update keeps all output components synchronous. Strict CFL and
+cell-work bounds constrain transactional steps. Its fixed-step modified energy
+is conserved in exact arithmetic; physical energy oscillates. Diagnostics measure
+div H (div B divided by uniform permeability), without projecting initial
+divergence. It has no particle-field coupling or connection to the prescribed
+fields above. See [Maxwell fields](maxwell-grids.md) for units and boundaries.
 
 ## Gravity and scalar waves
 
