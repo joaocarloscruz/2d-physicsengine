@@ -167,3 +167,43 @@ TEST_CASE("SPH kernels reject invalid numerical parameters", "[fluid][sph][kerne
         std::invalid_argument
     );
 }
+
+TEST_CASE("Scalar SPH weights retain their scale law for large finite support", "[fluid][sph][kernel][scale]") {
+    constexpr double pi = 3.14159265358979323846;
+    const float h = 1e20f;
+    const Vector2 displacement(h * 0.5f, 0);
+    const double area = static_cast<double>(h) * h;
+    REQUIRE(SphKernels2D::DensityWeight(displacement, h) * area ==
+        Catch::Approx(4 / pi * std::pow(0.75, 3)).margin(2e-5));
+    REQUIRE(SphKernels2D::PressureWeight(displacement, h) * area ==
+        Catch::Approx(10 / pi * std::pow(0.5, 3)).margin(2e-5));
+    REQUIRE(SphKernels2D::DensityWeight({h, 0}, h) == 0);
+}
+
+TEST_CASE("Pressure gradients check final components and retain tiny directions", "[fluid][sph][kernel][scale]") {
+    constexpr double pi = 3.14159265358979323846;
+    const float h = 1e-10f;
+    for (const Vector2 displacement : {Vector2(h * 0.3f, h * 0.4f), Vector2(1e-30f, 0)}) {
+        const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
+        const double radialDerivative = -30 / pi * std::pow(1 - radius / h, 2) /
+            (static_cast<double>(h) * h * h);
+        const auto gradient = SphKernels2D::PressureGradient(displacement, h);
+        REQUIRE(gradient.x == Catch::Approx(radialDerivative * displacement.x / radius));
+        REQUIRE(gradient.y == Catch::Approx(radialDerivative * displacement.y / radius));
+    }
+}
+
+TEST_CASE("Lattice calibration depends on spacing ratio rather than physical scale", "[fluid][sph][kernel][scale]") {
+    const float expected = SphKernels2D::SquareLatticeMassScale(1, 2);
+    for (const float spacing : {1e-30f, 1e-15f, 1.0f, 1e15f, 1e30f}) {
+        REQUIRE(SphKernels2D::SquareLatticeMassScale(spacing, spacing * 2) == Catch::Approx(expected));
+    }
+}
+
+TEST_CASE("SPH scale handling still rejects unrepresentable final values", "[fluid][sph][kernel][scale]") {
+    const float h = 1e-20f;
+    REQUIRE_THROWS_AS(SphKernels2D::DensityWeight({}, h), std::overflow_error);
+    REQUIRE_THROWS_AS(SphKernels2D::PressureWeight({}, h), std::overflow_error);
+    REQUIRE_THROWS_AS(SphKernels2D::PressureGradient({h / 2, 0}, h), std::overflow_error);
+    REQUIRE_THROWS_AS(SphKernels2D::ViscosityLaplacian({}, h), std::overflow_error);
+}

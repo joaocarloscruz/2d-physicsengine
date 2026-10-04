@@ -49,17 +49,22 @@ float SphKernels2D::SquareLatticeMassScale(
     std::uint64_t remainingSamples = CheckedGrid::MaximumSamples;
     const std::int64_t limit = extent;
     CheckedGrid::Charge(CheckedGrid::Window{-limit, limit, -limit, limit}, remainingSamples);
+    const double ratio = static_cast<double>(spacing) / smoothingLength;
     double discreteDensityRatio = 0.0;
     for (std::int64_t y = -static_cast<std::int64_t>(extent); y <= extent; ++y) {
         for (std::int64_t x = -static_cast<std::int64_t>(extent); x <= extent; ++x) {
-            discreteDensityRatio += static_cast<double>(spacing) * spacing
-                * DensityWeight(
-                    Vector2(x * spacing, y * spacing),
-                    smoothingLength
-                );
+            const double qx = x * ratio, qy = y * ratio;
+            const double qSquared = qx * qx + qy * qy;
+            if (qSquared < 1.0) {
+                const double difference = 1.0 - qSquared;
+                discreteDensityRatio += ratio * ratio * (4.0 / Pi) *
+                    difference * difference * difference;
+            }
         }
     }
-    return CheckedFloat(1.0 / discreteDensityRatio);
+    const float result = CheckedFloat(1.0 / discreteDensityRatio);
+    if (result <= 0) throw std::overflow_error("SPH lattice calibration underflows float range.");
+    return result;
 }
 
 float SphKernels2D::DensityWeight(
@@ -68,13 +73,14 @@ float SphKernels2D::DensityWeight(
 ) {
     ValidateArguments(displacement, smoothingLength);
     const double h = smoothingLength;
-    const double radiusSquared = displacement.magnitudeSquared();
+    const double radiusSquared = static_cast<double>(displacement.x) * displacement.x
+        + static_cast<double>(displacement.y) * displacement.y;
     const double hSquared = h * h;
     if (radiusSquared >= hSquared) {
         return 0.0f;
     }
-    const double difference = hSquared - radiusSquared;
-    const double normalization = 4.0 / (Pi * std::pow(h, 8.0));
+    const double difference = 1.0 - radiusSquared / hSquared;
+    const double normalization = 4.0 / (Pi * hSquared);
     return CheckedFloat(normalization * difference * difference * difference);
 }
 
@@ -84,14 +90,12 @@ float SphKernels2D::PressureWeight(
 ) {
     ValidateArguments(displacement, smoothingLength);
     const double h = smoothingLength;
-    const double radius = std::sqrt(
-        static_cast<double>(displacement.magnitudeSquared())
-    );
+    const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
     if (radius >= h) {
         return 0.0f;
     }
-    const double difference = h - radius;
-    const double normalization = 10.0 / (Pi * std::pow(h, 5.0));
+    const double difference = 1.0 - radius / h;
+    const double normalization = 10.0 / (Pi * h * h);
     return CheckedFloat(normalization * difference * difference * difference);
 }
 
@@ -100,20 +104,19 @@ Vector2 SphKernels2D::PressureGradient(
     float smoothingLength
 ) {
     ValidateArguments(displacement, smoothingLength);
-    const double radiusSquared = displacement.magnitudeSquared();
-    if (radiusSquared <= 0.0) {
+    const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
+    if (radius == 0.0) {
         return Vector2();
     }
     const double h = smoothingLength;
-    const double radius = std::sqrt(radiusSquared);
     if (radius >= h) {
         return Vector2();
     }
-    const double difference = h - radius;
+    const double difference = 1.0 - radius / h;
     const double radialDerivative = -30.0
-        / (Pi * std::pow(h, 5.0)) * difference * difference;
-    const float scale = CheckedFloat(radialDerivative / radius);
-    return displacement * scale;
+        / (Pi * h * h * h) * difference * difference;
+    return {CheckedFloat(radialDerivative * (displacement.x / radius)),
+            CheckedFloat(radialDerivative * (displacement.y / radius))};
 }
 
 float SphKernels2D::ViscosityLaplacian(
@@ -122,14 +125,12 @@ float SphKernels2D::ViscosityLaplacian(
 ) {
     ValidateArguments(displacement, smoothingLength);
     const double h = smoothingLength;
-    const double radius = std::sqrt(
-        static_cast<double>(displacement.magnitudeSquared())
-    );
+    const double radius = std::hypot(static_cast<double>(displacement.x), displacement.y);
     if (radius >= h) {
         return 0.0f;
     }
     return CheckedFloat(
-        40.0 / (Pi * std::pow(h, 5.0)) * (h - radius)
+        40.0 / (Pi * h * h * h * h) * (1.0 - radius / h)
     );
 }
 

@@ -13,6 +13,16 @@ paper's 3D constants in a 2D simulation would not preserve normalization.
 Let `r = |x|` be displacement magnitude and `h > 0` the smoothing length. All
 kernels return zero when `r >= h`.
 
+Evaluation uses double-precision norms and the dimensionless ratio `r/h` to
+avoid intermediate float overflow or underflow. Gradient components are checked
+after multiplication by their unit direction. Final scalar/vector results must
+fit in float; overflow throws `std::overflow_error`, while kernel values below
+float resolution round to zero. Square-lattice calibration uses a dimensionless
+sum directly and rejects a correction factor that rounds to zero. Calibration
+therefore remains scale-independent even when an individual dimensional kernel
+weight would overflow. This improves arithmetic range, not the solver's physical
+consistency or its documented supported regimes.
+
 ## Density weight
 
 For `0 <= r < h`:
