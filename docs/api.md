@@ -18,6 +18,11 @@ with bounded pair work, optional Plummer softening and transactional stepping.
 [uniform scalar waves and membranes](wave-membranes.md). Its steps are staged:
 numeric or budget failures preserve state, queued acceleration and diagnostics.
 
+`PeriodicMacGrid` supports independent [periodic staggered velocity projection](periodic-mac-projection.md)
+with double face velocities, a zero-mean pressure gauge, bounded iterative work,
+and transactional publication after checking actual final divergence. Its
+snapshots are owning copies; this is not a complete Eulerian fluid step.
+
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.
 
