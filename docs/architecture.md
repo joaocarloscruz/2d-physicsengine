@@ -72,8 +72,10 @@ See [soft-body integration and validation](soft-bodies.md).
 
 ## Thermal and electromagnetic modules
 
-`ThermalNetwork` integrates a lumped heat-capacity graph with conductive links,
-external power and fixed-temperature reservoirs. Bounded explicit steps retain
+`ThermalNetwork` integrates a lumped heat-capacity graph with conductive and
+reciprocal radiative links, external power and fixed-temperature reservoirs.
+Radiation recomputes its nonlinear stability bound before every substep.
+Bounded explicit steps retain
 state and queued loads on failure; energy diagnostics account for heat entering
 through loads and reservoirs. Temperatures and heat capacities use double precision.
 See [thermal networks](thermal-networks.md) for units and convergence tests.

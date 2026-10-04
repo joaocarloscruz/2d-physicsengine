@@ -1,7 +1,7 @@
 # 2D Physics Engine
 
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
-Standalone modules add thermal conduction, prescribed-field charged particles,
+Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
 viscosity, and periodic TMz electromagnetic fields.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
@@ -85,6 +85,8 @@ claim of superiority across all fluid scenes.
 then prints energy, strain and substep diagnostics. It requires no renderer.
 
 `thermal_network_demo` reports conduction and reservoir energy accounting.
+`thermal_radiation_demo` measures Stefan–Boltzmann cooling, timestep convergence
+and reservoir energy accounting for a lumped body facing a cold enclosure.
 `gravity_binary` compares a two-body orbit with its analytical period, and
 `wave_membrane_demo` measures a fixed-edge membrane mode's energy. These native
 examples run without graphics and are included in the CTest smoke checks.
@@ -109,7 +111,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Joints, islands and sleeping](docs/joints-and-sleeping.md)
 - [Mass-spring deformable bodies](docs/soft-bodies.md)
 - [Charged particles in prescribed electromagnetic fields](docs/electromagnetic-particles.md)
-- [Thermal conduction networks](docs/thermal-networks.md)
+- [Thermal conduction and radiation networks](docs/thermal-networks.md)
 - [Planar Newtonian N-body gravity](docs/nbody-gravity.md)
 - [Scalar waves and membranes](docs/wave-membranes.md)
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
