@@ -218,6 +218,18 @@ ordering and sign; separate stored-value oracles check observations after wave
 and positive-conductivity evolution. These attained controls do not imply exact
 discrete-mean preservation for arbitrary floating-point evolution.
 
+Observer validation on LLVM 23.1.1: native Release and ASan/UBSan each passed
+28 Maxwell cases / 15,373 assertions. Emscripten 6.0.3 / Node 22.16.0 optimized
+full smoke and probes-off production smoke passed. The sanitized full smoke
+passed the initial observer change; after the constant-count refinement, both
+the rebuilt Ohmic oracle and complete observer controls passed again. Each final
+probes-enabled build passed 1,000 mean stress batches / 12,000 normalization and
+rescaling rejections, preserving complete snapshots, stack, live heap and zero
+native uncaught exceptions. Browser post-step means use an independent integer
+sum of represented float64 significands, rather than duplicating the production
+floating reduction. This observer correction adds no electromagnetic model,
+public configuration or implicit physical correction.
+
 ## Reproduce
 
 ```cpp

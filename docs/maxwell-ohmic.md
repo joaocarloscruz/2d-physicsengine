@@ -201,8 +201,9 @@ configuration and executable subdirectory. The installed external consumer also
 checks the named Ohmic call without using repository-private headers.
 
 Validation on the pinned LLVM 23.1.1 Windows toolchain: Release and
-ASan/UBSan each passed all 27 CTest entries, including the installed external
-consumer and the JSON-parsed demo. After adding the unsplit Joule convergence
+ASan/UBSan each passed all 27 CTest entries. The Release installed external
+consumer passed separately, and the demo output was parsed as JSON. After adding
+the unsplit Joule convergence
 controls, each targeted Maxwell run passed 24 cases / 14,780 assertions. The
 nine explicitly retained fluid expected failures remain unchanged. Temporal
 controls cover all three damping regimes on anisotropic and two-cell grids;
