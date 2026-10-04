@@ -59,6 +59,83 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  visualizer:
+    name: Visualizer build and setup validation
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      # SFML 3.1.0; pin the source rather than accepting a moving tag.
+      SFML_COMMIT: 8835b6b955c96fa1ad1278a8dae6f05c4143effc
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Check setup command routing and failures
+        shell: pwsh
+        run: ./tests/visualizer_setup_tests.ps1
+
+      - name: Install Linux graphics build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl1-mesa-dev libfreetype-dev libharfbuzz-dev xvfb xauth fonts-dejavu-core
+
+      - name: Fetch pinned SFML source
+        shell: pwsh
+        run: |
+          git init "$env:RUNNER_TEMP/SFML"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C "$env:RUNNER_TEMP/SFML" remote add origin https://github.com/SFML/SFML.git
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C "$env:RUNNER_TEMP/SFML" fetch --depth 1 origin $env:SFML_COMMIT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C "$env:RUNNER_TEMP/SFML" checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and install local packages
+        shell: pwsh
+        run: |
+          cmake -S "$env:RUNNER_TEMP/SFML" -B "$env:RUNNER_TEMP/sfml-build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSFML_BUILD_AUDIO=OFF -DSFML_BUILD_NETWORK=OFF -DSFML_BUILD_EXAMPLES=OFF -DSFML_BUILD_TEST_SUITE=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$env:RUNNER_TEMP/sfml-build" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install "$env:RUNNER_TEMP/sfml-build" --config Release --prefix "$env:RUNNER_TEMP/sfml-install"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S . -B "$env:RUNNER_TEMP/engine-build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DPHYSICS_BUILD_EXAMPLES=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$env:RUNNER_TEMP/engine-build" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install "$env:RUNNER_TEMP/engine-build" --config Release --prefix "$env:RUNNER_TEMP/physics-install"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build visualizer from outside the repository
+        shell: pwsh
+        run: |
+          $setupScript = Join-Path $env:GITHUB_WORKSPACE 'visualization/setup-and-build.ps1'
+          Set-Location $env:RUNNER_TEMP
+          & $setupScript -SFMLPrefix "$env:RUNNER_TEMP/sfml-install" -EnginePrefix "$env:RUNNER_TEMP/physics-install" -BuildDirectory "$env:RUNNER_TEMP/visualizer build" -Parallel 2
+
+      - name: Render five hidden frames under Xvfb
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          timeout 30s xvfb-run -a -s '-screen 0 1280x720x24' "$RUNNER_TEMP/visualizer build/PhysicsVisualization" --smoke-test "$RUNNER_TEMP/capture.png"
+          python3 - "$RUNNER_TEMP/capture.png" <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+          data = Path(sys.argv[1]).read_bytes()
+          assert data[:8] == b'\x89PNG\r\n\x1a\n', 'Missing PNG signature'
+          assert struct.unpack('>II', data[16:24]) == (1280, 720), 'Unexpected render dimensions'
+          assert len(data) > 1024, 'Empty render capture'
+          PY
+
   webassembly:
     name: WebAssembly build and smoke test
     runs-on: ubuntu-latest
