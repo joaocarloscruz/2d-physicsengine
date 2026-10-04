@@ -136,7 +136,8 @@ underflow and cancellation between nearly equal fourth powers. Complete
 unrepresentable rates, transfers, temperatures or ledgers still reject the call;
 subnormal transfers may round to zero. A finite input alone is not sufficient
 to guarantee a representable step. State storage and accumulation introduce
-roundoff; conservation is checked to that precision, not repaired by rescaling.
+roundoff; tests verify conservation to that precision. Production checks finite
+energy/ledgers but does not audit an energy-identity residual or rescale state.
 
 For cooling into a fixed zero-K reservoir the independent solution is
 `T(t)=T0/(1+3*kappa*T0^3*t/C)^(1/3)`. The `thermal_radiation_demo` prints
