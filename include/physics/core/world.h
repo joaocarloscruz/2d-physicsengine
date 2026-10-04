@@ -65,6 +65,7 @@ public:
     const SimulationStatistics& getLastStepStatistics() const;
 
 private:
+    void requireMutationAllowed() const;
     struct ContactKey {
         std::uint64_t first;
         std::uint64_t second;

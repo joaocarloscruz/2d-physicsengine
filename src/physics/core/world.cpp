@@ -51,7 +51,13 @@ World::World(const SimulationConfig& config)
 
 World::~World() {}
 
+void World::requireMutationAllowed() const {
+    if (stepping && !dispatchingEvents)
+        throw std::logic_error("World structure cannot change during integration or solving.");
+}
+
 void World::addBody(RigidBodyPtr body) {
+    requireMutationAllowed();
     if (!body) throw std::invalid_argument("Body cannot be null.");
     if (body && std::find(bodies.begin(), bodies.end(), body) == bodies.end()) {
         bodies.push_back(body);
@@ -59,6 +65,7 @@ void World::addBody(RigidBodyPtr body) {
 }
 
 void World::removeBody(RigidBodyPtr body) {
+    requireMutationAllowed();
     for (const auto& joint : joints) {
         if (joint->getBodyA() == body || joint->getBodyB() == body) {
             joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
@@ -93,6 +100,7 @@ void World::removeBody(RigidBodyPtr body) {
 }
 
 void World::clearBodies() {
+    requireMutationAllowed();
     joints.clear();
     for (const auto& body : bodies) {
         endContacts(body->GetId());
@@ -106,18 +114,21 @@ void World::clearBodies() {
 }
 
 void World::addForce(RigidBodyPtr body, std::unique_ptr<IForceGenerator> generator) {
+    requireMutationAllowed();
     if (!body || !generator) throw std::invalid_argument("Force registration requires a body and generator.");
     body->Wake();
     this->forceRegistry.push_back({body, std::move(generator)});
 }
 
 void World::addUniversalForce(std::unique_ptr<IForceGenerator> generator) {
+    requireMutationAllowed();
     if (!generator) throw std::invalid_argument("Universal force requires a generator.");
     for (const auto& body : bodies) body->Wake();
     this->universalForceRegistry.push_back(std::move(generator));
 }
 
 void World::addParticleSystem(ParticleSystemPtr system) {
+    requireMutationAllowed();
     if (!system) throw std::invalid_argument("Particle system cannot be null.");
     if (system) {
         particleSystems.push_back(std::move(system));
@@ -125,6 +136,7 @@ void World::addParticleSystem(ParticleSystemPtr system) {
 }
 
 void World::removeParticleSystem(const ParticleSystemPtr& system) {
+    requireMutationAllowed();
     particleSystems.erase(
         std::remove(particleSystems.begin(), particleSystems.end(), system),
         particleSystems.end()
@@ -132,6 +144,7 @@ void World::removeParticleSystem(const ParticleSystemPtr& system) {
 }
 
 void World::clearParticleSystems() {
+    requireMutationAllowed();
     particleSystems.clear();
 }
 
@@ -151,6 +164,7 @@ void World::removeCollisionListener(ICollisionListener* listener) {
 }
 
 void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
+    requireMutationAllowed();
     if (!bp) throw std::invalid_argument("Broad phase cannot be null.");
     if (bp) {
         broadPhase = std::move(bp);
@@ -158,6 +172,7 @@ void World::setBroadPhase(std::unique_ptr<IBroadPhase> bp) {
 }
 
 void World::setSimulationConfig(const SimulationConfig& config) {
+    requireMutationAllowed();
     config.Validate();
     simulationConfig = config;
     for (const auto& body : bodies) body->Wake();
@@ -501,6 +516,7 @@ void World::dispatchEvents() {
 }
 
 void World::addJoint(JointPtr joint) {
+    requireMutationAllowed();
     if (!joint) throw std::invalid_argument("Joint cannot be null.");
     for (const auto& body : {joint->getBodyA(), joint->getBodyB()}) {
         if (std::find(bodies.begin(), bodies.end(), body) == bodies.end())
@@ -513,6 +529,7 @@ void World::addJoint(JointPtr joint) {
 }
 
 void World::removeJoint(const JointPtr& joint) {
+    requireMutationAllowed();
     if (std::find(joints.begin(), joints.end(), joint) != joints.end()) {
         joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
         joints.erase(std::remove(joints.begin(), joints.end(), joint), joints.end());

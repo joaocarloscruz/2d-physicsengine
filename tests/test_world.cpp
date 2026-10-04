@@ -156,3 +156,60 @@ TEST_CASE("World persists active contact impulses", "[World][warm_start]") {
     world.removeBody(circle);
     REQUIRE(world.getPersistentContactCount() == 0);
 }
+
+#include <functional>
+#include "physics/core/fixed_step_runner.h"
+#include "physics/core/collisions/broad_phase/sweep_and_prune.h"
+namespace {
+struct CallbackForce : IForceGenerator {
+    std::function<void()> callback;
+    explicit CallbackForce(std::function<void()> value) : callback(std::move(value)) {}
+    void applyForce(RigidBody*) override { callback(); }
+};
+}
+
+TEST_CASE("Force callbacks cannot mutate world collections during stepping", "[review][World]") {
+    World world;
+    auto body = std::make_shared<RigidBody>(Circle(1), Material{});
+    world.addBody(body);
+    auto extra = std::make_shared<RigidBody>(Circle(1), Material{}, Vector2(10, 0));
+    world.addForce(body, std::make_unique<CallbackForce>([&] {
+        REQUIRE_THROWS_AS(world.addBody(extra), std::logic_error);
+    }));
+    world.step(0.01f);
+    REQUIRE(world.getBodies().size() == 1);
+    world.addBody(extra);
+    REQUIRE(world.getBodies().size() == 2);
+}
+
+TEST_CASE("World mutation guards cover all structural operations and recover from exceptions", "[review][World]") {
+    World world;
+    auto a = std::make_shared<RigidBody>(Circle(1), Material{});
+    auto b = std::make_shared<RigidBody>(Circle(1), Material{}, Vector2(5, 0));
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<DistanceJoint>(a, b, 5);
+    world.addJoint(joint);
+    auto system = std::make_shared<ParticleSystem>(); world.addParticleSystem(system);
+    bool fail = true;
+    world.addForce(a, std::make_unique<CallbackForce>([&] {
+        REQUIRE_THROWS_AS(world.removeBody(a), std::logic_error);
+        REQUIRE_THROWS_AS(world.clearBodies(), std::logic_error);
+        REQUIRE_THROWS_AS(world.addForce(a, std::make_unique<CallbackForce>([] {})), std::logic_error);
+        REQUIRE_THROWS_AS(world.addUniversalForce(std::make_unique<CallbackForce>([] {})), std::logic_error);
+        REQUIRE_THROWS_AS(world.addParticleSystem(system), std::logic_error);
+        REQUIRE_THROWS_AS(world.removeParticleSystem(system), std::logic_error);
+        REQUIRE_THROWS_AS(world.clearParticleSystems(), std::logic_error);
+        REQUIRE_THROWS_AS(world.addJoint(joint), std::logic_error);
+        REQUIRE_THROWS_AS(world.removeJoint(joint), std::logic_error);
+        REQUIRE_THROWS_AS(world.setBroadPhase(std::make_unique<SweepAndPrune>()), std::logic_error);
+        REQUIRE_THROWS_AS(world.setSimulationConfig(SimulationConfig{}), std::logic_error);
+        if (fail) throw std::runtime_error("force callback failed");
+    }));
+    FixedStepRunner runner(world);
+    REQUIRE_THROWS_AS(runner.advance(0.02), std::runtime_error);
+    fail = false;
+    REQUIRE_NOTHROW(runner.reset());
+    REQUIRE_NOTHROW(world.step(0.01f));
+    REQUIRE_NOTHROW(world.clearBodies());
+    REQUIRE(world.getBodies().empty());
+}

@@ -33,3 +33,11 @@ last safe time. `ccdImpactCount` reports actual resolved impacts. Sweeps current
 scan all pairs, so reserve CCD for fast bodies. Pure polygon pairs and rotational
 polygon motion are not swept; use small timesteps for those cases. Turning CCD off
 retains the original discrete integration/collision path.
+#### Mutation during stepping
+
+Collision listeners run after solving and may add or remove bodies, joints,
+particle systems, listeners, and force registrations. Force generators, custom
+broad phases, and custom joint solvers run inside the active simulation step;
+they must not change world structure or configuration. Such operations throw
+`std::logic_error` before modifying the world. Queue these changes in application
+code and apply them after `step` returns.
