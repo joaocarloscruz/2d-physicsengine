@@ -228,6 +228,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fixed_step.cpp
         ${TESTS_SRC_DIR}/test_simulation_statistics.cpp
         ${TESTS_SRC_DIR}/test_contact_manifold.cpp
+        ${TESTS_SRC_DIR}/test_polygon_manifold_numerics.cpp
         ${TESTS_SRC_DIR}/test_contact_arithmetic.cpp
         ${TESTS_SRC_DIR}/test_broad_phase_differential.cpp
         ${TESTS_SRC_DIR}/test_stress.cpp
