@@ -1,16 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
-project(Engine CXX)
+project(PhysicsEngine VERSION 0.2.0 LANGUAGES CXX)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+include(CTest)
+option(BUILD_SHARED_LIBS "Build the native shared library" ON)
 
 # Source directory for library
 set(PHYSICS_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/physics)
 # Source directory for tests
 set(TESTS_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-
-# Include directories
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${TESTS_SRC_DIR}
-)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -20,23 +18,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # consumers continue to receive the shared library used by the visualizer.
 if(EMSCRIPTEN)
     set(ENGINE_LIBRARY_TYPE STATIC)
-else()
+elseif(BUILD_SHARED_LIBS)
     set(ENGINE_LIBRARY_TYPE SHARED)
+else()
+    set(ENGINE_LIBRARY_TYPE STATIC)
 endif()
 
 # --- Engine Library
 add_library(Engine ${ENGINE_LIBRARY_TYPE}
     src/engine.cpp
-    ${PHYSICS_SRC_DIR}/core/fluids/fluid_solver.cpp
-    ${PHYSICS_SRC_DIR}/core/fluids/dfsph_solver.cpp
-    ${PHYSICS_SRC_DIR}/core/collisions/continuous_collision.cpp
-    ${PHYSICS_SRC_DIR}/core/joints.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
     ${PHYSICS_SRC_DIR}/core/rigidbody.cpp
     ${PHYSICS_SRC_DIR}/core/simulation_config.cpp
     ${PHYSICS_SRC_DIR}/core/fixed_step_runner.cpp
     ${PHYSICS_SRC_DIR}/core/world.cpp
+    ${PHYSICS_SRC_DIR}/core/joints.cpp
+    ${PHYSICS_SRC_DIR}/core/state_export.cpp
     ${PHYSICS_SRC_DIR}/core/forces/gravity.cpp
     ${PHYSICS_SRC_DIR}/core/forces/drag.cpp
     ${PHYSICS_SRC_DIR}/core/particles/particle.cpp
@@ -46,10 +44,13 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle_spatial_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/sph_kernels.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/wcsph_solver.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/fluid_solver.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/dfsph_solver.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_boundary.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_rigid_coupler.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/coupled_fluid_simulation.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/continuous_collision.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_polygon.cpp
@@ -58,6 +59,30 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/uniform_grid.cpp
 )
 
+add_library(PhysicsEngine::Engine ALIAS Engine)
+target_compile_features(Engine PUBLIC cxx_std_17)
+target_include_directories(Engine PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+set_target_properties(Engine PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION 0)
+install(TARGETS Engine EXPORT PhysicsEngineTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT PhysicsEngineTargets NAMESPACE PhysicsEngine::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine)
+configure_package_config_file(cmake/PhysicsEngineConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfigVersion.cmake
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine)
+
 if(WIN32)
     target_compile_definitions(Engine PUBLIC _USE_MATH_DEFINES)
     set_target_properties(Engine PROPERTIES
@@ -65,7 +90,22 @@ if(WIN32)
     )
 endif()
 
+if(NOT EMSCRIPTEN)
+    option(PHYSICS_BUILD_EXAMPLES "Build reproducible experiment" ON)
+    if(PHYSICS_BUILD_EXAMPLES)
+        add_executable(replay_experiment examples/replay_experiment.cpp)
+        target_link_libraries(replay_experiment PRIVATE PhysicsEngine::Engine)
+        if(BUILD_TESTING)
+            add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
+                -DPROGRAM=$<TARGET_FILE:replay_experiment>
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyReplay.cmake)
+        endif()
+    endif()
+endif()
+
 if(EMSCRIPTEN)
+    target_compile_options(Engine PUBLIC -fexceptions)
     # --- WebAssembly module
     add_executable(physics_engine_wasm
         src/wasm/bindings.cpp
@@ -101,15 +141,12 @@ if(EMSCRIPTEN)
             "${WASM_OUTPUT_DIRECTORY}/smoke-test.cjs"
         COMMENT "Copying WebAssembly smoke tests"
     )
-else()
+elseif(BUILD_TESTING)
     # --- Native Test Executable
+    # Visual Studio project names are case-insensitive: run_tests would collide
+    # with CTest's generated RUN_TESTS target. Preserve the executable filename.
     add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
-        ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
-        ${TESTS_SRC_DIR}/test_ccd.cpp
-        ${TESTS_SRC_DIR}/test_joints.cpp
-        ${TESTS_SRC_DIR}/test_collision_events.cpp
-        ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_math.cpp
         ${TESTS_SRC_DIR}/test_rigidbody.cpp
         ${TESTS_SRC_DIR}/test_world.cpp
@@ -119,6 +156,12 @@ else()
         ${TESTS_SRC_DIR}/test_broad_phase.cpp
         ${TESTS_SRC_DIR}/test_simulation.cpp
         ${TESTS_SRC_DIR}/test_collision_listener.cpp
+        ${TESTS_SRC_DIR}/test_collision_events.cpp
+        ${TESTS_SRC_DIR}/test_ownership.cpp
+        ${TESTS_SRC_DIR}/test_ccd.cpp
+        ${TESTS_SRC_DIR}/test_joints.cpp
+        ${TESTS_SRC_DIR}/test_dfsph_solver.cpp
+        ${TESTS_SRC_DIR}/test_state_export.cpp
         ${TESTS_SRC_DIR}/test_particles.cpp
         ${TESTS_SRC_DIR}/test_fluid_particles.cpp
         ${TESTS_SRC_DIR}/test_sph_kernels.cpp
@@ -142,6 +185,7 @@ else()
 
     set_target_properties(engine_tests_runner PROPERTIES OUTPUT_NAME run_tests)
     target_link_libraries(engine_tests_runner PRIVATE Engine)
+    target_include_directories(engine_tests_runner PRIVATE ${TESTS_SRC_DIR})
 
     add_executable(numerical_validation
         ${TESTS_SRC_DIR}/numerical_validation.cpp
@@ -152,7 +196,6 @@ else()
         benchmarks/fluid_benchmark.cpp
     )
     target_link_libraries(fluid_benchmark PRIVATE Engine)
-
     add_executable(fluid_solver_comparison benchmarks/fluid_solver_comparison.cpp)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
 

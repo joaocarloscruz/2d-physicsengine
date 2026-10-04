@@ -1,6 +1,4 @@
-#include "physics/core/fluids/wcsph_solver.h"
-#include "physics/core/fluids/dfsph_solver.h"
-#include "physics/core/fluids/sph_kernels.h"
+#include "physics/physics.h"
 #include "physics/core/fluids/sph_kernels.h"
 #include <chrono>
 #include <fstream>
