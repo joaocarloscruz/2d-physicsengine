@@ -52,3 +52,15 @@ small unsupported patches; a compression improvement is not a claim of eliminati
 that deficit. Container boundaries, moving boundary samples, and two-way rigid
 coupling are currently supported by WCSPH only. Do not switch a coupled WCSPH scene
 to DFSPH without implementing and validating equivalent boundary handling.
+
+
+## Kernel-family selection
+
+Set `config.kernelFamily = SphKernelFamily::CubicSpline` to opt into the
+matched cubic density weight and analytic pressure/divergence gradient.
+`Poly6Spiky` remains the default; unknown enum values are rejected. No
+particle masses or rest densities are changed. The independent Muller
+viscosity operator and its existing diffusion bounds remain in use.
+Diagnostics measure the selected gradient. This family does not add boundary
+support to the existing free-surface DFSPH method; see the
+[matched-kernel experiments](cubic-kernel-experiments.md) for its tested regime.

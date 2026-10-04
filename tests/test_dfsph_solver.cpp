@@ -6,11 +6,11 @@
 
 using namespace PhysicsEngine;
 namespace {
-std::vector<FluidParticle> CompressionPatch(float speed = 1) {
+std::vector<FluidParticle> CompressionPatch(float speed = 1, SphKernelFamily family = SphKernelFamily::Poly6Spiky) {
     constexpr float spacing = 0.1f, h = 0.25f;
     FluidParticleProperties properties;
     properties.smoothingLength = h; properties.viscosity = 0;
-    properties.mass = properties.restDensity*spacing*spacing*SphKernels2D::SquareLatticeMassScale(spacing, h);
+    properties.mass = properties.restDensity*spacing*spacing*SphKernels2D::SquareLatticeMassScale(spacing, h, family);
     std::vector<FluidParticle> particles;
     for (int y=-5; y<=5; ++y) for (int x=-5; x<=5; ++x) {
         const Vector2 position(x*spacing, y*spacing);
@@ -26,9 +26,10 @@ Vector2 Momentum(const std::vector<FluidParticle>& particles) {
 }
 
 TEST_CASE("DFSPH reduces compression and divergence against WCSPH", "[dfsph]") {
-    auto reference = CompressionPatch(); auto projected = reference;
-    WcsphConfig weak; weak.externalAcceleration = {}; weak.speedOfSound = GENERATE(5.0f, 20.0f);
-    DfsphConfig strong; strong.externalAcceleration = {};
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    auto reference = CompressionPatch(1, family); auto projected = reference;
+    WcsphConfig weak; weak.kernelFamily = family; weak.externalAcceleration = {}; weak.speedOfSound = GENERATE(5.0f, 20.0f);
+    DfsphConfig strong; strong.kernelFamily = family; strong.externalAcceleration = {};
     strong.densityTolerance = 1e-4f; strong.divergenceTolerance = 1e-3f;
     strong.maximumIterations = 1000;
     WcsphSolver wcsph(0.25f, weak); DfsphSolver dfsph(0.25f, strong);
@@ -47,8 +48,9 @@ TEST_CASE("DFSPH reduces compression and divergence against WCSPH", "[dfsph]") {
 }
 
 TEST_CASE("DFSPH tighter tolerance improves the projection", "[dfsph]") {
-    auto looseParticles = CompressionPatch(2), tightParticles = looseParticles;
-    DfsphConfig loose; loose.externalAcceleration = {}; loose.divergenceTolerance = 0.1f;
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    auto looseParticles = CompressionPatch(2, family), tightParticles = looseParticles;
+    DfsphConfig loose; loose.kernelFamily = family; loose.externalAcceleration = {}; loose.divergenceTolerance = 0.1f;
     DfsphConfig tight = loose; tight.divergenceTolerance = 1e-4f;
     DfsphSolver a(0.25f, loose), b(0.25f, tight);
     a.step(looseParticles, 0.005f); b.step(tightParticles, 0.005f);
@@ -57,10 +59,11 @@ TEST_CASE("DFSPH tighter tolerance improves the projection", "[dfsph]") {
 }
 
 TEST_CASE("DFSPH maintains finite state and momentum over repeated steps", "[dfsph]") {
-    auto particles = CompressionPatch();
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    auto particles = CompressionPatch(1, family);
     for (auto& p : particles) p.velocity = p.velocity+Vector2(0.3f, -0.2f);
     const Vector2 before = Momentum(particles);
-    DfsphConfig config; config.externalAcceleration = {};
+    DfsphConfig config; config.kernelFamily = family; config.externalAcceleration = {};
     DfsphSolver solver(0.25f, config);
     for (int i=0; i<100; ++i) {
         solver.step(particles, 0.005f);
@@ -73,10 +76,11 @@ TEST_CASE("DFSPH maintains finite state and momentum over repeated steps", "[dfs
 }
 
 TEST_CASE("DFSPH validates inputs and exposes iteration limits", "[dfsph][validation]") {
-    DfsphConfig config; config.externalAcceleration = {}; config.maximumIterations = 1;
+    const auto family = GENERATE(SphKernelFamily::Poly6Spiky, SphKernelFamily::CubicSpline);
+    DfsphConfig config; config.kernelFamily = family; config.externalAcceleration = {}; config.maximumIterations = 1;
     config.densityTolerance = 1e-6f; config.divergenceTolerance = 1e-6f;
     DfsphSolver solver(0.25f, config);
-    auto particles = CompressionPatch(3);
+    auto particles = CompressionPatch(3, family);
     solver.step(particles, 0.01f);
     REQUIRE_FALSE(solver.getDiagnostics().converged);
     REQUIRE_THROWS_AS(solver.step(particles, -1), std::invalid_argument);

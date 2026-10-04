@@ -106,3 +106,13 @@ Fixed h/dx spatial refinement preserves the nominal density bias; mass
 calibration does not fix pressure-gradient consistency. All nine current
 expected-failing targets remain unchanged. The diagnostic includes concrete
 operator/conservation requirements for the next opt-in formulation experiment.
+
+
+## Opt-in matched cubic family (2026-10-04)
+
+The [matched-kernel experiment](cubic-kernel-experiments.md) meets the original
+nominal lattice-density and rest thresholds for the explicit cubic mode at
+h/dx=2, with unchanged caller mass/rho0 and default legacy behavior. All nine
+legacy `[!mayfail]` cases remain unchanged. Perturbation, unclamped tensile
+clumping and sampled-wall startup controls still expose unsupported regimes;
+these must not be inferred solved from the rest improvement.

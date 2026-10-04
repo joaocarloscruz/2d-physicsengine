@@ -254,4 +254,10 @@ elseif(BUILD_TESTING)
     set_tests_properties(fluid_consistency_diagnostic_smoke PROPERTIES
         LABELS "fast;numerical;diagnostic"
     )
+    add_test(NAME fluid_cubic_diagnostic_smoke
+        COMMAND fluid_consistency_diagnostic --quick --family cubic
+            --output ${CMAKE_BINARY_DIR}/fluid-cubic-quick.json)
+    set_tests_properties(fluid_cubic_diagnostic_smoke PROPERTIES
+        LABELS "fast;numerical;diagnostic"
+    )
 endif()

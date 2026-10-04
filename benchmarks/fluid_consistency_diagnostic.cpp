@@ -7,9 +7,12 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <utility>
 
 using namespace PhysicsEngine;
 namespace {
+// One explicit family choice applies to every solver control in this process.
+SphKernelFamily selectedFamily = SphKernelFamily::Poly6Spiky;
 void RequireFiniteState(const std::vector<FluidParticle>& particles) {
     for (const auto& particle : particles) {
         if (!std::isfinite(particle.position.x) || !std::isfinite(particle.position.y) ||
@@ -60,7 +63,10 @@ void WriteMoments(std::ostream& out, float spacing, float h) {
         << ",\"massScale\":" << scale
         << ",\"massCalibratedSpikyGradientFirstMomentXX\":" << scale * m.pressureGradientXX
         << ",\"candidateCubicZerothMoment\":" << m.candidateCubicDensity
-        << ",\"candidateCubicGradientFirstMomentXX\":" << m.candidateCubicGradientXX << '}';
+        << ",\"candidateCubicGradientFirstMomentXX\":" << m.candidateCubicGradientXX
+        << ",\"selectedDensityZerothMoment\":" << (selectedFamily == SphKernelFamily::CubicSpline ? m.cubicDensity : m.density)
+        << ",\"selectedGradientFirstMomentXX\":" << (selectedFamily == SphKernelFamily::CubicSpline ? m.cubicGradientXX : m.pressureGradientXX)
+        << ",\"selectedFamilyMassScale\":" << SphKernels2D::SquareLatticeMassScale(spacing,h,selectedFamily) << '}';
 }
 void WriteDensity(std::ostream& out, float spacing, float h) {
     const int side = 2 * static_cast<int>(std::ceil(h / spacing)) + 9;
@@ -68,6 +74,7 @@ void WriteDensity(std::ostream& out, float spacing, float h) {
     auto translated = MakeBlock(side, spacing, h, 1, {0.037f, -0.061f});
     WcsphConfig config;
     config.externalAcceleration = {};
+    config.kernelFamily = selectedFamily;
     WcsphSolver solver(h, config);
     solver.prepare(original);
     solver.prepare(translated);
@@ -88,6 +95,7 @@ void WriteRest(std::ostream& out, const char* label, int side, float spacing, fl
     const float dt = duration / steps;
     WcsphConfig config;
     config.externalAcceleration = {};
+    config.kernelFamily = selectedFamily;
     config.speedOfSound = 15;
     config.equationOfStateExponent = 7;
     config.clampNegativePressure = true;
@@ -134,6 +142,72 @@ void WriteRest(std::ostream& out, const char* label, int side, float spacing, fl
         << ",\"totalMomentumMagnitude\":" << std::hypot(momentumX, momentumY)
         << ",\"callerMassAndRestDensityPreserved\":true}";
 }
+
+void WriteCharacterization(std::ostream& out, float ratio, bool perturb, bool clamp) {
+    constexpr int side=21;
+    constexpr float dx=0.1f, dt=1.0f/960;
+    const float h=ratio*dx;
+    auto particles=MakeBlock(side,dx,h);
+    const auto lattice=particles;
+    if(perturb) for(int y=0;y<side;++y) for(int x=0;x<side;++x) {
+        auto& p=particles[static_cast<std::size_t>(y)*side+x];
+        p.position.x += (x%2 ? -1 : 1)*0.1f*dx;
+        p.position.y += (y%2 ? -1 : 1)*0.1f*dx;
+    }
+    const auto measure=[&]() {
+        double rms=0,minimum=1e100;
+        for(std::size_t i=0;i<particles.size();++i) {
+            const double x=static_cast<double>(particles[i].position.x)-lattice[i].position.x;
+            const double y=static_cast<double>(particles[i].position.y)-lattice[i].position.y;
+            rms += x*x+y*y;
+            for(std::size_t j=0;j<i;++j) minimum=std::min(minimum,std::hypot(
+                static_cast<double>(particles[i].position.x)-particles[j].position.x,
+                static_cast<double>(particles[i].position.y)-particles[j].position.y));
+        }
+        return std::pair<double,double>{std::sqrt(rms/particles.size()),minimum/dx};
+    };
+    const auto initial=measure();
+    WcsphConfig config; config.kernelFamily=selectedFamily; config.externalAcceleration={};
+    config.speedOfSound=15; config.maximumTimeStep=dt; config.clampNegativePressure=clamp;
+    WcsphSolver solver(h,config);
+    double peakSpeed=0;
+    for(int step=0;step<48;++step) {
+        solver.step(particles,dt); RequireFiniteState(particles);
+        for(const auto& p:particles) peakSpeed=std::max(peakSpeed,std::hypot(static_cast<double>(p.velocity.x),p.velocity.y));
+    }
+    const auto final=measure();
+    out << "{\"perturbed\":" << (perturb?"true":"false") << ",\"clampNegativePressure\":" << (clamp?"true":"false")
+        << ",\"hOverDx\":" << ratio << ",\"spacing\":" << dx
+        << ",\"duration\":0.05,\"outerDt\":" << dt
+        << ",\"initialPositionRms\":" << initial.first << ",\"finalPositionRms\":" << final.first
+        << ",\"initialMinimumSeparationOverDx\":" << initial.second
+        << ",\"finalMinimumSeparationOverDx\":" << final.second << ",\"peakSpeed\":" << peakSpeed << '}';
+}
+
+void WriteWallCharacterization(std::ostream& out) {
+    FluidBoundarySettings settings; settings.particleRadius=0.05f;
+    FluidConvexPolygonContainer tank({{-1,0},{1,0},{1,2},{-1,2}},settings);
+    FluidBoundarySamplingSettings sampling; sampling.spacing=0.1f; sampling.supportRadius=0.2f;
+    const auto walls=SampleFluidContainerBoundary(tank,sampling);
+    FluidParticleProperties properties; properties.mass=10; properties.smoothingLength=0.2f; properties.viscosity=0.05f;
+    std::vector<FluidParticle> particles;
+    for(int y=0;y<15;++y) for(int x=0;x<19;++x)
+        particles.emplace_back(Vector2{-0.9f+x*0.1f,0.1f+y*0.1f},Vector2{},properties);
+    WcsphConfig config; config.kernelFamily=selectedFamily; config.speedOfSound=40; config.maximumTimeStep=0.001f;
+    WcsphSolver solver(0.2f,config); double peak=0;
+    for(int step=0;step<100;++step) {
+        solver.step(particles,0.001f,tank,walls,[](float){}); RequireFiniteState(particles);
+        for(const auto& p:particles) peak=std::max(peak,std::hypot(static_cast<double>(p.velocity.x),p.velocity.y));
+    }
+    double error=0;
+    for(int y=2;y<13;++y) for(int x=2;x<17;++x) {
+        const auto& p=particles[static_cast<std::size_t>(y)*19+x];
+        error=std::max(error,std::abs(p.density/static_cast<double>(p.restDensity)-1));
+    }
+    out << "{\"initialization\":\"nominal summation, not EOS hydrostatic\",\"duration\":0.1,\"outerDt\":0.001,"
+        << "\"speedOfSound\":40,\"particleCount\":285,\"peakSpeed\":" << peak
+        << ",\"finalBulkDensityError\":" << error << '}';
+}
 }
 
 int main(int argc, char** argv) {
@@ -143,8 +217,14 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string argument = argv[i];
             if (argument == "--quick") quick = true;
+            else if (argument == "--family" && i + 1 < argc) {
+                const std::string family = argv[++i];
+                if (family == "cubic") selectedFamily = SphKernelFamily::CubicSpline;
+                else if (family == "legacy") selectedFamily = SphKernelFamily::Poly6Spiky;
+                else throw std::invalid_argument("Kernel family must be legacy or cubic.");
+            }
             else if (argument == "--output" && i + 1 < argc) outputPath = argv[++i];
-            else throw std::invalid_argument("Usage: fluid_consistency_diagnostic [--quick] [--output report.json]");
+            else throw std::invalid_argument("Usage: fluid_consistency_diagnostic [--quick] [--family legacy|cubic] [--output report.json]");
         }
         std::ofstream file;
         if (!outputPath.empty()) {
@@ -154,7 +234,7 @@ int main(int argc, char** argv) {
         auto& out = file.is_open() ? static_cast<std::ostream&>(file) : std::cout;
         out << std::setprecision(12);
         out << "{\n\"schemaVersion\":1,\"quick\":" << (quick ? "true" : "false")
-            << ",\"model\":\"WCSPH poly6 density / spiky pressure gradient\","
+            << ",\"model\":\"" << (selectedFamily == SphKernelFamily::CubicSpline ? "WCSPH matched cubic density / pressure gradient" : "WCSPH poly6 density / spiky pressure gradient") << "\","
             << "\"continuumKernelNormalizationUnchanged\":true,"
             << "\"densityCheckTranslation\":[0.037,-0.061],"
             << "\"restSettings\":{\"speedOfSound\":15,\"equationOfStateExponent\":7,"
@@ -184,7 +264,7 @@ int main(int argc, char** argv) {
         WriteRest(out, "canonical-nominal-dt240", 21, 0.1f, 0.2f, 24);
         out << ',';
         WriteRest(out, "canonical-mass-calibrated", 21, 0.1f, 0.2f, 48,
-            SphKernels2D::SquareLatticeMassScale(0.1f, 0.2f));
+            SphKernels2D::SquareLatticeMassScale(0.1f, 0.2f, selectedFamily));
         out << ',';
         WriteRest(out, "canonical-initialized-continuity", 21, 0.1f, 0.2f, 48,
             1, WcsphDensityMode::Continuity);
@@ -204,7 +284,19 @@ int main(int argc, char** argv) {
                 WriteRest(out, "fixed-h-domain2", side, spacing, 0.2f, 96);
             }
         }
-        out << "]\n}\n";
+        out << "]";
+        if (!quick) {
+            out << ",\n\"perturbationAndTensileControls\":[";
+            bool firstControl=true;
+            for(float ratio:{2.0f,4.0f,8.0f}) for(bool clamp:{true,false}) for(bool perturb:{false,true}) {
+                if(!firstControl) out << ',';
+                firstControl=false;
+                WriteCharacterization(out,ratio,perturb,clamp);
+            }
+            out << "],\n\"sampledWallControl\":";
+            WriteWallCharacterization(out);
+        }
+        out << "\n}\n";
         out.flush();
         if (!out) throw std::runtime_error("Failed to write diagnostic output.");
     } catch (const std::exception& error) {

@@ -5,6 +5,11 @@ Their thresholds and `[!mayfail]` tags remain unchanged. It isolates the first
 two failures from translation, temporal integration, initialization and wall
 effects, using actual public kernels and the existing WCSPH solver.
 
+Follow-up: [issue #62 implementation and measurements](cubic-kernel-experiments.md)
+now provide an opt-in production cubic family. The results and candidate-only
+statements below describe the recorded legacy investigation at its stated
+revision; all nine legacy failures remain retained.
+
 ## Reproduce
 
 Build a Release configuration with `BUILD_TESTING=ON`, then run:

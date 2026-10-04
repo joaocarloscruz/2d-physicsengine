@@ -15,6 +15,8 @@ struct KernelMoments {
     double densityGradientXX = 0;
     double pressureGradientSumX = 0;
     double pressureGradientSumY = 0;
+    double cubicDensity = 0;
+    double cubicGradientXX = 0;
     double candidateCubicDensity = 0;
     double candidateCubicGradientXX = 0;
     std::size_t supportSamples = 0;
@@ -75,6 +77,11 @@ inline KernelMoments MeasureKernelMoments(float spacing, float smoothingLength) 
             const double q = 1 - radiusSquared / (h * h);
             const double derivativeX = -24 / (pi * h * h * h * h) * q * q * displacement.x;
             result.densityGradientXX -= volume * displacement.x * derivativeX;
+            result.cubicDensity += volume * PhysicsEngine::SphKernels2D::DensityWeight(
+                displacement, smoothingLength, PhysicsEngine::SphKernelFamily::CubicSpline);
+            const auto cubicGradient = PhysicsEngine::SphKernels2D::PressureGradient(
+                displacement, smoothingLength, PhysicsEngine::SphKernelFamily::CubicSpline);
+            result.cubicGradientXX -= volume * displacement.x * cubicGradient.x;
             const double radius = std::sqrt(radiusSquared);
             const auto cubic = CubicSplineCandidate(radius, h);
             result.candidateCubicDensity += volume * cubic.weight;
