@@ -2,6 +2,7 @@
 #include "physics/math/matrix2x2.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -62,14 +63,13 @@ HingeImpulse SolveHingeMass(const RigidBody& a, const RigidBody& b,
     const double py = (k11 * y - k12 * x) / determinant;
     return {{static_cast<float>(px), static_cast<float>(py)}, (angularRhs - k13 * px - k23 * py) / k33};
 }
-void SolveAngularStop(RigidBody& a, RigidBody& b, Vector2 pa, Vector2 pb,
-    double targetSpeed, double& accumulated, bool lower) {
+void SolveCoupledVelocity(RigidBody& a, RigidBody& b, Vector2 pa, Vector2 pb,
+    double targetSpeed, double& accumulated, double minimum, double maximum) {
     const Vector2 ra = pa - a.position, rb = pb - b.position;
     const Vector2 rhs = (b.GetVelocityAtPoint(pb) - a.GetVelocityAtPoint(pa)) * -1;
     const double speed = static_cast<double>(b.angularVelocity) - a.angularVelocity;
     const auto candidate = SolveHingeMass(a, b, ra, rb, rhs, targetSpeed - speed);
-    const double next = lower ? std::max(accumulated + candidate.angular, 0.0)
-        : std::min(accumulated + candidate.angular, 0.0);
+    const double next = std::clamp(accumulated + candidate.angular, minimum, maximum);
     const double angular = next - accumulated;
     accumulated = next;
     const double k13 = -static_cast<double>(a.inverseInertia) * ra.y - static_cast<double>(b.inverseInertia) * rb.y;
@@ -157,12 +157,8 @@ bool RevoluteJoint::preventsSleeping() const {
 void RevoluteJoint::solveVelocity() {
     const double angularMass = static_cast<double>(a->inverseInertia) + b->inverseInertia;
     if (motorEnabled && stepDuration > 0 && angularMass > 0) {
-        const double speed = static_cast<double>(b->angularVelocity) - a->angularVelocity;
         const double cap = static_cast<double>(maxMotorTorque) * stepDuration;
-        const double nextImpulse = std::clamp(motorImpulse + (motorSpeed - speed) / angularMass, -cap, cap);
-        const double impulse = nextImpulse - motorImpulse;
-        motorImpulse = nextImpulse;
-        ApplyAngularImpulse(*a, *b, impulse);
+        SolveCoupledVelocity(*a, *b, getAnchorA(), getAnchorB(), motorSpeed, motorImpulse, -cap, cap);
     }
     if (limitsEnabled && angularMass > 0) {
         const Vector2 pa = getAnchorA(), pb = getAnchorB();
@@ -178,12 +174,12 @@ void RevoluteJoint::solveVelocity() {
             const double lowerGap = angle - lowerLimit;
             if (stepDuration > 0 || lowerGap <= 0) {
                 const double bias = stepDuration > 0 ? std::max(lowerGap, 0.0) / stepDuration : 0;
-                SolveAngularStop(*a, *b, pa, pb, -bias, lowerImpulse, true);
+                SolveCoupledVelocity(*a, *b, pa, pb, -bias, lowerImpulse, 0, std::numeric_limits<double>::infinity());
             }
             const double upperGap = upperLimit - angle;
             if (stepDuration > 0 || upperGap <= 0) {
                 const double bias = stepDuration > 0 ? std::max(upperGap, 0.0) / stepDuration : 0;
-                SolveAngularStop(*a, *b, pa, pb, bias, upperImpulse, false);
+                SolveCoupledVelocity(*a, *b, pa, pb, bias, upperImpulse, -std::numeric_limits<double>::infinity(), 0);
             }
         }
         // The block solve already enforces the point constraint. With zero dt

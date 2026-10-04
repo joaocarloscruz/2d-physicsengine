@@ -144,6 +144,23 @@ TEST_CASE("Motor acceleration scales with elapsed time", "[joints][motor]") {
     }
 }
 
+TEST_CASE("Motor torque includes the inertia of an off-center anchor", "[joints][motor]") {
+    SimulationConfig config; config.solverIterations = 1;
+    World world(config);
+    auto a = Body({}, true), b = Body({1, 0});
+    b->SetMass(2);
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b, Vector2{}, Vector2(-1, 0));
+    joint->setMotor(true, 0.5f, 100);
+    world.addJoint(joint);
+    world.step(0.1f);
+    // Parallel-axis theorem: I_about_anchor = I_about_center + m*r^2.
+    REQUIRE(b->angularVelocity == Catch::Approx(0.5).margin(1e-5));
+    REQUIRE(b->velocity.y == Catch::Approx(0.5).margin(1e-5));
+    REQUIRE(joint->getMotorTorque() == Catch::Approx((b->inertia + b->mass) * 0.5 / 0.1));
+    REQUIRE(b->GetVelocityAtPoint(joint->getAnchorB()).magnitude() < 1e-5);
+}
+
 TEST_CASE("Motor impulses conserve two-body angular momentum and brake without overshoot", "[joints][motor]") {
     World world;
     auto a = Body({}), b = Body({});
