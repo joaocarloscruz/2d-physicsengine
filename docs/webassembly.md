@@ -322,7 +322,10 @@ node .\build-wasm\wasm\smoke-test.cjs
 ```
 
 The build produces `physics_engine.js` and `physics_engine.wasm` in
-`build-wasm/wasm`. It also copies a browser smoke test into that directory.
+`build-wasm/wasm`. It also copies the browser and Node smoke harnesses into that
+directory. Incremental builds track each source asset: editing a harness or
+removing its generated copy refreshes it when `physics_engine_wasm` is built,
+without requiring a module relink.
 Serve the directory over HTTP and open `index.html` to run it:
 
 ```powershell

@@ -183,21 +183,23 @@ if(EMSCRIPTEN)
         RUNTIME_OUTPUT_DIRECTORY "${WASM_OUTPUT_DIRECTORY}"
     )
 
-    add_custom_command(TARGET physics_engine_wasm POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/index.html"
-            "${WASM_OUTPUT_DIRECTORY}/index.html"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/smoke.js"
-            "${WASM_OUTPUT_DIRECTORY}/smoke.js"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/smoke-test.cjs"
-            "${WASM_OUTPUT_DIRECTORY}/smoke-test.cjs"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/boundary-stress.cjs"
-            "${WASM_OUTPUT_DIRECTORY}/boundary-stress.cjs"
-        COMMENT "Copying WebAssembly smoke tests"
-    )
+    # Harness edits must be visible even when the module needs no relink.
+    # Explicit outputs also let incremental builds restore a missing asset.
+    set(WASM_ASSET_OUTPUTS)
+    foreach(asset IN ITEMS index.html smoke.js smoke-test.cjs boundary-stress.cjs)
+        set(asset_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/${asset}")
+        set(asset_output "${WASM_OUTPUT_DIRECTORY}/${asset}")
+        add_custom_command(OUTPUT "${asset_output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${WASM_OUTPUT_DIRECTORY}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${asset_source}" "${asset_output}"
+            DEPENDS "${asset_source}"
+            COMMENT "Updating WebAssembly asset ${asset}"
+            VERBATIM
+        )
+        list(APPEND WASM_ASSET_OUTPUTS "${asset_output}")
+    endforeach()
+    add_custom_target(physics_wasm_assets DEPENDS ${WASM_ASSET_OUTPUTS})
+    add_dependencies(physics_engine_wasm physics_wasm_assets)
 elseif(BUILD_TESTING)
     # --- Native Test Executable
     # Visual Studio project names are case-insensitive: run_tests would collide
