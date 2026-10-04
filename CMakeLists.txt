@@ -225,6 +225,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
+        ${TESTS_SRC_DIR}/test_contact_load_projection.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_joint_arithmetic.cpp
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
@@ -287,6 +288,13 @@ elseif(BUILD_TESTING)
     set_tests_properties(broad_phase_benchmark_smoke PROPERTIES LABELS "fast;performance")
     add_executable(rigid_contact_benchmark benchmarks/rigid_contact_benchmark.cpp)
     target_link_libraries(rigid_contact_benchmark PRIVATE PhysicsEngine::Engine)
+    add_executable(contact_load_benchmark benchmarks/rigid_contact_benchmark.cpp)
+    target_compile_definitions(contact_load_benchmark PRIVATE PHYSICS_CONTACT_LOAD_EXPERIMENT)
+    target_link_libraries(contact_load_benchmark PRIVATE PhysicsEngine::Engine)
+    add_executable(contact_load_diagnostic benchmarks/contact_load_diagnostic.cpp)
+    target_link_libraries(contact_load_diagnostic PRIVATE PhysicsEngine::Engine)
+    add_test(NAME contact_load_diagnostic_smoke COMMAND contact_load_diagnostic)
+    set_tests_properties(contact_load_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
     add_executable(contact_integration_diagnostic benchmarks/contact_integration_diagnostic.cpp)
     target_link_libraries(contact_integration_diagnostic PRIVATE PhysicsEngine::Engine)
     add_test(NAME contact_integration_diagnostic_smoke COMMAND contact_integration_diagnostic)

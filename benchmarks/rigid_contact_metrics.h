@@ -122,8 +122,15 @@ struct Result {
     std::size_t finalPersistent=0,peakPersistent=0;
     std::vector<std::array<double,6>> states;
     std::vector<double> masses,inertias;
+    std::uint64_t experimentalPairVisits=0,experimentalScratchSolves=0;
+    double experimentalClosingResidual=0,experimentalTangentialSpeed=0;
+    std::map<std::string,std::uint64_t> experimentalEligibility;
 };
-inline Result Run(const FixtureSpec& spec,const Controls& controls) {
+struct NoStepObservation {
+    template<class W> void operator()(const W&,Result&) const {}
+};
+template<class WorldType=World,class StepObservation=NoStepObservation>
+inline Result Run(const FixtureSpec& spec,const Controls& controls,StepObservation observe={}) {
     Validate(controls);SimulationConfig config;
     if(spec.boxes<1||spec.boxes>12||!std::isfinite(spec.massRatio)||spec.massRatio<=0
         ||!std::isfinite(spec.restitution)||spec.restitution<0||spec.restitution>1)
@@ -132,7 +139,7 @@ inline Result Run(const FixtureSpec& spec,const Controls& controls) {
     config.enableSleeping=false;config.enableLinearVelocityLimit=false;config.enableAngularVelocityLimit=false;
     config.restitutionVelocityThreshold=0; // Explicit analytical restitution at all incident speeds.
     if(spec.impact)config.positionCorrectionFactor=0; // Isolate the instantaneous impulse oracle.
-    Tracker tracker;World world(config);world.addCollisionListener(&tracker);
+    Tracker tracker;WorldType world(config);world.addCollisionListener(&tracker);
     std::vector<RigidBodyPtr> dynamic;std::vector<Point> initialPositions;std::vector<double> initialAngles;
     const auto add=[&](const Shape& shape,Vector2 p,float mass,const Material& material,bool fixed=false) {
         auto body=std::make_shared<RigidBody>(shape,material,p,fixed);if(!fixed){body->SetMass(mass);dynamic.push_back(body);}
@@ -170,7 +177,7 @@ inline Result Run(const FixtureSpec& spec,const Controls& controls) {
         r.expectedEnergy=r.initial.kinetic-0.5*(1-e*e)*u*u/denominator;
     }
     for(int step=0;step<r.steps;++step) {
-        world.step(static_cast<float>(r.dt));Measure(dynamic,gravity);
+        world.step(static_cast<float>(r.dt));observe(world,r);Measure(dynamic,gravity);
         const auto s=world.getLastStepStatistics();r.integrated+=s.integratedBodyCount;r.broadCandidates+=s.broadPhaseCandidateCount;
         r.narrowCandidates+=s.narrowPhaseCandidateCount;r.resolved+=s.resolvedContactCount;
         r.solverIterations+=s.solverIterationCount;r.constraints+=s.solvedConstraintCount;

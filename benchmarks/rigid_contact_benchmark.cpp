@@ -1,4 +1,7 @@
 #include "rigid_contact_metrics.h"
+#ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
+#include "experimental/contact_load_projection.h"
+#endif
 #include <chrono>
 #include <fstream>
 #include <iomanip>
@@ -8,6 +11,15 @@
 
 using namespace RigidContactDiagnostic;
 namespace {
+#ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
+void ObserveExperiment(const ContactLoadExperiment::World& w,Result& r) {
+    const auto& e=w.lastExperiment();
+    r.experimentalPairVisits+=e.pairs;r.experimentalScratchSolves+=e.scratchSolves;
+    r.experimentalClosingResidual=std::max(r.experimentalClosingResidual,e.loadedClosingResidual);
+    r.experimentalTangentialSpeed=std::max(r.experimentalTangentialSpeed,e.loadedTangentialSpeed);
+    ++r.experimentalEligibility[e.eligibility];
+}
+#endif
 double Number(const std::string& value) {
     std::size_t count=0;const double out=std::stod(value,&count);
     if(count!=value.size()||!std::isfinite(out))throw std::invalid_argument("Invalid numeric option");
@@ -59,7 +71,15 @@ void Write(std::ostream& out,const Result& r,double milliseconds,const FixtureSp
     bool first=true;for(const auto& state:r.states){if(!first)out<<',';first=false;out<<'[';
         for(std::size_t i=0;i<state.size();++i){if(i)out<<',';out<<state[i];}out<<']';}out<<"],\"dynamicMasses\":[";
     for(std::size_t i=0;i<r.masses.size();++i){if(i)out<<',';out<<r.masses[i];}out<<"],\"dynamicInertias\":[";
-    for(std::size_t i=0;i<r.inertias.size();++i){if(i)out<<',';out<<r.inertias[i];}out<<"]}";
+    for(std::size_t i=0;i<r.inertias.size();++i){if(i)out<<',';out<<r.inertias[i];}out<<"]";
+#ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
+    out<<",\"experimentalPairVisits\":"<<r.experimentalPairVisits<<",\"experimentalScratchSolves\":"<<r.experimentalScratchSolves
+       <<",\"experimentalPeakClosingResidual\":"<<r.experimentalClosingResidual<<",\"experimentalPeakTangentialSpeed\":"<<r.experimentalTangentialSpeed
+       <<",\"experimentalEligibility\":{";
+    bool firstEligibility=true;for(const auto& entry:r.experimentalEligibility){if(!firstEligibility)out<<',';firstEligibility=false;out<<'"'<<entry.first<<"\":"<<entry.second;}
+    out<<'}';
+#endif
+    out<<'}';
 }
 }
 int main(int argc,char** argv) {
@@ -93,13 +113,21 @@ int main(int argc,char** argv) {
         out<<std::setprecision(17)<<"{\"schemaVersion\":1,\"quick\":"<<(quick?"true":"false")
            <<",\"gravity\":9.81,\"sleeping\":false,\"linearVelocityLimit\":false,\"angularVelocityLimit\":false,\"ccd\":false"
            <<",\"restitutionVelocityThreshold\":0,\"plannedWorldSteps\":"<<planned
-           <<",\"contactPersistenceIsCacheHitCount\":false,\"timingIsDeterministic\":false,\"rows\":[";
+           <<",\"contactPersistenceIsCacheHitCount\":false,\"timingIsDeterministic\":false";
+#ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
+        out<<",\"experimentalIntegration\":\"frozen_geometry_incremental_load_projection\"";
+#endif
+        out<<",\"rows\":[";
         bool first=true;int failures=0;
         for(float h:dts)for(int count:counts)for(float factor:warms)for(const auto& fixture:fixtures) {
             const auto start=std::chrono::steady_clock::now();
             if(!first)out<<',';first=false;
             try {
+#ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
+                const auto r=Run<ContactLoadExperiment::World>(fixture,{h,count,factor,duration.value_or(2)},ObserveExperiment);
+#else
                 const auto r=Run(fixture,{h,count,factor,duration.value_or(2)});
+#endif
                 const double elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
                 Write(out,r,elapsed,fixture);
             }catch(const std::exception& error){++failures;out<<"{\"fixture\":\""<<fixture.name<<"\",\"dt\":"<<h
