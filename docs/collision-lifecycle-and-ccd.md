@@ -1,5 +1,9 @@
 # Collision lifecycle and CCD
 
+See the [rigid-contact benchmark](rigid-contact-benchmark.md) for reproducible
+rest/stack/friction/impact measurements, analytical impulse regressions and the
+current contact solver's measured accuracy limits.
+
 Override `ICollisionListener::onCollisionBegin`, `onCollisionPersist`, and/or
 `onCollisionEnd`, then register the listener with a World or Engine. Begin occurs
 once for a new pair, persist once per subsequent step in contact, and end once

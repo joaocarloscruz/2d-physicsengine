@@ -191,6 +191,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
+        ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
@@ -241,6 +242,15 @@ elseif(BUILD_TESTING)
         benchmarks/fluid_benchmark.cpp
     )
     target_link_libraries(fluid_benchmark PRIVATE Engine)
+    add_executable(rigid_contact_benchmark benchmarks/rigid_contact_benchmark.cpp)
+    target_link_libraries(rigid_contact_benchmark PRIVATE PhysicsEngine::Engine)
+    add_test(NAME rigid_contact_benchmark_smoke COMMAND rigid_contact_benchmark --quick
+        --output ${CMAKE_BINARY_DIR}/rigid-contact-smoke.json)
+    set_tests_properties(rigid_contact_benchmark_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
+    add_test(NAME rigid_contact_benchmark_invalid_iterations COMMAND rigid_contact_benchmark --iterations 1.5)
+    add_test(NAME rigid_contact_benchmark_budget_rejection COMMAND rigid_contact_benchmark --quick --dt 0.0001 --duration 8)
+    set_tests_properties(rigid_contact_benchmark_invalid_iterations rigid_contact_benchmark_budget_rejection
+        PROPERTIES WILL_FAIL TRUE LABELS "fast;diagnostic")
     add_executable(fluid_solver_comparison benchmarks/fluid_solver_comparison.cpp)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
     add_executable(fluid_consistency_diagnostic benchmarks/fluid_consistency_diagnostic.cpp)
