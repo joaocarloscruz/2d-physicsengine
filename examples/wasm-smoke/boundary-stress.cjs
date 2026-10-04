@@ -95,6 +95,80 @@ const createModule = require('./physics_engine.js');
     for (let i = 0; i < 1000; ++i) deletingBatch();
     assert.deepEqual(physics.boundaryTestStats(), deleteBefore);
     assert.equal(stack(), deleteStack);
+    if (typeof physics.MaxwellGrid === 'function') {
+        const config = {columns:2, rows:2, spacingX:1, spacingY:1, permittivity:1,
+            permeability:1, cflSafety:.9, maxSubstep:1, maximumSubsteps:10000,
+            maximumCellVisits:100000000};
+        const maxwell = new physics.MaxwellGrid(config);
+        const budget = new physics.MaxwellGrid({...config, maximumCellVisits:15});
+        const large = new physics.MaxwellGrid(config);
+        const largeFields = {ez:[], hx:[], hy:[]};
+        for (let j=0; j<2; ++j) for (let i=0; i<2; ++i) {
+            const theta = Math.PI*(i+j)+.31;
+            largeFields.ez.push(0);
+            largeFields.hx.push(6e153*Math.sin(theta+Math.PI/2));
+            largeFields.hy.push(-6e153*Math.sin(theta+Math.PI/2));
+        }
+        large.setState(largeFields);
+        const owners = [maxwell,budget,large];
+        const fieldsBefore = owners.map(owner => owner.getState());
+        const diagnosticsBefore = owners.map(owner => owner.getDiagnostics());
+        // The private native observer must bypass shadowed public methods.
+        maxwell.getConfig = () => ({columns:1e20,rows:1e20});
+        const zero = () => Array(4).fill(0);
+        const fieldState = () => ({ez:zero(),hx:zero(),hy:zero()});
+        const maxwellProxy = new Proxy(zero(), {get(target,key) {
+            if (key === '3') throw ordinary;
+            return Reflect.get(target,key);
+        }});
+        const fieldGetter = {ez:zero(),hx:zero(),get hy() {throw ordinary;}};
+        const maxwellFailures = [
+            () => budget.step(.01), // native work budget exception
+            () => large.step(.6), // native late energy exception after staged updates
+            () => maxwell.setState({ez:accessor(4,ordinary),hx:zero(),hy:zero()}),
+            () => maxwell.setState({ez:zero(),hx:maxwellProxy,hy:zero()}),
+            () => maxwell.setState(fieldGetter),
+            () => maxwell.setState({ez:zero(),hx:zero(),hy:accessor(4,73)}),
+            () => {
+                const s=fieldState();
+                Object.defineProperty(s.hy,3,{get:()=>{budget.step(.01);}});
+                maxwell.setState(s);
+            },
+        ];
+        function maxwellBatch() {
+            for (let i=0; i<maxwellFailures.length; ++i) {
+                const before=stack();
+                assert.throws(maxwellFailures[i], error => i===5 ? error===73 :
+                    error instanceof Error && !('excPtr' in error));
+                assert.equal(stack(),before);
+            }
+            assert.throws(()=>maxwell.setState(fieldGetter),error=>error===ordinary);
+            const s=fieldState();
+            let reads=0;
+            Object.defineProperty(s.ez,3,{get:()=>{++reads;throw ordinary;}});
+            s.hy=[];
+            assert.throws(()=>maxwell.setState(s),error=>error instanceof RangeError);
+            assert.equal(reads,0); // all three shapes precede any entry
+            const successful=fieldState();
+            Object.defineProperty(successful.hy,3,{get:()=>{assert.equal(probe.method(),7);return 0;}});
+            maxwell.setState(successful); // nested success with copied numeric entries
+            const receiver=new physics.MaxwellGrid(config), deleting=fieldState();
+            Object.defineProperty(deleting.hy,3,{get:()=>{receiver.delete();return 0;}});
+            assert.throws(()=>receiver.setState(deleting),error=>error instanceof Error);
+            assert.equal(receiver.isDeleted(),true);
+        }
+        for (let i=0; i<20; ++i) maxwellBatch();
+        const maxwellBefore=physics.boundaryTestStats(),maxwellStack=stack();
+        for (let i=0; i<1000; ++i) maxwellBatch();
+        assert.deepEqual(physics.boundaryTestStats(),maxwellBefore);
+        assert.equal(stack(),maxwellStack);
+        for (let i=0; i<owners.length; ++i) {
+            assert.deepEqual(owners[i].getState(),fieldsBefore[i]);
+            assert.deepEqual(owners[i].getDiagnostics(),diagnosticsBefore[i]);
+            owners[i].delete();
+        }
+        console.log(`PASS: Maxwell boundary stress; 1000 batches/10000 rejection checks, stack=${maxwellStack}, live heap=${maxwellBefore.heap}, uncaught=${maxwellBefore.uncaught}; unchanged fields/diagnostics`);
+    }
     probe.delete();
     assert.equal(physics.boundaryTestStats().objects, 0);
     assert.equal(physics.boundaryTestStats().values, 1); // test static field only
