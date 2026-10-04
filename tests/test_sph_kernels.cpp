@@ -207,3 +207,82 @@ TEST_CASE("SPH scale handling still rejects unrepresentable final values", "[flu
     REQUIRE_THROWS_AS(SphKernels2D::PressureGradient({h / 2, 0}, h), std::overflow_error);
     REQUIRE_THROWS_AS(SphKernels2D::ViscosityLaplacian({}, h), std::overflow_error);
 }
+
+TEST_CASE("Cubic family matches independently normalized analytic weight and derivative", "[fluid][sph][kernel][cubic]") {
+    constexpr auto family = SphKernelFamily::CubicSpline;
+    constexpr double pi = 3.14159265358979323846;
+    for (float h : {0.2f, 1.0f, 2.0f}) {
+        const double c = 40 / (7*pi*static_cast<double>(h)*h);
+        const float integral = IntegrateRadially(h, [h](float r) {
+            return SphKernels2D::DensityWeight({r, 0}, h, SphKernelFamily::CubicSpline);
+        });
+        REQUIRE(integral == Catch::Approx(1).margin(0.0002));
+        for (float ratio : {0.0f, 0.2f, 0.49f, 0.5f, 0.7f, 0.99f, 1.0f, 1.1f}) {
+            const float r = ratio*h;
+            const double u = 2*static_cast<double>(r)/h;
+            const double expected = u < 1 ? c*(1-1.5*u*u+0.75*u*u*u) :
+                (u < 2 ? c*0.25*std::pow(2-u,3) : 0);
+            const double derivative = u < 1 ? c*(-3*u+2.25*u*u)*2/h :
+                (u < 2 ? c*(-0.75)*std::pow(2-u,2)*2/h : 0);
+            const float weight = SphKernels2D::DensityWeight({r,0},h,family);
+            REQUIRE(weight == Catch::Approx(expected).margin(1e-7));
+            REQUIRE(SphKernels2D::PressureWeight({r,0},h,family) == weight);
+            REQUIRE(SphKernels2D::PressureGradient({r,0},h,family).x ==
+                Catch::Approx(derivative).margin(1e-7));
+            if (ratio > 0 && ratio < 1) {
+                const float delta = h*0.0002f;
+                const double numerical = (SphKernels2D::DensityWeight({r+delta,0},h,family)
+                    - SphKernels2D::DensityWeight({r-delta,0},h,family))/(2*delta);
+                REQUIRE(numerical == Catch::Approx(derivative).epsilon(0.001));
+            }
+        }
+        for (float branch : {0.5f, 1.0f}) {
+            const auto left = SphKernels2D::PressureGradient({h*(branch-1e-5f),0},h,family);
+            const auto right = SphKernels2D::PressureGradient({h*(branch+1e-5f),0},h,family);
+            REQUIRE(left.x/c*h == Catch::Approx(right.x/c*h).margin(0.0002));
+            REQUIRE(SphKernels2D::DensityWeight({h*(branch-1e-5f),0},h,family)/c ==
+                Catch::Approx(SphKernels2D::DensityWeight({h*(branch+1e-5f),0},h,family)/c).margin(0.0001));
+        }
+    }
+}
+
+TEST_CASE("Cubic parity scale laws calibration and final representability are checked", "[fluid][sph][kernel][cubic]") {
+    constexpr auto family = SphKernelFamily::CubicSpline;
+    const Vector2 d{0.3f, -0.4f};
+    REQUIRE(SphKernels2D::DensityWeight(d,1,family) == SphKernels2D::DensityWeight(d*-1,1,family));
+    REQUIRE(SphKernels2D::PressureGradient(d,1,family) == SphKernels2D::PressureGradient(d*-1,1,family)*-1);
+    const double baseWeight=SphKernels2D::DensityWeight(d,1,family);
+    const auto baseGradient=SphKernels2D::PressureGradient(d,1,family);
+    for(float scale : {1e-10f,0.25f,2.0f,1e10f}) {
+        const double area=static_cast<double>(scale)*scale;
+        const auto gradient=SphKernels2D::PressureGradient(d*scale,scale,family);
+        REQUIRE(SphKernels2D::DensityWeight(d*scale,scale,family)*area == Catch::Approx(baseWeight));
+        REQUIRE(gradient.x*area*scale == Catch::Approx(baseGradient.x));
+        REQUIRE(gradient.y*area*scale == Catch::Approx(baseGradient.y));
+    }
+    const double pi=3.14159265358979323846, diag=2-std::sqrt(2.0);
+    const double sum=10/(7*pi)*(2+diag*diag*diag);
+    REQUIRE(SphKernels2D::SquareLatticeMassScale(1,2,family) == Catch::Approx(1/sum));
+    for(float dx : {1e-30f,1e-15f,1.0f,1e15f,1e30f})
+        REQUIRE(SphKernels2D::SquareLatticeMassScale(dx,2*dx,family) == Catch::Approx(1/sum));
+    REQUIRE(SphKernels2D::PressureGradient({},1e-20f,family) == Vector2{});
+    REQUIRE_THROWS_AS(SphKernels2D::DensityWeight({},1e-20f,family),std::overflow_error);
+    REQUIRE_THROWS_AS(SphKernels2D::PressureGradient({0.5e-20f,0},1e-20f,family),std::overflow_error);
+    const auto tinyDirection=SphKernels2D::PressureGradient({1e-30f,0},1e-10f,family);
+    REQUIRE(tinyDirection.x == Catch::Approx(-480/(7*pi)*1e10).epsilon(1e-6));
+    REQUIRE(tinyDirection.y == 0);
+    const auto invalid=static_cast<SphKernelFamily>(99);
+    REQUIRE_THROWS_AS(SphKernels2D::DensityWeight({2,0},1,invalid),std::invalid_argument);
+    REQUIRE_THROWS_AS(SphKernels2D::PressureGradient({},1,invalid),std::invalid_argument);
+    REQUIRE_THROWS_AS(SphKernels2D::SquareLatticeMassScale(1,2,invalid),std::invalid_argument);
+    REQUIRE_THROWS_AS(SphKernels2D::PressureWeight({},0,family),std::invalid_argument);
+}
+
+TEST_CASE("Explicit legacy family preserves all two-argument kernel results", "[fluid][sph][kernel][cubic]") {
+    for(Vector2 d : {Vector2{},Vector2{0.2f,0.3f},Vector2{1,0}}) {
+        REQUIRE(SphKernels2D::DensityWeight(d,1,SphKernelFamily::Poly6Spiky) == SphKernels2D::DensityWeight(d,1));
+        REQUIRE(SphKernels2D::PressureWeight(d,1,SphKernelFamily::Poly6Spiky) == SphKernels2D::PressureWeight(d,1));
+        REQUIRE(SphKernels2D::PressureGradient(d,1,SphKernelFamily::Poly6Spiky) == SphKernels2D::PressureGradient(d,1));
+    }
+    REQUIRE(SphKernels2D::SquareLatticeMassScale(1,2,SphKernelFamily::Poly6Spiky) == SphKernels2D::SquareLatticeMassScale(1,2));
+}

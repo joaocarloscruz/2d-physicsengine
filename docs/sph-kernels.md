@@ -70,3 +70,25 @@ requirements. Tests numerically integrate both scalar weights for several
 smoothing lengths, compare the analytic pressure gradient with a centered
 finite difference, and cover symmetry, support boundaries, invalid inputs, and
 coincident particles.
+
+
+## Explicit kernel families
+
+Existing two-argument calls retain the poly6-density/spiky-pressure behavior.
+Three-argument density, pressure weight and pressure gradient overloads accept
+`SphKernelFamily::Poly6Spiky` or `SphKernelFamily::CubicSpline`; unrecognized
+values throw `std::invalid_argument`. The cubic family uses the same normalized
+2D scalar weight and its analytic radial derivative, with full support radius
+`h` (the conventional smoothing scale is `h/2`). With `u=2*r/h` and
+`C=40/(7*pi*h*h)`, the shape is `C*(1-1.5*u*u+0.75*u*u*u)` for `u<1`,
+`C*0.25*(2-u)^3` for `1<=u<2`, and zero at or beyond support. Its coincident
+gradient is zero; weight and gradient are continuous through both branches.
+Double dimensionless intermediates avoid intermediate float overflow, while
+unrepresentable final scalar/components throw `std::overflow_error`. Tiny
+representable outputs may round or underflow according to float precision.
+
+`SquareLatticeMassScale(dx,h,family)` explicitly calibrates that family's
+infinite square-lattice density sum. It changes the caller's chosen initial
+mass if applied; it is never applied automatically and is not a correction
+for irregular particles or boundaries. `ViscosityLaplacian` remains the
+independent Muller operator with the existing diffusion stability bounds.
