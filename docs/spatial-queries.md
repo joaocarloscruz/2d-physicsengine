@@ -1,4 +1,4 @@
-# Native point, circle and ray queries
+# Native point, circle overlap and finite sweep queries
 
 Include `physics/physics.h` (or `physics/core/spatial_queries.h`) and link the
 installed `PhysicsEngine::Engine` target. Queries support circles and strictly
@@ -16,6 +16,12 @@ bool touching = OverlapsCircle(*body, {3.5f, 0}, 0.5f);
 auto disks = QueryCircle(world, {3.5f, 0}, 0.5f);
 auto nearest = RayCastNearest(world, {0, 0}, {4, 0});
 auto all = RayCastAll(world, {0, 0}, {4, 0});
+auto circleHit = SweepCircleNearest(world, {0, 0}, {4, 0}, 0.5f);
+auto circleHits = SweepCircleAll(world, {0, 0}, {4, 0}, 0.5f);
+if (circleHit) {
+    // fraction=.125, center=(.5,0), target contactPoint=(1,0), normal=(-1,0)
+    SweptCircleHit geometry = circleHit->hit;
+}
 if (nearest) {
     // fraction=0.25, point=(1,0), normal=(-1,0)
     RigidBodyPtr retained = nearest->body;
@@ -64,6 +70,36 @@ point equal to `start`, and normal (0,0), independent of the ray's direction.
 This includes zero-length segments. A zero-length segment outside the shape
 returns no hit. These are containment results and do not search for an exit face.
 
+`SweepCircle(shape, start, end, radius, position={}, orientation=0)` and its
+body overload find the first contact along a **closed linear center path**.
+The radius stays constant. Circle targets use a disk expanded by the query radius;
+polygon targets use finite outward-offset edges and circular vertex corners,
+the actual rounded Minkowski expansion. A diagonal path can miss a rounded
+corner even when it crosses the intersection of expanded edge half-planes.
+The result is `std::optional<SweptCircleHit>`:
+
+- `fraction`: double center-path parameter in [0,1].
+- `center`: moving circle's world center at contact.
+- `contactPoint`: world point on the target surface.
+- `normal`: outward unit target normal, pointing from the target toward `center`.
+
+Outside starts include tangency and endpoint contact. If the disk initially
+overlaps **or touches** the target, it returns fraction zero, `center=start`,
+`contactPoint=start` and normal (0,0). This intentionally reports containment,
+so its `contactPoint` need not lie on the target surface. Outside zero-motion
+queries miss. Radius zero delegates to `RayCast` exactly: center and contactPoint
+both equal its point, with identical fractions and corner-normal conventions.
+Circle target orientation has no geometric effect, though it must still be finite.
+
+For positive radius, exact feature-parameter ties select finite offset edges
+before circular vertices, each in stored index order. No epsilon merges distinct
+parameters. Normals at rounded corners are radial; face normals remain outward.
+Geometry is calculated near target features instead of interpolating huge
+endpoints, then converted to checked finite float vectors. At extreme scales
+the reported double fraction may collapse distinct events; the independently
+constructed feature contact can still retain local geometry. The numerical
+conditioning limits below also apply to overlaps and sweeps.
+
 Coordinates, shape position and orientation must be finite. Invalid numeric
 arguments or unsupported shape subclasses throw `std::invalid_argument`.
 World helpers validate query coordinates even when the world is empty or the
@@ -92,6 +128,12 @@ ordered by hit fraction, then stable body ID for exact fraction ties.
 `std::nullopt`. Static and sleeping bodies are included. Results are not
 truncated and do not depend on registration order.
 
+`SweepCircleAll` returns one `WorldSweptCircleHit` per matching body, sorted by
+reported fraction then stable ID. `SweepCircleNearest` uses exactly that ordering
+in a single scan and returns nullopt on a miss. Both validate the path and radius
+before scanning, including empty or fully filtered worlds. Their body handles
+retain ownership after removal and their geometry is a value snapshot.
+
 Each point result and `WorldRayHit::body` retains shared ownership, so a body
 remains accessible after removal, `clearBodies()`, or World destruction.
 The hit geometry is a value snapshot; the retained body may later move.
@@ -109,10 +151,11 @@ whose category and mask are nonzero. For example, a query with category 4 and
 mask 2 includes a category-2 body only if that body's mask also accepts 4.
 Zero category or mask excludes all bodies. Shape/body queries apply no filter.
 
-These helpers scan current transforms linearly; circle overlap costs
+These helpers scan current transforms linearly; circle overlap and sweep cost
 O(body count × target vertices), without an implicit vertex or result limit.
 They neither advance the
 simulation nor rely on possibly stale broad-phase pairs. Simulation objects
 remain unsynchronized; do not mutate a World concurrently with queries.
-This API is native C++; WebAssembly bindings and accelerated shape casts are
-separate future work.
+They do not enable circle CCD in `World::step`, and support neither rotating
+circle paths nor polygon shape casts. This API is native C++; WebAssembly
+bindings and accelerated shape casts are separate future work.

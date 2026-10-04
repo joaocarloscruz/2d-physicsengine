@@ -10,6 +10,7 @@ int main() {
     const auto hit = PhysicsEngine::RayCastNearest(world, {-2, 0}, {4, 0});
     const auto points = PhysicsEngine::QueryPoint(world, {1, 0});
     const auto circles = PhysicsEngine::QueryCircle(world, {1, 0}, 0.25f);
+    const auto circleHit = PhysicsEngine::SweepCircleNearest(world, {-2, 0}, {4, 0}, 0.5f);
     auto support = std::make_shared<PhysicsEngine::RigidBody>(PhysicsEngine::Circle(1), PhysicsEngine::Material{}, PhysicsEngine::Vector2{}, true);
     PhysicsEngine::PrismaticJoint slider(support, body);
     if (std::abs(slider.getTranslation() - 1) > 1e-6) return 1;
@@ -39,6 +40,9 @@ int main() {
         && hit && hit->body == body && std::abs(hit->hit.fraction - 1.0 / 3.0) < 1e-6
         && points.size() == 1 && points[0] == body
         && circles.size() == 1 && circles[0] == body
+        && circleHit && circleHit->body == body && std::abs(circleHit->hit.fraction - 0.25) < 1e-6
+        && std::abs(circleHit->hit.center.x + 0.5f) < 1e-6
+        && std::abs(circleHit->hit.contactPoint.x) < 1e-6
         && std::abs(charge.getVelocity().x - std::cos(1.0)) < 1e-12
         && std::abs(soft.getParticles()[0].position.x - 0.5f) < 1e-6f
         && std::abs(thermal.getNodes()[0].temperature - 301) < 1e-10

@@ -27,6 +27,18 @@ struct WorldRayHit {
     RayHit hit;
 };
 
+struct SweptCircleHit {
+    double fraction = 0; // Parameter of the moving center on [start, end].
+    Vector2 center;
+    Vector2 contactPoint; // Point on the target, except the initial-overlap convention.
+    Vector2 normal; // Outward target normal, pointing toward the moving center.
+};
+
+struct WorldSweptCircleHit {
+    RigidBodyPtr body; // Retained ownership; geometry is a value snapshot.
+    SweptCircleHit hit;
+};
+
 // Circle and convex Polygon queries. Polygon vertices remain in their original
 // local frame, including an offset from the origin; position/orientation supply
 // the body's world transform. Boundary points are contained.
@@ -48,6 +60,16 @@ std::optional<RayHit> RayCast(const Shape& shape, Vector2 start, Vector2 end,
     Vector2 position = {}, float orientation = 0);
 std::optional<RayHit> RayCast(const RigidBody& body, Vector2 start, Vector2 end);
 
+// First contact of a disk on a closed linear center path. Polygon expansion has
+// finite offset edges and circular corners. Initially overlapping/touching disks
+// return fraction=0, center=contactPoint=start, normal=(0,0). Outside zero motion
+// misses. Radius zero delegates RayCast (including its polygon corner normals).
+// Exact feature ties prefer stored edges, then stored vertices, in index order.
+std::optional<SweptCircleHit> SweepCircle(const Shape& shape, Vector2 start,
+    Vector2 end, float radius, Vector2 position = {}, float orientation = 0);
+std::optional<SweptCircleHit> SweepCircle(const RigidBody& body, Vector2 start,
+    Vector2 end, float radius);
+
 // Linear scans of the current body transforms; no result limit or broad phase.
 // Point results sort by ID; ray results sort by (fraction, ID), without epsilon
 // ties. Static and sleeping bodies participate. Inputs must be finite, even in
@@ -61,4 +83,8 @@ std::vector<WorldRayHit> RayCastAll(const World& world, Vector2 start, Vector2 e
     QueryFilter filter = {});
 std::optional<WorldRayHit> RayCastNearest(const World& world, Vector2 start,
     Vector2 end, QueryFilter filter = {});
+std::vector<WorldSweptCircleHit> SweepCircleAll(const World& world, Vector2 start,
+    Vector2 end, float radius, QueryFilter filter = {});
+std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& world,
+    Vector2 start, Vector2 end, float radius, QueryFilter filter = {});
 }

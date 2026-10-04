@@ -186,9 +186,94 @@ bool Matches(const RigidBody& body, QueryFilter filter) {
     return (body.GetCollisionCategoryBits() & filter.maskBits) != 0
         && (filter.categoryBits & body.GetCollisionMaskBits()) != 0;
 }
+// Represent the supporting line near the target, rather than constructing a
+// boundary point by interpolating huge segment endpoints. The dominant-axis
+// anchor bounds its slope and preserves simple axis/diagonal line offsets.
+struct SweepLine {
+    DVector reference, direction;
+    double startProjection, endProjection, length;
+    SweepLine(Vector2 start, Vector2 end, const Transform& transform) {
+        const DVector motion = ToDouble(end) - ToDouble(start);
+        const double worldLength = std::hypot(motion.x, motion.y);
+        const DVector worldDirection = motion * (1 / worldLength);
+        DVector worldReference;
+        if (std::abs(motion.x) >= std::abs(motion.y))
+            worldReference = {0, std::fma(-static_cast<double>(start.x), motion.y / motion.x, start.y)};
+        else
+            worldReference = {std::fma(-static_cast<double>(start.y), motion.x / motion.y, start.x), 0};
+        reference = transform.LocalDouble(worldReference);
+        direction = {transform.cosine * worldDirection.x + transform.sine * worldDirection.y,
+                     -transform.sine * worldDirection.x + transform.cosine * worldDirection.y};
+        const double scale = std::hypot(direction.x, direction.y);
+        direction = direction * (1 / scale);
+        startProjection = Dot(worldDirection, ToDouble(start) - worldReference) * scale;
+        endProjection = Dot(worldDirection, ToDouble(end) - worldReference) * scale;
+        length = worldLength * scale;
+    }
+    bool Includes(double projection) const {
+        return projection >= startProjection && projection <= endProjection;
+    }
+    double Fraction(double projection) const {
+        return std::clamp((projection - startProjection) / length, 0.0, 1.0);
+    }
+};
+struct SweepCandidate { double projection; DVector center, contact, normal; };
+std::optional<SweepCandidate> DiskEntry(const SweepLine& line, DVector center,
+                                       double expandedRadius, double targetRadius) {
+    const double perpendicular = Cross(line.direction, line.reference - center);
+    const double distance = std::abs(perpendicular);
+    if (distance > expandedRadius) return std::nullopt;
+    const double halfChord = std::sqrt((expandedRadius - distance) * (expandedRadius + distance));
+    const double entry = Dot(center - line.reference, line.direction) - halfChord;
+    if (!line.Includes(entry)) return std::nullopt;
+    const DVector offset = DVector{-line.direction.y, line.direction.x} * perpendicular
+        - line.direction * halfChord;
+    const DVector normal = offset * (1 / expandedRadius);
+    return SweepCandidate{entry, center + offset, center + normal * targetRadius, normal};
+}
+std::optional<SweptCircleHit> PolygonSweep(const Polygon& polygon, const Transform& transform,
+    Vector2 start, Vector2 end, double radius) {
+    const SweepLine line(start, end, transform);
+    const auto& vertices = polygon.getVertices();
+    const double winding = Winding(polygon);
+    std::optional<SweepCandidate> best;
+    const auto consider = [&](const SweepCandidate& candidate) {
+        if (line.Includes(candidate.projection) && (!best || candidate.projection < best->projection))
+            best = candidate;
+    };
+    // Finite outward offset faces are checked before corner disks, giving
+    // deterministic exact-parameter feature ties in stored index order.
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        const DVector a = ToDouble(vertices[i]), b = ToDouble(vertices[(i + 1) % vertices.size()]);
+        const DVector normal = Outward(a, b, winding);
+        if (Dot(normal, line.direction) >= 0) continue;
+        const DVector edge = b - a;
+        const double edgeLength = std::hypot(edge.x, edge.y);
+        const DVector tangent = edge * (1 / edgeLength);
+        const DVector offset = a + normal * radius;
+        const double denominator = Cross(line.direction, tangent);
+        const double alongEdge = Cross(offset - line.reference, line.direction) / denominator;
+        if (alongEdge < 0 || alongEdge > edgeLength) continue;
+        const DVector contact = a + tangent * alongEdge;
+        const DVector center = contact + normal * radius;
+        consider({Dot(center - line.reference, line.direction), center, contact, normal});
+    }
+    // The polygon, face strips and full vertex disks form the exact rounded
+    // Minkowski expansion. Earliest entry into this union is on its boundary;
+    // interior portions of a corner disk cannot preempt an earlier feature.
+    for (const auto& vertex : vertices)
+        if (const auto corner = DiskEntry(line, ToDouble(vertex), radius, 0)) consider(*corner);
+    if (!best) return std::nullopt;
+    return SweptCircleHit{line.Fraction(best->projection), transform.World(best->center),
+        transform.World(best->contact), ToFloat(transform.Rotate(best->normal))};
+}
 bool Earlier(const WorldRayHit& first, const WorldRayHit& second) {
     if (first.hit.fraction != second.hit.fraction)
         return first.hit.fraction < second.hit.fraction;
+    return first.body->GetId() < second.body->GetId();
+}
+bool EarlierSweep(const WorldSweptCircleHit& first, const WorldSweptCircleHit& second) {
+    if (first.hit.fraction != second.hit.fraction) return first.hit.fraction < second.hit.fraction;
     return first.body->GetId() < second.body->GetId();
 }
 }
@@ -240,6 +325,34 @@ std::optional<RayHit> RayCast(const RigidBody& body, Vector2 start, Vector2 end)
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
     return RayCast(*body.shape, start, end, body.GetPosition(), body.GetOrientation());
 }
+std::optional<SweptCircleHit> SweepCircle(const Shape& shape, Vector2 start, Vector2 end,
+    float radius, Vector2 position, float orientation) {
+    Validate(start); Validate(end); ValidateRadius(radius);
+    if (radius == 0) {
+        const auto hit = RayCast(shape, start, end, position, orientation);
+        if (!hit) return std::nullopt;
+        return SweptCircleHit{hit->fraction, hit->point, hit->point, hit->normal};
+    }
+    const Transform transform(position, orientation);
+    if (OverlapsCircle(shape, start, radius, position, orientation))
+        return SweptCircleHit{0, start, start, {}};
+    if (start.x == end.x && start.y == end.y) return std::nullopt;
+    if (shape.type == ShapeType::CIRCLE) {
+        const double targetRadius = AsCircle(shape).GetRadius();
+        const SweepLine line(start, end, Transform({}, 0));
+        const auto hit = DiskEntry(line, transform.position, targetRadius + radius, targetRadius);
+        if (!hit) return std::nullopt;
+        return SweptCircleHit{line.Fraction(hit->projection), ToFloat(hit->center),
+            ToFloat(hit->contact), ToFloat(hit->normal)};
+    }
+    if (shape.type == ShapeType::POLYGON)
+        return PolygonSweep(AsPolygon(shape), transform, start, end, radius);
+    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+}
+std::optional<SweptCircleHit> SweepCircle(const RigidBody& body, Vector2 start, Vector2 end, float radius) {
+    if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
+    return SweepCircle(*body.shape, start, end, radius, body.GetPosition(), body.GetOrientation());
+}
 std::vector<RigidBodyPtr> QueryPoint(const World& world, Vector2 point, QueryFilter filter) {
     Validate(point);
     std::vector<RigidBodyPtr> result;
@@ -278,6 +391,30 @@ std::optional<WorldRayHit> RayCastNearest(const World& world, Vector2 start, Vec
         if (const auto hit = RayCast(*body, start, end)) {
             WorldRayHit candidate{body, *hit};
             if (!result || Earlier(candidate, *result)) result = candidate;
+        }
+    }
+    return result;
+}
+std::vector<WorldSweptCircleHit> SweepCircleAll(const World& world, Vector2 start, Vector2 end,
+    float radius, QueryFilter filter) {
+    Validate(start); Validate(end); ValidateRadius(radius);
+    std::vector<WorldSweptCircleHit> result;
+    for (const auto& body : world.getBodies()) {
+        if (!Matches(*body, filter)) continue;
+        if (const auto hit = SweepCircle(*body, start, end, radius)) result.push_back({body, *hit});
+    }
+    std::sort(result.begin(), result.end(), EarlierSweep);
+    return result;
+}
+std::optional<WorldSweptCircleHit> SweepCircleNearest(const World& world, Vector2 start, Vector2 end,
+    float radius, QueryFilter filter) {
+    Validate(start); Validate(end); ValidateRadius(radius);
+    std::optional<WorldSweptCircleHit> result;
+    for (const auto& body : world.getBodies()) {
+        if (!Matches(*body, filter)) continue;
+        if (const auto hit = SweepCircle(*body, start, end, radius)) {
+            WorldSweptCircleHit candidate{body, *hit};
+            if (!result || EarlierSweep(candidate, *result)) result = candidate;
         }
     }
     return result;
