@@ -14,7 +14,7 @@ Increasing stack capacity postpones this failure and does not release the
 exception or argument allocations.
 
 The adapter replaces only this module's Embind invoker generation, value-object
-conversion and instance/static property wrappers. Constructors, methods, static
+conversion, numeric primitive registrations and instance/static property wrappers. Constructors, methods, static
 functions, free functions and overload entries use the invoker generator.
 Each synchronous invocation saves/restores its stack and owns a separate
 argument destructor list, so nested calls cannot overwrite cleanup state.
@@ -26,7 +26,16 @@ Argument conversion evaluates non-handle arguments in their original order,
 then validates/converts native class arguments, then the method receiver.
 Value-object getters and numeric coercions may delete a previously supplied
 handle; that call is rejected before entering native code, even when a separate
-clone keeps the object alive. Each user accessor is evaluated once. Instance
+clone keeps the object alive. Each user accessor is evaluated once. The pinned SDK's release numeric converters
+normally defer coercion until the WASM invocation. This adapter completes
+`ToNumber` with unary `+` (which rejects BigInt) and completes the i64 ABI's
+`ToBigInt`/signed wrapping with `BigInt.asIntN` during value conversion. The SDK's
+numeric i64-to-BigInt conversion and assertion-build type/range checks remain
+in place; assertions may reject a coercible object before evaluating it.
+Every supported wasm32 wire input must then be a primitive number or BigInt,
+including converted value-object fields and properties. Unexpected nonnumeric
+wire values, such as an enum object's foreign `.value`, raise `TypeError` without
+late coercion. Current bindings contain no optional undefined wire inputs. Instance
 property setters likewise convert their value before validating the receiver.
 The error ordering for an invalid/deleted handle and an invalid value therefore
 follows this value-first ordering. Public `clone`/`delete` overrides cannot run
@@ -81,7 +90,8 @@ lifetimes across 2000 mixed exception/conversion/constructor/property/overload
 batches, 1000 array-accessor/proxy/reentrant batches and 1000 receiver-deletion
 batches. It also verifies JavaScript error identity and copied return values.
 An additional 1000 lifetime batches cover deletion during value conversion,
-raw/shared arguments, retained aliases, constructors, setters, numeric coercion,
+raw/shared arguments, retained aliases, constructors, setters, float/integer/i64
+coercion (including both Ohmic arguments), enum wire rejection, nested calls,
 and shadowed lifetime methods during subtype sharing and cleanup.
 The production physics smoke suite runs in its existing order; no larger stack
 or test-only stack reset is used. Hosted WASM CI runs independent optimized,

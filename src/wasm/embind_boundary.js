@@ -6,6 +6,137 @@ throw new Error('PhysicsEngine Embind boundary requires synchronous wasm32 JS ex
 #endif
 
 addToLibrary({
+  _embind_register_integer__docs: '/** @suppress {globalThis} */',
+  // When converting a number from JS to C++ side, the valid range of the number is
+  // [minRange, maxRange], inclusive.
+  _embind_register_integer__deps: [
+    '$integerReadValueFromPointer', '$AsciiToString', '$registerType',
+#if ASSERTIONS
+    '$embindRepr',
+    '$assertIntegerRange',
+#endif
+  ],
+  _embind_register_integer: (primitiveType, name, size, minRange, maxRange) => {
+    name = AsciiToString(name);
+
+    const isUnsignedType = minRange === 0;
+
+    let fromWireType = (value) => value;
+    if (isUnsignedType) {
+      var bitshift = 32 - 8*size;
+      fromWireType = (value) => (value << bitshift) >>> bitshift;
+      maxRange = fromWireType(maxRange);
+    }
+
+    registerType(primitiveType, {
+      name,
+      fromWireType: fromWireType,
+      toWireType: (destructors, value) => {
+#if ASSERTIONS
+        if (typeof value != "number" && typeof value != "boolean") {
+          throw new TypeError(`Cannot convert "${embindRepr(value)}" to ${name}`);
+        }
+        assertIntegerRange(name, value, minRange, maxRange);
+  #endif
+        // Finish ToNumber here, before borrowing any native class pointer.
+        // Unary + preserves the VM rejection of BigInt; Number(value) would not.
+        return +value;
+      },
+      readValueFromPointer: integerReadValueFromPointer(name, size, minRange !== 0),
+      destructorFunction: null, // This type does not need a destructor
+    });
+  },
+
+#if WASM_BIGINT
+  _embind_register_bigint__docs: '/** @suppress {globalThis} */',
+  _embind_register_bigint__deps: [
+    '$AsciiToString', '$registerType', '$integerReadValueFromPointer',
+#if ASSERTIONS
+    '$embindRepr',
+    '$assertIntegerRange',
+#endif
+  ],
+  _embind_register_bigint: (primitiveType, name, size, minRange, maxRange) => {
+    name = AsciiToString(name);
+
+    const isUnsignedType = minRange === 0n;
+
+    let fromWireType = (value) => value;
+    if (isUnsignedType) {
+      // uint64 get converted to int64 in ABI, fix them up like we do for 32-bit integers.
+      const bitSize = size * 8;
+      fromWireType = (value) => {
+#if MEMORY64
+        // FIXME(https://github.com/emscripten-core/emscripten/issues/16975)
+        // `size_t` ends up here, but it's transferred in the ABI as a plain number instead of a bigint.
+        if (typeof value == 'number') {
+          return value >>> 0;
+        }
+#endif
+        return BigInt.asUintN(bitSize, value);
+      }
+      maxRange = fromWireType(maxRange);
+    }
+
+    registerType(primitiveType, {
+      name,
+      fromWireType: fromWireType,
+      toWireType: (destructors, value) => {
+        if (typeof value == "number") {
+          value = BigInt(value);
+        }
+#if ASSERTIONS
+        else if (typeof value != "bigint") {
+          throw new TypeError(`Cannot convert "${embindRepr(value)}" to ${name}`);
+        }
+        assertIntegerRange(name, value, minRange, maxRange);
+#endif
+        // Complete ToBigInt and signed ABI wrapping before the pointer phase.
+        return BigInt.asIntN(size * 8, value);
+      },
+      readValueFromPointer: integerReadValueFromPointer(name, size, !isUnsignedType),
+      destructorFunction: null, // This type does not need a destructor
+    });
+  },
+#else
+  _embind_register_bigint__deps: [],
+  _embind_register_bigint: (primitiveType, name, size, minRange, maxRange) => {},
+#endif
+
+  _embind_register_float__deps: [
+    '$floatReadValueFromPointer', '$AsciiToString', '$registerType',
+#if ASSERTIONS
+    '$embindRepr',
+#endif
+  ],
+  _embind_register_float: (rawType, name, size) => {
+    name = AsciiToString(name);
+    registerType(rawType, {
+      name,
+      fromWireType: (value) => value,
+      toWireType: (destructors, value) => {
+#if ASSERTIONS
+        if (typeof value != "number" && typeof value != "boolean") {
+          throw new TypeError(`Cannot convert ${embindRepr(value)} to ${name}`);
+        }
+#endif
+        // Finish ToNumber here, before borrowing any native class pointer.
+        // Unary + preserves the VM rejection of BigInt; Number(value) would not.
+        return +value;
+      },
+      readValueFromPointer: floatReadValueFromPointer(name, size),
+      destructorFunction: null, // This type does not need a destructor
+    });
+  },
+
+  // All supported wasm32 wire arguments are numeric primitives. Unknown ABI
+  // values must fail here rather than trigger a foreign callback in the VM.
+  $physicsWireValue: value => {
+    if (typeof value !== 'number' && typeof value !== 'bigint')
+      throw new TypeError('PhysicsEngine requires a numeric primitive wire value');
+    return value;
+  },
+
   $physicsClassHandleMethods__deps: ['$ClassHandle'],
   $physicsClassHandleMethods__postset: `
     physicsClassHandleMethods.clone = ClassHandle.prototype['clone'];
@@ -158,7 +289,7 @@ addToLibrary({
   },
 
   $craftInvokerFunction__deps: ['$physicsEmbindCall', '$runDestructors',
-    '$createNamedFunction', '$throwBindingError', '$getRequiredArgCount', '$physicsPrepareArguments', '$physicsSizingGetters'],
+    '$createNamedFunction', '$throwBindingError', '$getRequiredArgCount', '$physicsPrepareArguments', '$physicsSizingGetters', '$physicsWireValue'],
   $craftInvokerFunction: function(humanName, argTypes, classType, cppInvokerFunc, cppTargetFunc, isAsync) {
     if (isAsync) throwBindingError('PhysicsEngine does not support async bindings');
     const count = argTypes.length - 2;
@@ -187,6 +318,7 @@ addToLibrary({
             if (argTypes[i + 2].registeredClass)
               wired[i + offset] = argTypes[i + 2].toWireType(destructors, args[i]);
           if (method) wired[1] = argTypes[1].toWireType(destructors, this);
+          for (let i = 1; i < wired.length; ++i) physicsWireValue(wired[i]);
           const result = cppInvokerFunc(...wired);
           return argTypes[0].isVoid ? undefined : argTypes[0].fromWireType(result);
         } finally {
@@ -204,7 +336,7 @@ addToLibrary({
   },
 
   _embind_finalize_value_object__deps: ['$structRegistrations', '$runDestructors',
-    '$readPointer', '$whenDependentTypesAreResolved'],
+    '$readPointer', '$whenDependentTypesAreResolved', '$physicsWireValue'],
   _embind_finalize_value_object: function(structType) {
     const reg = structRegistrations[structType];
     delete structRegistrations[structType];
@@ -218,7 +350,7 @@ addToLibrary({
           read: ptr => readType.fromWireType(field.getter(field.getterContext, ptr)),
           write: (ptr, value) => {
             const destructors = [];
-            try { field.setter(field.setterContext, ptr, writeType.toWireType(destructors, value)); }
+            try { field.setter(field.setterContext, ptr, physicsWireValue(writeType.toWireType(destructors, value))); }
             finally { runDestructors(destructors); }
           },
           optional: readType.optional,
@@ -253,7 +385,7 @@ addToLibrary({
 
   _embind_register_class_property__deps: ['$AsciiToString', '$embind__requireFunction',
     '$runDestructors', '$throwBindingError', '$throwUnboundTypeError',
-    '$whenDependentTypesAreResolved', '$validateThis', '$physicsEmbindCall'],
+    '$whenDependentTypesAreResolved', '$validateThis', '$physicsEmbindCall', '$physicsWireValue'],
   _embind_register_class_property: function(classType, fieldName, getterReturnType,
       getterSignature, getter, getterContext, setterArgumentType, setterSignature, setter, setterContext) {
     fieldName = AsciiToString(fieldName);
@@ -276,7 +408,7 @@ addToLibrary({
           descriptor.set = function(value) { return physicsEmbindCall(() => {
             const destructors = [];
             try {
-              const converted = fieldTypes[1].toWireType(destructors, value);
+              const converted = physicsWireValue(fieldTypes[1].toWireType(destructors, value));
               const ptr = validateThis(this, type, name + ' setter');
               setter(setterContext, ptr, converted);
             } finally { runDestructors(destructors); }
@@ -291,7 +423,7 @@ addToLibrary({
 
   _embind_register_class_class_property__deps: ['$AsciiToString', '$embind__requireFunction',
     '$runDestructors', '$throwBindingError', '$throwUnboundTypeError',
-    '$whenDependentTypesAreResolved', '$physicsEmbindCall'],
+    '$whenDependentTypesAreResolved', '$physicsEmbindCall', '$physicsWireValue'],
   _embind_register_class_class_property: function(rawClassType, fieldName, rawFieldType, rawFieldPtr,
       getterSignature, getter, setterSignature, setter) {
     fieldName = AsciiToString(fieldName);
@@ -311,7 +443,7 @@ addToLibrary({
           setter = embind__requireFunction(setterSignature, setter);
           descriptor.set = value => physicsEmbindCall(() => {
             const destructors = [];
-            try { setter(rawFieldPtr, fieldType.toWireType(destructors, value)); }
+            try { setter(rawFieldPtr, physicsWireValue(fieldType.toWireType(destructors, value))); }
             finally { runDestructors(destructors); }
           });
         } else descriptor.set = () => throwBindingError(name + ' is a read-only property');

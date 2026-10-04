@@ -123,7 +123,74 @@ function batch(p) {
         retained.delete();
     }
 
+    // Enum values are SDK objects with a numeric .value. A foreign replacement
+    // must never be coerced by the field setter after value conversion.
+    const wave = new p.WaveMembrane(3, 3, 1, 1);
+    const waveConfig = wave.getConfig();
+    let enumReads = 0, enumCoercions = 0;
+    assert.throws(() => wave.setConfig({...waveConfig, boundary:{get value() {
+        ++enumReads;
+        return {valueOf() { ++enumCoercions; wave.delete(); return 0; }};
+    }}}), TypeError);
+    assert.equal(enumReads, 1);
+    assert.equal(enumCoercions, 0);
+    assert.deepEqual(wave.getConfig(), waveConfig);
+    wave.delete();
+
     if (p.BoundaryTestProbe) {
+        for (const [method, value] of [['scalarFloat', 1.25], ['scalarInteger', 7],
+            ['scalarInt64', 7n], ['scalarUint64', 7n]]) {
+            for (const primitiveHook of ['valueOf', Symbol.toPrimitive]) {
+                const receiver = new p.BoundaryTestProbe({number:1}), alias = receiver.clone();
+                let reads = 0, calls = 0;
+                const input = {};
+                Object.defineProperty(input, primitiveHook, {get() {
+                    ++reads;
+                    return () => {
+                        ++calls; receiver.delete(); return value;
+                    };
+                }});
+                assert.throws(() => receiver[method](input),
+                    error => calls ? deleted(error) : error instanceof TypeError);
+                assert.ok(calls === 0 || calls === 1);
+                assert.equal(reads, calls);
+                assert.equal(alias[method](value), value);
+                if (!receiver.isDeleted()) receiver.delete();
+                alias.delete();
+            }
+            const receiver = new p.BoundaryTestProbe({number:1});
+            let calls = 0;
+            const identity = new Error('scalar coercion identity');
+            assert.throws(() => receiver[method]({[Symbol.toPrimitive]() {
+                ++calls;
+                assert.equal(receiver[method](value), value);
+                assert.throws(() => receiver.method({number:1}), /probe method/);
+                throw identity;
+            }}), error => calls ? error === identity : error instanceof TypeError);
+            assert.ok(calls === 0 || calls === 1);
+            assert.equal(receiver[method](value), value);
+            receiver.delete();
+        }
+        const scalar = new p.BoundaryTestProbe({number:1});
+        assert.equal(scalar.scalarFloat(true), 1);
+        assert.equal(scalar.scalarInteger(true), 1);
+        assert.equal(scalar.scalarInt64(7), 7n); // SDK accepts a numeric i64 input.
+        assert.equal(scalar.scalarInt64(-(1n << 63n)), -(1n << 63n));
+        assert.equal(scalar.scalarUint64((1n << 64n) - 1n), (1n << 64n) - 1n);
+        assert.throws(() => scalar.scalarFloat(7n), TypeError);
+        assert.throws(() => scalar.scalarInteger(7n), TypeError);
+        for (const method of ['scalarFloat', 'scalarInteger', 'scalarInt64'])
+            assert.throws(() => scalar[method](Symbol('invalid scalar')), TypeError);
+        // Objects yielding BigInt differ from objects yielding Number for an
+        // i64 wire input; BigInt(value) would wrongly accept the latter.
+        let bigintCalls = 0;
+        const bigintObject = {[Symbol.toPrimitive]() { ++bigintCalls; return 7n; }};
+        try { assert.equal(scalar.scalarInt64(bigintObject), 7n); }
+        catch (error) { assert.equal(bigintCalls, 0); assert.ok(error instanceof TypeError); }
+        assert.ok(bigintCalls === 0 || bigintCalls === 1);
+        assert.throws(() => scalar.scalarInt64({valueOf() { return 7; }}), TypeError);
+        assert.throws(() => scalar.scalarFloat({valueOf() { return 7n; }}), TypeError);
+        scalar.delete();
         const property = new p.BoundaryTestProbe({number:1});
         assert.throws(() => { property.value = {get number() {
             property.delete(); return 1;
