@@ -45,6 +45,22 @@ F_viscosity_ij = mu_ij m_i m_j / (rho_i rho_j)
     (v_j - v_i) laplacian W_viscosity_ij
 ```
 
+The common pair pressure gradient above uses `(h_i+h_j)/2` for the legacy
+family and for continuity density. Matched cubic **summation** density instead
+uses each coefficient with its own density-kernel gradient:
+
+```text
+F_pressure_ij = -m_i m_j [
+    (p_i / rho_i^2) grad W_cubic(x_i-x_j, h_i)
+  + (p_j / rho_j^2) grad W_cubic(x_i-x_j, h_j)]
+```
+
+This is the negative gradient of the summation-density barotropic energy for
+fixed supplied smoothing lengths, including unequal supports and one-sided
+neighbours. Equal supports retain the original arithmetic path. It does not
+provide density-adaptive `h`, grad-h corrections or a boundary energy model.
+See [fixed-support pressure and diagnostics](sph-fixed-support-pressure.md).
+
 External acceleration is applied as `m_i a_external`. Semi-implicit Euler then
 updates velocity before position for each solver substep.
 
@@ -97,7 +113,10 @@ The Muller viscosity Laplacian and continuum/neighbor diffusion bounds are
 independent of this selector; a changed computed density can still change its
 viscosity coefficient and resulting stable timestep.
 
-Diagnostics use the selected gradient. WCSPH additionally includes prepared
+Diagnostics use the selected family's **common mean-support gradient**, even
+for heterogeneous cubic summation density. These rates are a comparison
+operator, rather than the derivative of each particle's actual summation density.
+WCSPH additionally includes prepared
 wall mirror rates in its raw compression/divergence diagnostics, in both
 families; previously these diagnostics omitted walls. Density diffusion is
 excluded from that raw operator measurement. The legacy two-argument free

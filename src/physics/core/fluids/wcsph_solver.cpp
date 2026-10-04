@@ -400,13 +400,34 @@ void WcsphSolver::prepareState(
             smoothingLength,
             config.kernelFamily
         );
-        const double pressureTerm = first.pressure
-                / (static_cast<double>(first.density) * first.density)
-            + second.pressure / (static_cast<double>(second.density) * second.density);
-        const double pressureScale = -static_cast<double>(first.mass) * second.mass * pressureTerm;
-        const Vector2 pressureForce = SphViscosity::CheckedVector(
-            gradient.x * pressureScale, gradient.y * pressureScale
-        );
+        Vector2 pressureForce;
+        if (config.kernelFamily == SphKernelFamily::CubicSpline
+            && config.densityMode == WcsphDensityMode::Summation
+            && first.smoothingLength != second.smoothingLength) {
+            // Fixed-h summation density differentiates each particle's own
+            // kernel. Its EOS energy gradient weights those two gradients
+            // separately, including pairs inside only one density support.
+            const Vector2 firstGradient = SphKernels2D::PressureGradient(
+                displacement, first.smoothingLength, config.kernelFamily);
+            const Vector2 secondGradient = SphKernels2D::PressureGradient(
+                displacement, second.smoothingLength, config.kernelFamily);
+            const double firstCoefficient = first.pressure
+                / (static_cast<double>(first.density) * first.density);
+            const double secondCoefficient = second.pressure
+                / (static_cast<double>(second.density) * second.density);
+            const double massProduct = -static_cast<double>(first.mass) * second.mass;
+            pressureForce = SphViscosity::CheckedVector(
+                massProduct * (firstCoefficient * firstGradient.x + secondCoefficient * secondGradient.x),
+                massProduct * (firstCoefficient * firstGradient.y + secondCoefficient * secondGradient.y));
+        } else {
+            // Preserve common-gradient continuity, legacy and equal-h arithmetic.
+            const double pressureTerm = first.pressure
+                    / (static_cast<double>(first.density) * first.density)
+                + second.pressure / (static_cast<double>(second.density) * second.density);
+            const double pressureScale = -static_cast<double>(first.mass) * second.mass * pressureTerm;
+            pressureForce = SphViscosity::CheckedVector(
+                gradient.x * pressureScale, gradient.y * pressureScale);
+        }
 
         const float laplacian = SphKernels2D::ViscosityLaplacian(displacement, smoothingLength);
         const double viscosityScale = SphViscosity::Coupling(first, second, laplacian);

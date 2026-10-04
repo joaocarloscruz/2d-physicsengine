@@ -29,10 +29,12 @@ prepared wall rates; WCSPH now includes those rates in raw divergence metrics
 for **both** families. Density diffusion is excluded from that measurement.
 This diagnostic correction does not change legacy particle dynamics. The
 public config structs gained a field, so native binary consumers must rebuild.
-Heterogeneous smoothing lengths retain the existing policies: WCSPH uses
-each particle's support for density summation and mean support for pair
-gradients; DFSPH uses mean support for both pair operators. Family selection
-does not add variable-support consistency corrections.
+WCSPH uses each particle's support for density summation. Its matched cubic
+summation pressure now weights each particle's own density gradient, as derived
+in [fixed-support pressure](sph-fixed-support-pressure.md). Continuity pressure,
+the legacy family and the comparison diagnostics retain mean-support gradients;
+DFSPH uses mean support for both pair operators. Supplied smoothing lengths
+are fixed; density-adaptive supports and grad-h terms are not implemented.
 DFSPH still has no boundary solver. The separate fluid-rigid surface coupler
 retains its existing model; selection does not redesign surface traction.
 
