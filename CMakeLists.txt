@@ -255,6 +255,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
         ${TESTS_SRC_DIR}/test_fluid_physics_validation.cpp
         ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
+        ${TESTS_SRC_DIR}/test_fluid_disorder.cpp
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
         ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
         ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
@@ -323,6 +324,8 @@ elseif(BUILD_TESTING)
     target_link_libraries(fluid_solver_comparison PRIVATE Engine)
     add_executable(fluid_consistency_diagnostic benchmarks/fluid_consistency_diagnostic.cpp)
     target_link_libraries(fluid_consistency_diagnostic PRIVATE Engine)
+    add_executable(fluid_disorder_diagnostic benchmarks/fluid_disorder_diagnostic.cpp)
+    target_link_libraries(fluid_disorder_diagnostic PRIVATE Engine)
     add_executable(fluid_wall_diagnostic benchmarks/fluid_wall_diagnostic.cpp)
     target_link_libraries(fluid_wall_diagnostic PRIVATE Engine)
     add_executable(planar_reflected_diagnostic benchmarks/planar_reflected_diagnostic.cpp)
@@ -356,6 +359,9 @@ elseif(BUILD_TESTING)
     set_tests_properties(fluid_consistency_diagnostic_smoke PROPERTIES
         LABELS "fast;numerical;diagnostic"
     )
+    add_test(NAME fluid_disorder_diagnostic_smoke
+        COMMAND fluid_disorder_diagnostic --quick --output ${CMAKE_BINARY_DIR}/fluid-disorder-quick.json)
+    set_tests_properties(fluid_disorder_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
     add_test(NAME fluid_cubic_diagnostic_smoke
         COMMAND fluid_consistency_diagnostic --quick --family cubic
             --output ${CMAKE_BINARY_DIR}/fluid-cubic-quick.json)

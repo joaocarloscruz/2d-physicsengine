@@ -340,6 +340,9 @@ TEST_CASE("Density-calibrated particle mass improves rest equilibrium", "[fluid]
     REQUIRE(calibrated.maximumDisplacement < nominal.maximumDisplacement * 0.5f);
 }
 
+// This target assumes particle regularization toward the original labeled
+// lattice. Continuum-fluid equilibrium alone does not require that return;
+// see docs/fluid-disorder-diagnostic.md for the checkerboard null-mode audit.
 TEST_CASE("Calibrated lattice heals small positional disorder", "[fluid][validation][equilibrium][disorder][!mayfail]") {
     constexpr int size = 21;
     constexpr float spacing = 0.1f;

@@ -127,3 +127,16 @@ Constant-pressure phase probes identify a scale-invariant sampled-wall
 quadrature defect. Pressure-work residuals expose an untracked virtual-wall
 energy obligation; they are not by themselves a proof of instability. No
 production operator is changed and all nine #44 failure targets remain intact.
+
+## Small checkerboard disorder localization (2026-10-04)
+
+The [independent disorder audit](fluid-disorder-diagnostic.md) reproduces the
+exact calibrated small-disorder inputs and identifies a Nyquist linear density
+null mode with all particles on the clamped EOS's zero-pressure branch. The
+requested RMS return to the original labeled lattice is a particle
+regularization assumption beyond continuum-fluid equilibrium. Matched cubic
+with unchanged caller mass is also stationary; unclamping pressure produces
+bulk anti-restoring acceleration and severe finite-surface collapse at every
+tested timestep. The diagnostic independently measures the legacy summation-
+density/pressure energy-gradient mismatch and keeps calibrated-input controls
+separate. No production correction or expected-failure threshold is changed.
