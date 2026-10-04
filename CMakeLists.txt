@@ -17,6 +17,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Emscripten links the engine into the generated WebAssembly module. Native
 # consumers continue to receive the shared library used by the visualizer.
 if(EMSCRIPTEN)
+    # The module-local exception-safe Embind adapter intentionally targets the
+    # exact SDK used by hosted CI. Upgrades require reviewing its runtime ABI.
+    if(NOT EMSCRIPTEN_VERSION STREQUAL "6.0.3")
+        message(FATAL_ERROR "PhysicsEngine WASM requires Emscripten 6.0.3 (exception boundary adapter)")
+    endif()
+    option(PHYSICS_WASM_BOUNDARY_TEST_PROBES "Include test-only WASM allocation/lifetime probes" OFF)
     set(ENGINE_LIBRARY_TYPE STATIC)
 elseif(BUILD_SHARED_LIBS)
     set(ENGINE_LIBRARY_TYPE SHARED)
@@ -148,7 +154,13 @@ if(EMSCRIPTEN)
         src/wasm/query_bindings.cpp
     )
 
-    target_link_libraries(physics_engine_wasm PRIVATE Engine embind)
+    # The custom library must follow -lembind so its definitions replace the
+    # SDK wrappers rather than being replaced by them during library loading.
+    target_link_libraries(physics_engine_wasm PRIVATE Engine embind
+        "--js-library=${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/embind_boundary.js")
+    if(PHYSICS_WASM_BOUNDARY_TEST_PROBES)
+        target_sources(physics_engine_wasm PRIVATE tests/wasm_boundary_probe.cpp)
+    endif()
     target_compile_options(physics_engine_wasm PRIVATE -fexceptions)
     target_link_options(physics_engine_wasm PRIVATE
         -fexceptions
@@ -158,6 +170,8 @@ if(EMSCRIPTEN)
         "-sALLOW_MEMORY_GROWTH=1"
         "-sDISABLE_EXCEPTION_CATCHING=0"
     )
+    set_property(TARGET physics_engine_wasm APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/embind_boundary.js")
 
     set(WASM_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/wasm")
     set_target_properties(physics_engine_wasm PROPERTIES
@@ -176,6 +190,9 @@ if(EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/smoke-test.cjs"
             "${WASM_OUTPUT_DIRECTORY}/smoke-test.cjs"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm-smoke/boundary-stress.cjs"
+            "${WASM_OUTPUT_DIRECTORY}/boundary-stress.cjs"
         COMMENT "Copying WebAssembly smoke tests"
     )
 elseif(BUILD_TESTING)

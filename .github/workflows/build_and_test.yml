@@ -176,19 +176,20 @@ jobs:
         shell: bash
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release
+          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON
 
       - name: Build WebAssembly target
         shell: bash
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          cmake --build build-wasm --target physics_engine_wasm --parallel
+          cmake --build build-wasm --target physics_engine_wasm --parallel 2
 
       - name: Run WebAssembly smoke test
         shell: bash
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           node build-wasm/wasm/smoke-test.cjs
+          node build-wasm/wasm/boundary-stress.cjs
 
   sanitizers:
     name: Address and undefined behavior sanitizers
