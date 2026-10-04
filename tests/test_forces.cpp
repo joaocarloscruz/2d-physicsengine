@@ -5,8 +5,50 @@
 #include "../include/physics/math/vector2.h"
 #include "../include/physics/core/shape.h"
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 
 using namespace PhysicsEngine;
+
+TEST_CASE("Drag preserves finite force and direction at large velocity scales", "[drag-numerics]") {
+    for (const auto coefficients : {Vector2{0, 0}, Vector2{2, 0}, Vector2{0, 1e-30f}}) {
+        RigidBody body(Circle(1), Material{});
+        body.SetVelocity({3e30f, -4e30f});
+        const double speed = std::hypot(double(body.velocity.x), double(body.velocity.y));
+        const double gain = coefficients.x + coefficients.y * speed;
+        Drag drag(coefficients.x, coefficients.y);
+        REQUIRE_NOTHROW(drag.applyForce(&body));
+        REQUIRE(body.GetForce().x == Catch::Approx(-gain * body.velocity.x).epsilon(1e-6));
+        REQUIRE(body.GetForce().y == Catch::Approx(-gain * body.velocity.y).epsilon(1e-6));
+        REQUIRE(double(body.force.x) * body.velocity.x + double(body.force.y) * body.velocity.y <= 0);
+    }
+}
+
+TEST_CASE("Unrepresentable drag preserves pending loads", "[drag-numerics]") {
+    RigidBody body(Circle(1), Material{});
+    body.SetVelocity({1e30f, 0});
+    body.ApplyForce({1, 2});
+    Drag drag(0, 1);
+    REQUIRE_THROWS_AS(drag.applyForce(&body), std::overflow_error);
+    REQUIRE(body.GetForce().x == 1);
+    REQUIRE(body.GetForce().y == 2);
+}
+
+TEST_CASE("Force generators reject missing targets and invalid consumed state", "[force-numerics]") {
+    Drag drag(1, 0);
+    Gravity gravity({0, -10});
+    REQUIRE_THROWS_AS(drag.applyForce(nullptr), std::invalid_argument);
+    REQUIRE_THROWS_AS(gravity.applyForce(nullptr), std::invalid_argument);
+    RigidBody body(Circle(1), Material{});
+    body.velocity.x = std::numeric_limits<float>::quiet_NaN();
+    REQUIRE_THROWS_AS(drag.applyForce(&body), std::invalid_argument);
+    body.mass = -1;
+    REQUIRE_THROWS_AS(gravity.applyForce(&body), std::invalid_argument);
+    body.SetMass(1e38f);
+    REQUIRE_THROWS_AS(gravity.applyForce(&body), std::overflow_error);
+    REQUIRE(body.GetForce().x == 0);
+    REQUIRE(body.GetForce().y == 0);
+}
 
 TEST_CASE("Gravity Force", "[forces]") {
     Circle circle(1.0f);

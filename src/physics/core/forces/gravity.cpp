@@ -1,4 +1,5 @@
 #include "physics/core/forces/gravity.h"
+#include "force_arithmetic.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -17,11 +18,16 @@ namespace PhysicsEngine {
     }
 
     void Gravity::applyForce(RigidBody* body) {
+        if (!body) throw std::invalid_argument("Gravity requires a body.");
         if (body->GetInverseMass() == 0) {
             return; // Infinite mass objects are not affected by gravity
         }
 
-        body->ApplyForce(gravity * body->GetMass());
+        const float mass = body->GetMass();
+        if (!std::isfinite(mass) || mass <= 0)
+            throw std::invalid_argument("Gravity requires positive finite dynamic mass.");
+        body->ApplyForce(ForceArithmetic::CheckedForce(
+            static_cast<double>(gravity.x) * mass, static_cast<double>(gravity.y) * mass));
     }
 
     void Gravity::setGravity(const Vector2& new_gravity) {

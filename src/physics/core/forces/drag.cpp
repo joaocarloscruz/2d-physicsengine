@@ -1,5 +1,6 @@
 #include "physics/core/forces/drag.h"
 #include "physics/math/vector2.h"
+#include "force_arithmetic.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -12,15 +13,13 @@ namespace PhysicsEngine {
     }
 
     void Drag::applyForce(RigidBody* body) {
-        Vector2 force = body->GetVelocity();
-
-        // Calculate the total drag force
-        float dragCoeff = force.magnitude();
-        dragCoeff = k1 * dragCoeff + k2 * dragCoeff * dragCoeff;
-
-        // Apply the force in the opposite direction of velocity
-        force = force.normalized();
-        body->ApplyForce(force * -dragCoeff);
+        if (!body) throw std::invalid_argument("Drag requires a body.");
+        const Vector2 velocity = body->GetVelocity();
+        if (!std::isfinite(velocity.x) || !std::isfinite(velocity.y))
+            throw std::invalid_argument("Drag requires finite velocity.");
+        const double speed = std::hypot(static_cast<double>(velocity.x), velocity.y);
+        const double gain = k1 + static_cast<double>(k2) * speed;
+        body->ApplyForce(ForceArithmetic::CheckedForce(-gain * velocity.x, -gain * velocity.y));
     }
 
 }
