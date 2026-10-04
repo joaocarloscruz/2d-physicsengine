@@ -28,6 +28,10 @@ void Validate(Vector2 p) {
     if (!std::isfinite(p.x) || !std::isfinite(p.y))
         throw std::invalid_argument("Spatial query coordinates must be finite.");
 }
+void ValidateRadius(float radius) {
+    if (!std::isfinite(radius) || radius < 0)
+        throw std::invalid_argument("Query circle radius must be finite and nonnegative.");
+}
 struct Transform {
     DVector position;
     double cosine, sine;
@@ -81,6 +85,18 @@ bool PolygonContains(const Polygon& polygon, DVector point) {
         if (winding * Cross(b - a, point - a) < 0) return false;
     }
     return true;
+}
+bool PolygonCircle(const Polygon& polygon, DVector center, double radius) {
+    if (PolygonContains(polygon, center)) return true;
+    const auto& vertices = polygon.getVertices();
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        const DVector a = ToDouble(vertices[i]);
+        const DVector edge = ToDouble(vertices[(i + 1) % vertices.size()]) - a;
+        const double fraction = std::clamp(Dot(center - a, edge) / Dot(edge, edge), 0.0, 1.0);
+        const DVector separation = center - (a + edge * fraction);
+        if (std::hypot(separation.x, separation.y) <= radius) return true;
+    }
+    return false;
 }
 std::optional<RayHit> CircleRay(const Circle& circle, DVector position,
     Vector2 start, Vector2 end) {
@@ -193,6 +209,23 @@ bool ContainsPoint(const RigidBody& body, Vector2 point) {
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
     return ContainsPoint(*body.shape, point, body.GetPosition(), body.GetOrientation());
 }
+bool OverlapsCircle(const Shape& shape, Vector2 center, float radius, Vector2 position, float orientation) {
+    Validate(center); ValidateRadius(radius);
+    if (radius == 0) return ContainsPoint(shape, center, position, orientation);
+    const Transform transform(position, orientation);
+    if (shape.type == ShapeType::CIRCLE) {
+        const double sum = static_cast<double>(AsCircle(shape).GetRadius()) + radius;
+        const DVector relative = ToDouble(center) - transform.position;
+        return std::hypot(relative.x, relative.y) <= sum;
+    }
+    if (shape.type == ShapeType::POLYGON)
+        return PolygonCircle(AsPolygon(shape), transform.Local(center), radius);
+    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+}
+bool OverlapsCircle(const RigidBody& body, Vector2 center, float radius) {
+    if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
+    return OverlapsCircle(*body.shape, center, radius, body.GetPosition(), body.GetOrientation());
+}
 std::optional<RayHit> RayCast(const Shape& shape, Vector2 start, Vector2 end,
     Vector2 position, float orientation) {
     Validate(start); Validate(end);
@@ -212,6 +245,16 @@ std::vector<RigidBodyPtr> QueryPoint(const World& world, Vector2 point, QueryFil
     std::vector<RigidBodyPtr> result;
     for (const auto& body : world.getBodies())
         if (Matches(*body, filter) && ContainsPoint(*body, point)) result.push_back(body);
+    std::sort(result.begin(), result.end(), [](const RigidBodyPtr& a, const RigidBodyPtr& b) {
+        return a->GetId() < b->GetId();
+    });
+    return result;
+}
+std::vector<RigidBodyPtr> QueryCircle(const World& world, Vector2 center, float radius, QueryFilter filter) {
+    Validate(center); ValidateRadius(radius);
+    std::vector<RigidBodyPtr> result;
+    for (const auto& body : world.getBodies())
+        if (Matches(*body, filter) && OverlapsCircle(*body, center, radius)) result.push_back(body);
     std::sort(result.begin(), result.end(), [](const RigidBodyPtr& a, const RigidBodyPtr& b) {
         return a->GetId() < b->GetId();
     });

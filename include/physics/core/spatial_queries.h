@@ -34,6 +34,12 @@ bool ContainsPoint(const Shape& shape, Vector2 point,
     Vector2 position = {}, float orientation = 0);
 bool ContainsPoint(const RigidBody& body, Vector2 point);
 
+// Closed disk overlap, including boundary contact. Radius must be finite and
+// nonnegative; zero radius delegates to ContainsPoint for identical semantics.
+bool OverlapsCircle(const Shape& shape, Vector2 center, float radius,
+    Vector2 position = {}, float orientation = 0);
+bool OverlapsCircle(const RigidBody& body, Vector2 center, float radius);
+
 // First contact with a finite segment, including both endpoints and tangency.
 // A contained start (also a zero-length contained segment) returns fraction 0,
 // point=start, normal=(0,0). An outside zero-length segment has no hit.
@@ -48,6 +54,9 @@ std::optional<RayHit> RayCast(const RigidBody& body, Vector2 start, Vector2 end)
 // an empty world; relevant invalid body transforms throw invalid_argument.
 std::vector<RigidBodyPtr> QueryPoint(const World& world, Vector2 point,
     QueryFilter filter = {});
+// All overlapping bodies, in stable ID order, with retained ownership.
+std::vector<RigidBodyPtr> QueryCircle(const World& world, Vector2 center,
+    float radius, QueryFilter filter = {});
 std::vector<WorldRayHit> RayCastAll(const World& world, Vector2 start, Vector2 end,
     QueryFilter filter = {});
 std::optional<WorldRayHit> RayCastNearest(const World& world, Vector2 start,

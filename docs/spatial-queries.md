@@ -1,4 +1,4 @@
-# Native point and ray queries
+# Native point, circle and ray queries
 
 Include `physics/physics.h` (or `physics/core/spatial_queries.h`) and link the
 installed `PhysicsEngine::Engine` target. Queries support circles and strictly
@@ -12,6 +12,8 @@ world.addBody(body);
 
 bool inside = ContainsPoint(*body, {2, 0});
 auto bodies = QueryPoint(world, {2, 0});
+bool touching = OverlapsCircle(*body, {3.5f, 0}, 0.5f);
+auto disks = QueryCircle(world, {3.5f, 0}, 0.5f);
 auto nearest = RayCastNearest(world, {0, 0}, {4, 0});
 auto all = RayCastAll(world, {0, 0}, {4, 0});
 if (nearest) {
@@ -33,6 +35,17 @@ world position and angle in radians. The corresponding body overloads use its
 current position and orientation. Polygon vertices keep their original local
 coordinates, including offsets from the origin; they are rotated and translated
 without recentering. Both clockwise and counterclockwise polygons work.
+
+`OverlapsCircle(shape, center, radius, position={}, orientation=0)` and its body
+overload test a closed disk. Radius must be finite and nonnegative. Contact,
+complete containment and partial overlap all count. Circle targets use the sum
+of radii; convex polygon targets use containment or distance to finite edges,
+including their endpoint corners. This is the rounded expansion of the target,
+rather than the larger intersection of offset edge half-planes. Radius zero
+delegates to `ContainsPoint`, preserving boundary semantics exactly.
+`QueryCircle(world, center, radius, filter={})` returns all overlapping body
+handles in stable ID order, with the same filtering and retained ownership as
+`QueryPoint`. Radius is validated even with an empty world or no matching bodies.
 
 Containment includes edges and vertices. A ray is the **closed finite segment**
 from `start` to `end`; hits beyond either endpoint are excluded. Its first
@@ -96,7 +109,9 @@ whose category and mask are nonzero. For example, a query with category 4 and
 mask 2 includes a category-2 body only if that body's mask also accepts 4.
 Zero category or mask excludes all bodies. Shape/body queries apply no filter.
 
-These helpers scan current transforms linearly; they neither advance the
+These helpers scan current transforms linearly; circle overlap costs
+O(body count × target vertices), without an implicit vertex or result limit.
+They neither advance the
 simulation nor rely on possibly stale broad-phase pairs. Simulation objects
 remain unsynchronized; do not mutate a World concurrently with queries.
 This API is native C++; WebAssembly bindings and accelerated shape casts are
