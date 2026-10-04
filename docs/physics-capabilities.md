@@ -23,9 +23,9 @@ trajectory or plausible animation does not establish accuracy for a new scene.
 
 Native APIs are installed through `PhysicsEngine::Engine` and the
 `physics/physics.h` entry point. Rigid bodies/joints, particles, soft bodies,
-thermal networks, charged particles, gravity, membrane waves, MAC projection/viscosity,
+thermal networks, charged particles, gravity, membrane and elastic waves, MAC projection/viscosity,
 scalar transport, Maxwell fields and spatial queries have [JavaScript bindings](webassembly.md).
-SPH solvers, rigid-fluid coupling and elastic waves currently require the native API. Binding
+SPH solvers and rigid-fluid coupling currently require the native API. Binding
 coverage does not imply all native observers or internal details are exposed.
 The [WASM exception boundary](wasm-exception-boundary.md) preserves resources
 across repeated validation failures and uses a pinned SDK with stress checks.

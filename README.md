@@ -6,7 +6,8 @@ planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
 viscosity, conservative scalar transport, periodic TMz electromagnetic fields,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
-charged particles, gravity, membrane waves, periodic projection/viscosity, scalar transport, Maxwell fields
+charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
+scalar transport, Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,

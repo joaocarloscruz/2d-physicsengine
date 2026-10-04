@@ -241,7 +241,9 @@ These checks do not claim universal exact arithmetic for all finite inputs.
 ## Native use and reproduction
 
 Include `physics/core/elastic_wave_grid.h` or the public `physics/physics.h`
-umbrella and link `PhysicsEngine::Engine`. This module currently has no WASM API.
+umbrella and link `PhysicsEngine::Engine`. The owned synchronous
+[WASM adapter](webassembly.md#owned-plane-strain-elastic-waves) exposes the same
+physical state and copied observations to JavaScript.
 
 ```cpp
 PhysicsEngine::ElasticWaveGridConfig config;

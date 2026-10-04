@@ -397,6 +397,178 @@ there are no charge/current sources, particle coupling, interfaces, absorbing
 boundaries, conductors or 3D components. See [the native equations, invariant,
 resource accounting and representability limits](maxwell-grids.md).
 
+## Owned plane-strain elastic waves
+
+`ElasticWaveGrid` owns a homogeneous isotropic small-strain periodic elastic
+continuum, independent of `Engine`. Plane strain fixes `epsilonZZ=0` while the
+out-of-plane stress is `sigmaZZ=lambda*(epsilonXX+epsilonYY)`. This is a velocity
+and stress wave model, without displacement tracking, large deformation,
+material interfaces, forcing, damping, contact, fracture or automatic coupling.
+See the [native physical model and validation](elastic-wave-grid.md) for the
+negative-adjoint operators, P/S dispersion, compatibility and fixed-step energy
+invariant. Both JavaScript constructors are available:
+
+```javascript
+const defaults = new physics.ElasticWaveGrid();
+const config = defaults.getConfig(); // Complete owning configuration copy.
+defaults.delete();
+config.columns = 32;
+config.rows = 24;
+config.spacingX = .0625;
+config.spacingY = .125;
+config.density = 2;
+config.lambda = 3;
+config.shearModulus = 2;
+config.maxSubstep = .01;
+const solid = new physics.ElasticWaveGrid(config);
+let saved;
+try {
+    const state = solid.getState();
+    // Fill all five staggered fields at a common initial physical time.
+    state.vx.fill(.25); // Uniform translation example, unchanged by periodic stress.
+    solid.setState(state);
+    const invariant = solid.getModifiedEnergy(.01);
+    solid.step(.01);
+    saved = {state: solid.getState(), diagnostics: solid.getDiagnostics(),
+        rates: solid.getSpatialRates(), compatibility: solid.getCompatibility(),
+        sigmaZZ: solid.getOutOfPlaneStress(), invariant};
+} finally {
+    solid.delete();
+}
+console.log(saved.diagnostics.totalEnergy); // Copies survive native deletion.
+```
+
+The configured constructor requires every field of the complete configuration;
+use the default grid's copy or supply this object explicitly:
+
+```javascript
+{
+    columns: 16, rows: 16, spacingX: 1, spacingY: 1,
+    density: 1, lambda: 1, shearModulus: 1,
+    cflSafety: .9, maxSubstep: .1,
+    maximumSubsteps: 10000, maximumCellVisits: 100000000
+}
+```
+
+In SI, spacing is m, density kg/m^3, Lamé and shear moduli Pa, time s, velocity
+m/s and stress Pa. Energy is J per metre of out-of-plane depth. Density and shear
+modulus are positive; a finite negative `lambda` is allowed only for stable
+auxetic material with `lambda+2*shearModulus/3>0`. The native derived-range and
+strict anisotropic CFL checks remain in force. `getCompressionalSpeed()` reports
+`sqrt((lambda+2*shearModulus)/density)`, `getShearSpeed()` reports
+`sqrt(shearModulus/density)`, and `getStableTimeStep()` returns the configured
+inward CFL/max-substep limit. No inputs or energies are normalized or clamped.
+
+`getState()` returns `{vx,vy,sigmaXX,sigmaYY,sigmaXY}` with five plain dense number
+arrays of `columns*rows` entries. Samples are indexed `i+columns*j`, with periodic
+neighbors and no duplicated end sample:
+
+| Field | Sample position |
+| --- | --- |
+| `vx` | `(i*dx,(j+.5)*dy)` |
+| `vy` | `((i+.5)*dx,j*dy)` |
+| `sigmaXX`, `sigmaYY` | `((i+.5)*dx,(j+.5)*dy)` |
+| `sigmaXY` | `(i*dx,j*dy)` |
+
+`setState(state)` validates **all five lengths before reading any entries**.
+Every entry must be an own finite number; sparse and typed arrays are rejected.
+The synchronous boundary snapshots those arrays before native conversion using
+a privately captured native sizing observer; shadowing the public `getConfig`
+method or its prototype cannot enlarge preprocessing. Dimensions and configured
+budgets are checked as finite positive integers within their hard caps **before
+integer conversion**. Each axis needs at least two cells and the cell cap is
+262144; the hard substep and cell-visit caps are 1000000 and 1000000000.
+
+All getters return plain owning copies, with no vector wrappers, views or snapshot
+cleanup. `getSpatialRates()` returns five copied arrays: `accelerationX` and
+`accelerationY` (m/s^2) at the velocity faces; `strainRateXX` and `strainRateYY`
+(1/s) at normal-stress cells; `engineeringShearRate` (1/s) at shear corners.
+Engineering shear rate is twice the off-diagonal strain rate.
+`getCompatibility()` returns the local Saint-Venant strain/length^2 defect;
+`getOutOfPlaneStress()` returns cell-sampled `sigmaZZ` in Pa.
+
+`getDiagnostics()` copies every native field: `kineticEnergy`, `strainEnergy`,
+`totalEnergy`, `modifiedEnergy`, `modifiedEnergyStep`, `physicalEnergyUpperBound`,
+`meanVx`, `meanVy`, `meanSigmaXX`, `meanSigmaYY`, `meanSigmaXY`, `meanSigmaZZ`,
+`maxAbsVelocity`, `maxAbsStress`, `maxAbsSigmaZZ`, `compatibilityRms`,
+`maxAbsCompatibility`, `time`, `stableTimeStep`, `lastSubstep`, `lastSubsteps` and
+`lastCellVisits`. `getModifiedEnergy(h)` observes the native reference energy;
+`h=0` gives physical energy. The conserved-reference envelope applies to **fixed
+h**, up to roundoff; changing h does not preserve one common discrete invariant.
+Arbitrary supported stress and nonzero prestress means are accepted and observed,
+not projected onto strains from periodic displacements. A vanishing local
+compatibility defect alone does not establish periodic displacement compatibility.
+
+`step(dt)` transactionally advances a bounded number of equal stress-half-kick /
+velocity-drift / stress-half-kick substeps. Its work count is `N*(3*s+1)` center
+visits as defined by the native model; array conversion/read-only copy costs are
+additional. Failed operations retain all five native arrays, clock and previous
+diagnostics; positive steps that exceed work, derived arithmetic or clock range
+fail. Zero time is a complete no-op. Successful `setState` retains the clock and
+resets last-step diagnostics. Subnormal aggregate energies and constant means
+are preserved when representable; nonzero energy/means that underflow and mixed
+ranges that erase normalized mean contributions are rejected. Do not interpret
+finite inputs as unlimited float64 dynamic range.
+
+Foreign getter/proxy exceptions preserve their exact JavaScript identity,
+including primitive throws. A callback that deliberately mutates or deletes its
+receiver has its normal user effects: failure is not a rollback of user code.
+Reentrant receiver deletion is detected before entering the native setter. The
+[exception boundary scope](wasm-exception-boundary.md) excludes user-modified
+global intrinsics and arbitrary future native calls into foreign JavaScript.
+Delete the owned grid handle once; copied observations remain usable afterward.
+
+`smoke-test.cjs` invokes the focused `elastic-wave-tests.cjs` checks alongside the
+full physics suite: 24 independent axis/oblique/auxetic/two-cell P/S phase modes,
+six continuum refinement sequences, independent spatial adjoint power,
+400 fixed-h energy/mean/compatibility steps, compression/shear/DC controls,
+ownership/replay, subnormal aggregate energy/means and range/work/clock rollback.
+With probes enabled, `boundary-stress.cjs` also runs 1000 elastic batches with
+20000 rejected calls, requiring exact live-heap, stack and native exception
+counters and unchanged owner snapshots. The same focused helper is copied into
+each build with the other Node harness assets.
+
+Local validation on 2026-10-04 used the pinned Emscripten 6.0.3, Node 22.16.0,
+Windows x86-64 host and no more than two build workers. Release with probes ON
+passed the full physics smoke and boundary stress; Debug with `-O1`,
+`-fsanitize=address,undefined -fno-omit-frame-pointer` and linker
+`-fsanitize=address,undefined -sASSERTIONS=1` passed the same full suites with
+`ASAN_OPTIONS=halt_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. Both included the 512x512
+constant subnormal velocity/stress aggregate-energy and mean controls. The
+optimized elastic stress kept stack 140304, live heap 16104 and uncaught 0;
+the sanitized elastic stress kept stack 312244176, live heap 5781 and uncaught 0.
+These exact counters compare each warmed build against itself, not between builds.
+
+A separate Release build with probes OFF passed full smoke and verified absence
+of `boundaryTestStats`, `BoundaryTestProbe`, `BoundaryTestValue`,
+`BoundaryTestStats`, `boundaryTestFunction` and `_emscripten_stack_get_current`.
+Production contains the actual elastic API, without test-only reset/sizing
+helpers or an enlarged stack. Hosted CI's existing smoke/stress entry points
+include the new checks after normal integration; local validation does not
+represent an unpublished hosted run.
+
+Reproduce after activating the pinned SDK:
+
+```sh
+emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON
+cmake --build build-wasm --target physics_engine_wasm --parallel 2
+node build-wasm/wasm/smoke-test.cjs
+node build-wasm/wasm/boundary-stress.cjs
+emcmake cmake -S . -B build-wasm-sanitized -DCMAKE_BUILD_TYPE=Debug -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=ON \
+    -DCMAKE_CXX_FLAGS="-O1 -fsanitize=address,undefined -fno-omit-frame-pointer" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -sASSERTIONS=1"
+cmake --build build-wasm-sanitized --target physics_engine_wasm --parallel 2
+ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 node build-wasm-sanitized/wasm/smoke-test.cjs
+ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 node build-wasm-sanitized/wasm/boundary-stress.cjs
+emcmake cmake -S . -B build-wasm-production -DCMAKE_BUILD_TYPE=Release -DPHYSICS_WASM_BOUNDARY_TEST_PROBES=OFF
+cmake --build build-wasm-production --target physics_engine_wasm --parallel 2
+node build-wasm-production/wasm/smoke-test.cjs
+```
+
+On PowerShell, set the sanitizer variables using `$env:ASAN_OPTIONS` and
+`$env:UBSAN_OPTIONS` for the current process instead of shell-prefix assignments.
+
 ## Prerequisites
 
 Install and activate **Emscripten 6.0.3**, then make sure `emcmake` and `cmake`
