@@ -36,7 +36,7 @@ TEST_CASE("Symmetric two-point box impact stops or rebounds without rotation in 
     World world(Controls()); auto floor=std::make_shared<RigidBody>(Polygon::MakeBox(10,1),MaterialFor(restitution),Vector2{0,-.5f},true);
     auto box=std::make_shared<RigidBody>(Polygon::MakeBox(1,1),MaterialFor(restitution),Vector2{0,.499f});
     box->SetMass(1); box->SetVelocity({0,-1}); world.addBody(floor); world.addBody(box); world.step(0);
-    REQUIRE(box->velocity.y==Catch::Approx(restitution).margin(2e-7)); REQUIRE(std::abs(box->angularVelocity)<2e-7);
+    REQUIRE(box->velocity.y==Catch::Approx(restitution).epsilon(0).margin(2e-7)); REQUIRE(std::abs(box->angularVelocity)<2e-7);
     REQUIRE(box->velocity.x==0);
 }
 TEST_CASE("Spinning offcenter contact selects the physical single-active end", "[contact-block][physical]") {
@@ -50,8 +50,8 @@ TEST_CASE("Spinning offcenter contact selects the physical single-active end", "
     REQUIRE(ContactSolverDetail::SolveNormalBlock(c));
     const int active=spin>0?0:1,inactive=1-active;
     REQUIRE(c.points[active].impulse.normal==Catch::Approx(impulse).epsilon(2e-7)); REQUIRE(c.points[inactive].impulse.normal==0);
-    REQUIRE(b.velocity.y==Catch::Approx(-1+impulse).margin(2e-7));
-    REQUIRE(b.angularVelocity==Catch::Approx(spin+6*lever*impulse).margin(5e-7));
+    REQUIRE(b.velocity.y==Catch::Approx(-1+impulse).epsilon(0).margin(2e-7));
+    REQUIRE(b.angularVelocity==Catch::Approx(spin+6*lever*impulse).epsilon(0).margin(5e-7));
     REQUIRE(std::abs(PointNormalVelocity(a,b,active?.5:-.5))<5e-7);
     REQUIRE(PointNormalVelocity(a,b,inactive?.5:-.5)>0);
 }
@@ -63,10 +63,10 @@ TEST_CASE("Two dynamic contact endpoints conserve momentum angular momentum and 
     const double initialEnergy=Energy(*a,*b),initialAngular=Angular(*a,*b),momentum=2*1+3*(-2);
     world.addBody(a); world.addBody(b); world.step(0);
     const double common=momentum/5;
-    REQUIRE(a->velocity.y==Catch::Approx(common-3./5*e*3).margin(5e-7));
-    REQUIRE(b->velocity.y==Catch::Approx(common+2./5*e*3).margin(5e-7));
-    REQUIRE(2*double(a->velocity.y)+3*double(b->velocity.y)==Catch::Approx(momentum).margin(1e-6));
-    REQUIRE(Angular(*a,*b)==Catch::Approx(initialAngular).margin(1e-7));
+    REQUIRE(a->velocity.y==Catch::Approx(common-3./5*e*3).epsilon(0).margin(5e-7));
+    REQUIRE(b->velocity.y==Catch::Approx(common+2./5*e*3).epsilon(0).margin(5e-7));
+    REQUIRE(2*double(a->velocity.y)+3*double(b->velocity.y)==Catch::Approx(momentum).epsilon(0).margin(1e-6));
+    REQUIRE(Angular(*a,*b)==Catch::Approx(initialAngular).epsilon(0).margin(1e-7));
     REQUIRE(std::abs(a->angularVelocity)<1e-7); REQUIRE(std::abs(b->angularVelocity)<1e-7);
     if(e==1) REQUIRE(Energy(*a,*b)==Catch::Approx(initialEnergy).epsilon(2e-7)); else REQUIRE(Energy(*a,*b)<initialEnergy);
 }
@@ -75,11 +75,11 @@ TEST_CASE("Accumulated normal solve removes a symmetric warm impulse without spl
     b.SetMass(1); b.SetVelocity({0,-.2f}); // Initial -1 plus already applied .4+.4.
     ContactImpulseCache cache; cache.contacts[0].impulse.normal=.4; cache.contacts[1].impulse.normal=.4;
     auto c=Constraint(a,b,cache); REQUIRE(ContactSolverDetail::SolveNormalBlock(c));
-    REQUIRE(c.points[0].impulse.normal==Catch::Approx(.5).margin(1e-8)); REQUIRE(c.points[1].impulse.normal==Catch::Approx(.5).margin(1e-8));
+    REQUIRE(c.points[0].impulse.normal==Catch::Approx(.5).epsilon(0).margin(1e-8)); REQUIRE(c.points[1].impulse.normal==Catch::Approx(.5).epsilon(0).margin(1e-8));
     REQUIRE(std::abs(b.velocity.y)<1e-7); REQUIRE(std::abs(b.angularVelocity)<1e-7);
     REQUIRE(cache.contacts[0].impulse.normal==c.points[0].impulse.normal); REQUIRE(cache.contacts[1].impulse.normal==c.points[1].impulse.normal);
     b.SetVelocity({0,2}); REQUIRE(ContactSolverDetail::SolveNormalBlock(c));
-    REQUIRE(c.points[0].impulse.normal==0); REQUIRE(c.points[1].impulse.normal==0); REQUIRE(b.velocity.y==Catch::Approx(1).margin(1e-7));
+    REQUIRE(c.points[0].impulse.normal==0); REQUIRE(c.points[1].impulse.normal==0); REQUIRE(b.velocity.y==Catch::Approx(1).epsilon(0).margin(1e-7));
 }
 TEST_CASE("Singular duplicate contact features use finite nonnegative accumulated impulses", "[contact-block][singular]") {
     RigidBody a(Polygon::MakeBox(10,1),MaterialFor(),{0,-.5f},true),b(Polygon::MakeBox(1,1),MaterialFor(),{0,.499f});
@@ -118,10 +118,10 @@ TEST_CASE("Offcenter unequal dynamic bodies retain physical impulse invariants f
     const double left=PointNormalVelocity(a,b,-.5),right=PointNormalVelocity(a,b,.5),energy=Energy(a,b),angular=Angular(a,b);
     ContactImpulseCache cache; auto c=Constraint(a,b,cache); c.points[0].velocityBias=-e*left; c.points[1].velocityBias=-e*right;
     REQUIRE(ContactSolverDetail::SolveNormalBlock(c)); REQUIRE(c.points[0].impulse.normal>0); REQUIRE(c.points[1].impulse.normal>0);
-    REQUIRE(PointNormalVelocity(a,b,-.5)==Catch::Approx(-e*left).margin(1e-6));
-    REQUIRE(PointNormalVelocity(a,b,.5)==Catch::Approx(-e*right).margin(1e-6));
-    REQUIRE(2*double(a.velocity.y)+3*double(b.velocity.y)==Catch::Approx(-4).margin(1e-6));
-    REQUIRE(Angular(a,b)==Catch::Approx(angular).margin(1e-6));
+    REQUIRE(PointNormalVelocity(a,b,-.5)==Catch::Approx(-e*left).epsilon(0).margin(1e-6));
+    REQUIRE(PointNormalVelocity(a,b,.5)==Catch::Approx(-e*right).epsilon(0).margin(1e-6));
+    REQUIRE(2*double(a.velocity.y)+3*double(b.velocity.y)==Catch::Approx(-4).epsilon(0).margin(1e-6));
+    REQUIRE(Angular(a,b)==Catch::Approx(angular).epsilon(0).margin(1e-6));
     if(e==1) REQUIRE(Energy(a,b)==Catch::Approx(energy).epsilon(3e-7)); else REQUIRE(Energy(a,b)<energy);
 }
 TEST_CASE("Nearly coincident two-point levers avoid ill-conditioned inversion", "[contact-block][singular]") {
