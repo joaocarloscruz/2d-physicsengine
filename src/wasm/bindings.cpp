@@ -35,7 +35,7 @@ ParticleSystemPtr CreateParticleSystem() {
 JointPtr CreateDistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 anchorA, Vector2 anchorB) {
     return std::make_shared<DistanceJoint>(std::move(a), std::move(b), length, anchorA, anchorB);
 }
-JointPtr CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
+std::shared_ptr<RevoluteJoint> CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
     return std::make_shared<RevoluteJoint>(std::move(a), std::move(b), anchorA, anchorB);
 }
 
@@ -138,6 +138,18 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .smart_ptr<JointPtr>("JointPtr")
         .function("getAnchorA", &IJoint::getAnchorA)
         .function("getAnchorB", &IJoint::getAnchorB);
+    class_<RevoluteJoint, base<IJoint>>("RevoluteJoint")
+        .smart_ptr<std::shared_ptr<RevoluteJoint>>("RevoluteJointPtr")
+        .function("setMotor", &RevoluteJoint::setMotor)
+        .function("isMotorEnabled", &RevoluteJoint::isMotorEnabled)
+        .function("getMotorSpeed", &RevoluteJoint::getMotorSpeed)
+        .function("getMaxMotorTorque", &RevoluteJoint::getMaxMotorTorque)
+        .function("getMotorTorque", &RevoluteJoint::getMotorTorque)
+        .function("setLimits", &RevoluteJoint::setLimits)
+        .function("areLimitsEnabled", &RevoluteJoint::areLimitsEnabled)
+        .function("getLowerLimit", &RevoluteJoint::getLowerLimit)
+        .function("getUpperLimit", &RevoluteJoint::getUpperLimit)
+        .function("getAngle", &RevoluteJoint::getAngle);
     function("createDistanceJoint", &CreateDistanceJoint);
     function("createRevoluteJoint", &CreateRevoluteJoint);
 

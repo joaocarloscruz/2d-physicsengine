@@ -99,3 +99,12 @@ for `engine.addJoint`/`removeJoint`. CCD and waking use `body.setCcdEnabled`,
 returned by `getSimulationConfig`. Use that complete object when changing fields.
 `engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.
 Fluid solvers and collision listener subclasses currently have native C++ APIs only.
+
+The revolute factory returns a `RevoluteJoint` handle extending `Joint` with
+`setMotor(enabled, speed, maxTorque)`, `setLimits(enabled, lower, upper)`,
+`getAngle()` and `getMotorTorque()`. Motor speed uses radians/second and limits
+use radians relative to the construction pose. Query settings with
+`isMotorEnabled`, `getMotorSpeed`, `getMaxMotorTorque`, `areLimitsEnabled`,
+`getLowerLimit` and `getUpperLimit`. The handle remains accepted by
+`engine.addJoint` and `engine.removeJoint`; delete it once when finished.
+See [joint behavior and limitations](joints-and-sleeping.md).

@@ -103,9 +103,42 @@ async function main() {
     assert.equal(JSON.parse(engine.exportJson(2)).bodies.length, 2);
     engine.clearBodies();
     assert.equal(JSON.parse(engine.exportJson(2)).bodies.length, 0);
+    const rotorShape = new physics.Circle(1);
+    const material = {density: 1, restitution: 0, staticFriction: 0, dynamicFriction: 0};
+    const support = physics.createRigidBody(rotorShape, material, {x: 0, y: 0}, true);
+    const rotor = physics.createRigidBody(rotorShape, material, {x: 0, y: 0}, false);
+    rotorShape.delete();
+    rotor.setMass(2); // Unit-radius disk: I = m*r^2/2 = 1.
+    rotor.setCollisionMaskBits(0);
+    engine.addBody(support); engine.addBody(rotor);
+    const hinge = physics.createRevoluteJoint(support, rotor, {x: 0, y: 0}, {x: 0, y: 0});
+    assert.equal(hinge.isMotorEnabled(), false);
+    assert.equal(hinge.areLimitsEnabled(), false);
+    hinge.setMotor(true, 10, 2);
+    assert.equal(hinge.getMotorSpeed(), 10);
+    assert.equal(hinge.getMaxMotorTorque(), 2);
+    engine.addJoint(hinge);
+    engine.step(0.25);
+    assert.ok(Math.abs(rotor.getAngularVelocity() - 0.5) < 1e-6);
+    assert.ok(Math.abs(hinge.getMotorTorque() - 2) < 1e-6);
+    engine.step(0);
+    assert.equal(hinge.getMotorTorque(), 0);
+    hinge.setLimits(true, -0.1, 0.2);
+    assert.equal(hinge.areLimitsEnabled(), true);
+    assert.ok(Math.abs(hinge.getLowerLimit() + 0.1) < 1e-6);
+    assert.ok(Math.abs(hinge.getUpperLimit() - 0.2) < 1e-6);
+    assert.throws(() => hinge.setLimits(true, 2, 1));
+    assert.throws(() => hinge.setMotor(true, NaN, 1));
+    support.delete(); rotor.delete();
+    for (let i = 0; i < 300; ++i) engine.step(1 / 120);
+    assert.ok(Math.abs(hinge.getAngle() - 0.2) < 1e-5);
+    assert.ok(Math.abs(hinge.getAnchorA().x - hinge.getAnchorB().x) < 1e-6);
+    engine.removeJoint(hinge);
+    hinge.delete();
+    engine.clearBodies();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, shape/body/joint lifetimes, exports, and particles");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, and particles");
 }
 
 main().catch((error) => {
