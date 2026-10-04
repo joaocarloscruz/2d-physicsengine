@@ -151,6 +151,7 @@ if(EMSCRIPTEN)
         src/wasm/gravity_bindings.cpp
         src/wasm/wave_bindings.cpp
         src/wasm/mac_bindings.cpp
+        src/wasm/maxwell_bindings.cpp
         src/wasm/query_bindings.cpp
     )
 

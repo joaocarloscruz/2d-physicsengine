@@ -4,7 +4,8 @@
 periodic medium. It is independent of Engine/World and the prescribed-field
 `ChargedParticle` module. There are no charges, currents, particle-field
 coupling, interfaces, conductors, absorbing boundaries or 3D field components.
-This is a native API; no WebAssembly binding is provided yet.
+The native API and [owned WebAssembly API](webassembly.md#periodic-tmz-maxwell-fields)
+expose the same bounded model.
 
 Include `physics/physics.h` and link the installed `PhysicsEngine::Engine`
 target. The background references are John B. Schneider's

@@ -171,6 +171,68 @@ fluid or multiphysics coupling is provided. Delete the owned grid once when
 finished. See [the native membrane model, CFL, resources and representability
 limits](wave-membranes.md) for the supported numerical regime.
 
+## Periodic TMz Maxwell fields
+
+`MaxwellGrid` owns a standalone homogeneous, lossless, source-free periodic TMz
+grid. `new physics.MaxwellGrid()` uses the complete default configuration below;
+the configured constructor requires every field. Configuration stays immutable.
+Counts arrive as JavaScript numbers and must be positive finite integers within
+the native hard ceilings before conversion: 262144 cells, 1000000 substeps and
+1000000000 cell visits. Both dimensions must be at least two.
+
+```js
+const grid = new physics.MaxwellGrid({
+    columns: 16, rows: 16, spacingX: 1, spacingY: 1,
+    permittivity: 1, permeability: 1, cflSafety: 0.9, maxSubstep: 0.1,
+    maximumSubsteps: 10000, maximumCellVisits: 100000000
+});
+const fields = grid.getState(); // plain copied {ez: [], hx: [], hy: []}
+fields.ez[0] = 1;
+grid.setState(fields);
+const h = grid.getStableTimeStep();
+const invariantBefore = grid.getModifiedEnergy(h);
+grid.step(h);
+const diagnostics = grid.getDiagnostics();
+const divergence = grid.getMagneticDivergence(); // plain copied array
+const retained = grid.getState();
+grid.delete(); // snapshots remain usable; they need no delete()
+```
+
+All fields are synchronous in time. At index `i + columns*j`, Ez is at
+`(i*dx,j*dy)`, Hx at `(i*dx,(j+.5)*dy)` and Hy at `((i+.5)*dx,j*dy)`.
+Periodic samples are stored once without duplicate end rows/columns. SI fields
+are Ez in V/m and Hx/Hy in A/m, spacings in meters, permittivity in F/m and
+permeability in H/m. Defaults eps=mu=1 use reduced units. Energy diagnostics are
+J per meter of out-of-plane depth. `getMagneticDivergence()` and diagnostic
+`magneticDivergenceRms`/`maxAbsMagneticDivergence` measure **div H**, in A/m².
+The physical constraint is `div B = mu div H = 0` for uniform permeability;
+initial divergence is observed and preserved rather than projected away.
+
+`getConfig()`, `getState()`, `getDiagnostics()` and `getMagneticDivergence()`
+return owned plain values. Input state requires three plain dense JavaScript
+arrays of exactly `columns*rows` finite numeric entries; typed arrays and sparse
+arrays are rejected. All three lengths are checked before allocating/copying
+any field. Mutating input or output arrays never aliases the grid. A successful
+`setState()` preserves the clock and resets previous step work/reference h.
+Invalid state or positive-step failure preserves all fields, time and
+diagnostics. `step(0)` is a complete no-op.
+
+`getWaveSpeed()` returns `1/sqrt(eps*mu)`. `getStableTimeStep()` combines the
+strict 2D CFL bound and configured maximum duration. `step(dt)` partitions dt
+within bounded substep/cell work; accepted arithmetic visits are exactly
+`columns*rows*(3*lastSubsteps+1)`, excluding bounded copies/input/getter scans.
+Diagnostics copy electric/magnetic/total physical energy, modified energy and
+its reference step, all three means/maxima, div H RMS/max, clock, stable duration
+and previous actual substep/count/cell visits. Physical energy oscillates.
+`getModifiedEnergy(h)` observes the fixed-h invariant; positive h must meet the
+strict physical CFL and coefficient representability requirements. Compare
+the same h before/after a run; changing h changes this quadratic form.
+
+Delete the grid exactly once when finished. It is independent of Engine/World;
+there are no charge/current sources, particle coupling, interfaces, absorbing
+boundaries, conductors or 3D components. See [the native equations, invariant,
+resource accounting and representability limits](maxwell-grids.md).
+
 ## Prerequisites
 
 Install and activate the Emscripten SDK, then make sure `emcmake` and `cmake`

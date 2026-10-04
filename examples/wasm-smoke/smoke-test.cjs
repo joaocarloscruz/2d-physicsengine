@@ -77,6 +77,195 @@ function testQueries(physics) {
     polygonEngine.delete();
 }
 
+function testMaxwell(physics) {
+    const defaults = new physics.MaxwellGrid(), base = defaults.getConfig();
+    assert.deepEqual(base, {columns:16, rows:16, spacingX:1, spacingY:1, permittivity:1,
+        permeability:1, cflSafety:.9, maxSubstep:.1, maximumSubsteps:10000, maximumCellVisits:100000000});
+    const near = (actual, expected, tolerance = 3e-12) => assert.ok(Math.abs(actual-expected) <= tolerance,
+        `${actual} versus ${expected}, tolerance ${tolerance}`);
+    const mode = (c, mx, my, e, b) => {
+        const ax = 2*Math.sin(Math.PI*mx/c.columns)/c.spacingX;
+        const ay = 2*Math.sin(Math.PI*my/c.rows)/c.spacingY;
+        const fields = {ez:[], hx:[], hy:[]};
+        for (let j=0; j<c.rows; ++j) for (let i=0; i<c.columns; ++i) {
+            const theta = 2*Math.PI*(mx*i/c.columns+my*j/c.rows)+.31;
+            fields.ez.push(e*Math.cos(theta));
+            fields.hx.push(ay*b*Math.sin(theta+Math.PI*my/c.rows));
+            fields.hy.push(-ax*b*Math.sin(theta+Math.PI*mx/c.columns));
+        }
+        return fields;
+    };
+    const sameFields = (a,b,tol=3e-12) => {
+        for (const field of ['ez','hx','hy']) {
+            assert.ok(Array.isArray(a[field])); assert.equal(a[field].length,b[field].length);
+            for (let i=0; i<a[field].length; ++i) near(a[field][i],b[field][i],tol);
+        }
+    };
+    // Independent spectral amplitude map, including staggered polarization.
+    for (const [nx,ny] of [[12,10],[2,5],[5,2],[2,2]]) {
+        const c = {...base, columns:nx, rows:ny, spacingX:.23, spacingY:.41,
+            permittivity:2, permeability:3, maxSubstep:10};
+        const grid = new physics.MaxwellGrid(c);
+        near(grid.getWaveSpeed(),1/Math.sqrt(6),1e-16);
+        const h = .7*grid.getStableTimeStep(), mx=1,my=1;
+        const ax = 2*Math.sin(Math.PI/nx)/c.spacingX, ay = 2*Math.sin(Math.PI/ny)/c.spacingY;
+        const g=ax*ax+ay*ay, z=h*Math.sqrt(g/6), d=1-z*z/2;
+        let e=.7, b=-.13;
+        grid.setState(mode(c,mx,my,e,b));
+        for (let step=0; step<17; ++step) {
+            const newE=d*e-h*g*b/c.permittivity;
+            b=d*b+h*(1-z*z/4)*e/c.permeability; e=newE;
+            grid.step(h);
+        }
+        sameFields(grid.getState(),mode(c,mx,my,e,b));
+        const diag=grid.getDiagnostics();
+        assert.equal(diag.lastSubsteps,1); assert.equal(diag.lastCellVisits,nx*ny*4);
+        assert.equal(diag.lastSubstep,h); assert.equal(diag.modifiedEnergyStep,h);
+        assert.equal(diag.stableTimeStep,grid.getStableTimeStep());
+        near(diag.time,17*h); assert.ok(diag.maxAbsMagneticDivergence<2e-13);
+        grid.delete();
+    }
+    // Traveling eigenmode: phase and synchronous magnetic polarization are
+    // derived analytically from the spectral map, rather than iterated updates.
+    const travelingConfig={...base,columns:12,rows:10,spacingX:.23,spacingY:.41,
+        permittivity:2,permeability:3,maxSubstep:10};
+    const traveling=new physics.MaxwellGrid(travelingConfig);
+    const th=.8*traveling.getStableTimeStep(), steps=237;
+    const tax=2*Math.sin(Math.PI/12)/.23, tay=2*Math.sin(Math.PI/10)/.41;
+    const omega=Math.hypot(tax,tay)/Math.sqrt(6), z=th*omega;
+    const magneticAmplitude=Math.sqrt(1-z*z/4)/(3*omega);
+    const travelingFields={ez:[],hx:[],hy:[]}, expectedFields={ez:[],hx:[],hy:[]};
+    const phase=steps*2*Math.asin(z/2);
+    for (let j=0;j<10;++j) for (let i=0;i<12;++i) {
+        const theta=2*Math.PI*(i/12+j/10)+.31;
+        for (const [fields,advance] of [[travelingFields,0],[expectedFields,phase]]) {
+            fields.ez.push(Math.cos(theta-advance));
+            fields.hx.push(tay*magneticAmplitude*Math.cos(theta+Math.PI/10-advance));
+            fields.hy.push(-tax*magneticAmplitude*Math.cos(theta+Math.PI/12-advance));
+        }
+    }
+    traveling.setState(travelingFields);
+    for (let i=0;i<steps;++i) traveling.step(th);
+    sameFields(traveling.getState(),expectedFields,8e-13); traveling.delete();
+    const c={...base, columns:12, rows:10, spacingX:.23, spacingY:.41, maxSubstep:10};
+    const grid=new physics.MaxwellGrid(c), h=.8*grid.getStableTimeStep();
+    const initial=mode(c,3,2,.7,-.13);
+    // Add DC and a curl-null longitudinal magnetic component with nonzero div H.
+    for (let j=0; j<c.rows; ++j) for (let i=0; i<c.columns; ++i) {
+        const k=i+c.columns*j;
+        initial.ez[k]+=.4; initial.hx[k]+=1.2+.2*Math.sin(2*Math.PI*(i+.5)/c.columns);
+        initial.hy[k]-=.3;
+    }
+    grid.setState(initial);
+    initial.ez[0]=99; assert.notEqual(grid.getState().ez[0],99);
+    const divergence=grid.getMagneticDivergence(), invariant=grid.getModifiedEnergy(h);
+    assert.ok(Math.max(...divergence.map(Math.abs))>.1);
+    const energy0=grid.getDiagnostics().totalEnergy;
+    let minEnergy=energy0,maxEnergy=energy0;
+    for (let n=0; n<300; ++n) {
+        grid.step(h); const diag=grid.getDiagnostics();
+        near(diag.modifiedEnergy,invariant,2e-11*invariant);
+        minEnergy=Math.min(minEnergy,diag.totalEnergy); maxEnergy=Math.max(maxEnergy,diag.totalEnergy);
+    }
+    assert.ok(maxEnergy-minEnergy>1e-5);
+    const diag=grid.getDiagnostics();
+    assert.deepEqual(Object.keys(diag).sort(), ['electricEnergy','magneticEnergy','totalEnergy',
+        'modifiedEnergy','modifiedEnergyStep','meanEz','meanHx','meanHy','maxAbsEz','maxAbsHx',
+        'maxAbsHy','magneticDivergenceRms','maxAbsMagneticDivergence','time','stableTimeStep',
+        'lastSubstep','lastSubsteps','lastCellVisits'].sort());
+    near(diag.meanEz,.4); near(diag.meanHx,1.2); near(diag.meanHy,-.3);
+    const finalDivergence=grid.getMagneticDivergence();
+    for (let i=0; i<divergence.length; ++i) near(finalDivergence[i],divergence[i],2e-13);
+    const rms=Math.hypot(...finalDivergence)/Math.sqrt(finalDivergence.length);
+    near(diag.magneticDivergenceRms,rms,1e-15);
+    near(diag.maxAbsMagneticDivergence,Math.max(...finalDivergence.map(Math.abs)),1e-15);
+    near(diag.totalEnergy,diag.electricEnergy+diag.magneticEnergy,1e-14);
+    const before=grid.getState(), beforeDiag=grid.getDiagnostics();
+    const unchanged=()=>{assert.deepEqual(grid.getState(),before); assert.deepEqual(grid.getDiagnostics(),beforeDiag);};
+    grid.step(0); unchanged();
+    for (const bad of [-1,NaN,Infinity,Number.MAX_VALUE,Number.MIN_VALUE]) {
+        assert.throws(()=>grid.step(bad)); unchanged();
+    }
+    const physicalCfl=1/(grid.getWaveSpeed()*Math.hypot(1/c.spacingX,1/c.spacingY));
+    for (const bad of [-1,NaN,Infinity,physicalCfl*1.000001,Number.MIN_VALUE]) {
+        assert.throws(()=>grid.getModifiedEnergy(bad)); unchanged();
+    }
+    near(grid.getModifiedEnergy(0),beforeDiag.totalEnergy,0);
+    for (const field of ['ez','hx','hy']) {
+        for (const bad of [[],Array(before.ez.length-1).fill(0),Array(before.ez.length+1).fill(0),
+            Array(2**32-1),new Float64Array(before.ez.length),null]) {
+            assert.throws(()=>grid.setState({...before,[field]:bad})); unchanged();
+        }
+        for (const bad of [NaN,Infinity,-Infinity,'1',undefined,null,{},1e308]) {
+            const values=before[field].slice(); values[1]=bad;
+            assert.throws(()=>grid.setState({...before,[field]:values})); unchanged();
+        }
+        const hole=before[field].slice(); delete hole[1];
+        assert.throws(()=>grid.setState({...before,[field]:hole})); unchanged();
+        // An inherited numeric entry must not make a sparse array dense.
+        const prototype=Object.create(Array.prototype); prototype[1]=0;
+        Object.setPrototypeOf(hole,prototype);
+        assert.throws(()=>grid.setState({...before,[field]:hole})); unchanged();
+    }
+    const readTrap=before.ez.slice(); Object.defineProperty(readTrap,0,{get(){throw Error('entries read before lengths');}});
+    assert.throws(()=>grid.setState({ez:readTrap,hx:before.hx,hy:[]}),error=>error.message!=='entries read before lengths');
+    unchanged();
+    for (const bad of [{},null,{ez:before.ez,hx:before.hx}]) {
+        assert.throws(()=>grid.setState(bad)); unchanged();
+    }
+    const stateSnapshot=grid.getState(), configSnapshot=grid.getConfig(), diagSnapshot=grid.getDiagnostics();
+    const divSnapshot=grid.getMagneticDivergence();
+    stateSnapshot.ez[0]=99; configSnapshot.columns=99; diagSnapshot.time=99; divSnapshot[0]=99;
+    unchanged(); assert.equal(grid.getConfig().columns,12); assert.notEqual(grid.getMagneticDivergence()[0],99);
+    grid.setState(before); assert.equal(grid.getDiagnostics().time,beforeDiag.time);
+    assert.equal(grid.getDiagnostics().lastCellVisits,0); assert.equal(grid.getDiagnostics().modifiedEnergyStep,0);
+    const retained=grid.getState(); grid.delete();
+    assert.deepEqual(retained,before); assert.equal(stateSnapshot.ez[0],99); assert.equal(diagSnapshot.time,99);
+    assert.equal(divSnapshot[0],99); assert.equal(configSnapshot.columns,99);
+    // Uniform mode has no curl: physical SI energy and DC fields remain unchanged.
+    const dc=new physics.MaxwellGrid({...base,columns:2,rows:3,spacingX:.25,spacingY:.5,permittivity:2,permeability:3});
+    const uniform={ez:Array(6).fill(2),hx:Array(6).fill(3),hy:Array(6).fill(-4)};
+    dc.setState(uniform); dc.step(.3); assert.deepEqual(dc.getState(),uniform);
+    near(dc.getDiagnostics().electricEnergy,3); near(dc.getDiagnostics().magneticEnergy,28.125);
+    near(dc.getDiagnostics().totalEnergy,31.125); assert.deepEqual(dc.getMagneticDivergence(),Array(6).fill(0)); dc.delete();
+    for (const field of ['columns','rows','maximumSubsteps','maximumCellVisits'])
+        for (const bad of [-1,0,.5,NaN,Infinity,2**32,2**32+1,Number.MAX_SAFE_INTEGER])
+            assert.throws(()=>new physics.MaxwellGrid({...base,[field]:bad}));
+    for (const [field,bad] of [['columns',262145],['rows',1],['maximumSubsteps',1000001],['maximumCellVisits',1000000001]])
+        assert.throws(()=>new physics.MaxwellGrid({...base,[field]:bad}));
+    assert.throws(()=>new physics.MaxwellGrid({...base,columns:512,rows:513}));
+    for (const field of ['spacingX','spacingY','permittivity','permeability','maxSubstep'])
+        for (const bad of [-1,0,NaN,Infinity])
+            assert.throws(()=>new physics.MaxwellGrid({...base,[field]:bad}));
+    for (const field of ['spacingX','spacingY','permittivity','permeability'])
+        assert.throws(()=>new physics.MaxwellGrid({...base,[field]:Number.MIN_VALUE}));
+    const tinyDuration=new physics.MaxwellGrid({...base,maxSubstep:Number.MIN_VALUE});
+    const tinyDiag=tinyDuration.getDiagnostics(),tinyState=tinyDuration.getState();
+    assert.throws(()=>tinyDuration.step(Number.MIN_VALUE));
+    assert.deepEqual(tinyDuration.getDiagnostics(),tinyDiag); assert.deepEqual(tinyDuration.getState(),tinyState);
+    tinyDuration.delete();
+    const maximalBudgets=new physics.MaxwellGrid({...base,columns:2,rows:2,
+        maximumSubsteps:1000000,maximumCellVisits:1000000000});
+    assert.equal(maximalBudgets.getConfig().maximumSubsteps,1000000);
+    assert.equal(maximalBudgets.getConfig().maximumCellVisits,1000000000); maximalBudgets.delete();
+    for (const bad of [0,-1,1,NaN,Infinity]) assert.throws(()=>new physics.MaxwellGrid({...base,cflSafety:bad}));
+    // An exact decimal user limit must consume one substep and exactly four cell passes.
+    const bounded=new physics.MaxwellGrid({...base,columns:2,rows:2,maxSubstep:.01,maximumSubsteps:1,maximumCellVisits:16});
+    bounded.step(.01); assert.equal(bounded.getDiagnostics().lastSubsteps,1);
+    assert.equal(bounded.getDiagnostics().lastCellVisits,16);
+    const bd=bounded.getDiagnostics(),bs=bounded.getState();
+    assert.throws(()=>bounded.step(.011)); assert.deepEqual(bounded.getState(),bs); assert.deepEqual(bounded.getDiagnostics(),bd);
+    bounded.delete();
+    const noWork=new physics.MaxwellGrid({...base,columns:2,rows:2,maximumCellVisits:15});
+    const noDiag=noWork.getDiagnostics(),noState=noWork.getState(); assert.throws(()=>noWork.step(.01));
+    assert.deepEqual(noWork.getDiagnostics(),noDiag); assert.deepEqual(noWork.getState(),noState); noWork.delete();
+    const overflow=new physics.MaxwellGrid({...base,columns:2,rows:2,maxSubstep:1});
+    const large=mode(overflow.getConfig(),1,1,0,3e153); overflow.setState(large);
+    const largeDiag=overflow.getDiagnostics(); assert.throws(()=>overflow.step(.6));
+    assert.deepEqual(overflow.getState(),large); assert.deepEqual(overflow.getDiagnostics(),largeDiag); overflow.delete();
+    defaults.delete();
+}
+
 function testWaves(physics) {
     const defaults = new physics.WaveMembrane(3, 3, 1, 1);
     const config = defaults.getConfig();
@@ -416,6 +605,7 @@ async function main() {
     testGravity(physics);
     testWaves(physics);
     testMacProjection(physics);
+    testMaxwell(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
@@ -792,7 +982,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, and periodic MAC projection");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic MAC projection, and periodic TMz Maxwell fields");
 }
 
 main().catch((error) => {
