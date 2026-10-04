@@ -102,6 +102,12 @@ int main() {
         ||mac.lastDiffusion().cellVisits!=diffusion.cellVisits
         ||mac.lastProjection().diagnostics.cellVisits!=projection.cellVisits) return 1;
     PhysicsEngine::PeriodicScalarTransport scalar({2,2,.25,.5});
+    PhysicsEngine::PeriodicEulerGasGrid gas({2,2,.25,.5,1.4});
+    const auto gasState=gas.state(); const auto gasStep=gas.step(.01);
+    if(gas.state().density!=gasState.density ||gas.state().totalEnergy!=gasState.totalEnergy
+        ||gas.primitives().pressure[0]!=1 ||gas.time()!=.01 ||gasStep.substeps!=1
+        ||gasStep.cellVisits!=40 ||gasStep.totalEnergyDefect!=0
+        ||gas.lastStep().cellVisits!=gasStep.cellVisits) return 1;
     scalar.setState({1,2,1,2});
     scalar.setVelocities({{.25,.25,.25,.25},{0,0,0,0}});
     const auto transported=scalar.step(.1);

@@ -14,6 +14,7 @@
 #include "physics/core/fluids/wcsph_solver.h"
 #include "physics/core/fluids/periodic_mac_grid.h"
 #include "physics/core/fluids/periodic_scalar_transport.h"
+#include "physics/core/fluids/periodic_euler_gas_grid.h"
 #include "physics/core/fluids/coupled_fluid_simulation.h"
 #include "physics/core/state_export.h"
 #include "physics/core/spatial_queries.h"

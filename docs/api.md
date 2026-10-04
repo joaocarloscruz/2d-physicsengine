@@ -30,6 +30,11 @@ transport](periodic-scalar-transport.md) with frozen MAC face velocities,
 first-order donor-cell fluxes, outflow CFL/work bounds and transactional scalar,
 clock and diagnostic snapshots. It does not advect the velocity field.
 
+`PeriodicEulerGasGrid` provides an independent [periodic ideal-gas Euler
+finite-volume solver](periodic-euler-gas.md), with owned double cell averages,
+first-order unsplit Rusanov fluxes, strict positivity/CFL and bounded work,
+stored conservation diagnostics and transactional state/clock publication.
+
 `MaxwellGrid` and its configuration/state/diagnostic types support independent
 [periodic homogeneous TMz electromagnetic fields](maxwell-grids.md), with
 synchronous double fields, strict CFL/work bounds, a fixed-step modified energy
