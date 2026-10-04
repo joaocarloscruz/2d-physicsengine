@@ -3,6 +3,78 @@
 The WebAssembly target exposes the engine's basic simulation API to JavaScript
 through Emscripten's Embind library.
 
+## Owned scalar-wave grids
+
+`WaveMembrane` exposes the standalone native uniform membrane solver. Construct
+an owned grid with `(width, height, spacingX, spacingY)` for native defaults, or
+pass a complete configuration as a fifth argument. The default boundary is
+`physics.WaveBoundary.FixedZero`; the other supported value is
+`physics.WaveBoundary.Periodic`.
+
+```javascript
+const defaults = new physics.WaveMembrane(3, 3, 1, 1);
+const config = defaults.getConfig();
+defaults.delete();
+config.boundary = physics.WaveBoundary.Periodic;
+config.tension = 12;          // N/m
+config.surfaceDensity = 3;    // kg/m²; wave speed is sqrt(tension/density).
+config.damping = 0.1;         // gamma in 1/s; PDE damping is -2*gamma*velocity.
+const wave = new physics.WaveMembrane(8, 6, 0.1, 0.2, config);
+let snapshot;
+try {
+    const displacement = Array(48).fill(0);
+    const velocity = Array(48).fill(0);
+    displacement[2 * 8 + 3] = 0.001; // Row-major: y*width+x, metres.
+    wave.setState(displacement, velocity);
+    wave.queueAcceleration(3, 2, -0.2); // m/s², held during the next accepted step.
+    wave.step(0.01);
+    snapshot = wave.getCell(3, 2); // {displacement, velocity, queuedAcceleration}
+    console.log(snapshot, wave.getDiagnostics());
+} finally {
+    wave.delete();
+}
+console.log(snapshot); // Plain copied values remain safe after deletion.
+```
+
+`getWidth`, `getHeight`, `getSpacingX`, `getSpacingY` and `getCellCount` describe
+the immutable geometry. `getCell(x,y)` returns a copied scalar snapshot.
+`getDisplacements`, `getVelocities` and `getQueuedAccelerations` return fresh
+plain JS arrays in row-major order, with double-precision values. These are
+copies rather than WASM-memory views; mutation does not modify native state,
+and arrays/snapshots require no `delete()`.
+
+`setState(displacements, velocities)` accepts two plain JS arrays, each exactly
+width*height long with numeric finite entries. Both lengths are checked before
+native array allocation, and input values are copied. Typed arrays and array-like
+objects are currently rejected. `setCellState(x,y,displacement[,velocity])`
+updates one cell; omitted velocity defaults to zero. `queueAcceleration` adds
+to the pending cell load, `clearAcceleration(x,y)` clears one and
+`clearAccelerations()` clears all. Displacement and velocity use metres and m/s.
+
+Use the complete plain object returned by `getConfig` for `setConfig` or the
+configured constructor. It contains `tension`, `surfaceDensity`, `damping`,
+`boundary`, `cflSafety`, `maxSubstep`, `maxCells`, `maxSubsteps` and `maxCellWork`.
+Dimensions, coordinates and budget counts arrive as doubles and must be exact
+finite nonnegative integers within the WASM integer range before conversion.
+Coordinates must refer to existing cells; grid/boundary minima and native budget
+limits still apply. Fractional, negative, nonfinite and wrapping counts are
+rejected. Invalid state/configuration changes preserve existing state.
+
+Fixed-zero grids include their boundary nodes and require zero displacement,
+velocity and loads on every edge. Periodic grids omit duplicated endpoints;
+their periods are width*spacingX and height*spacingY. `step(0)` retains loads,
+resets last-work counters and does not advance time. Failed positive steps retain
+state, queued acceleration, time and prior diagnostics; accepted positive steps
+consume acceleration. `getStableTimeStep` reports the CFL/configuration bound.
+`getDiagnostics` copies physical kinetic/strain/total energy, maximum absolute
+state values, time, stable timestep, last substep size/count and grid-cell work.
+The Verlet integrator does not conserve physical energy exactly.
+
+The object owns its grid independently of `Engine`/`World`; no automatic rigid,
+fluid or multiphysics coupling is provided. Delete the owned grid once when
+finished. See [the native membrane model, CFL, resources and representability
+limits](wave-membranes.md) for the supported numerical regime.
+
 ## Prerequisites
 
 Install and activate the Emscripten SDK, then make sure `emcmake` and `cmake`

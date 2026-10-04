@@ -1,6 +1,126 @@
 const assert = require("node:assert/strict");
 const createPhysicsEngineModule = require("./physics_engine.js");
 
+function testWaves(physics) {
+    const defaults = new physics.WaveMembrane(3, 3, 1, 1);
+    const config = defaults.getConfig();
+    assert.equal(config.boundary, physics.WaveBoundary.FixedZero);
+    assert.equal(config.maxCells, 1000000);
+    config.boundary = physics.WaveBoundary.Periodic;
+    config.maxSubstep = 0.001; config.tension = 6; config.surfaceDensity = 2;
+    assert.equal(defaults.getConfig().tension, 1);
+    const mode = new physics.WaveMembrane(8, 6, 0.3, 0.4, config);
+    assert.equal(mode.getWidth(), 8); assert.equal(mode.getHeight(), 6); assert.equal(mode.getCellCount(), 48);
+    assert.equal(mode.getSpacingX(), 0.3); assert.equal(mode.getSpacingY(), 0.4);
+    const initial = Array.from({length: 48}, (_, i) => Math.cos(2 * Math.PI * ((i % 8) / 8 + Math.floor(i / 8) / 6)));
+    const velocities = Array(48).fill(0);
+    mode.setState(initial, velocities);
+    const omega = 2 * Math.sqrt(3) * Math.hypot(Math.sin(Math.PI / 8) / 0.3, Math.sin(Math.PI / 6) / 0.4);
+    const initialEnergy = mode.getDiagnostics().totalEnergy;
+    assert.ok(Math.abs(initialEnergy - 0.25 * 2 * 0.3 * 0.4 * 48 * omega**2) < 1e-12);
+    const inputCopy = initial.slice(); mode.setState(inputCopy, velocities); inputCopy[0] = 99;
+    assert.equal(mode.getCell(0, 0).displacement, initial[0]);
+    mode.step(0.2);
+    const diag = mode.getDiagnostics(), state = mode.getDisplacements(), velocity = mode.getVelocities();
+    assert.equal(diag.lastCellWork, 48 * diag.lastSubsteps);
+    assert.equal(diag.lastSubsteps, 200); assert.equal(diag.lastSubstep, 0.001);
+    assert.equal(diag.time, 0.2); assert.ok(diag.lastSubstep <= mode.getStableTimeStep());
+    const phase = 2 * Math.asin(omega * diag.lastSubstep / 2) * diag.lastSubsteps;
+    const amplitude = Math.cos(phase), speedAmplitude = -omega * Math.sqrt(1 - (omega * diag.lastSubstep / 2)**2) * Math.sin(phase);
+    for (let i = 0; i < 48; ++i) {
+        assert.ok(Math.abs(state[i] - initial[i] * amplitude) < 2e-13);
+        assert.ok(Math.abs(velocity[i] - initial[i] * speedAmplitude) < 1e-12);
+    }
+    assert.ok(diag.totalEnergy <= initialEnergy * (1 + 1e-12));
+    assert.ok(diag.totalEnergy > initialEnergy * 0.99);
+    const cellSnapshot = mode.getCell(1, 2), arraySnapshot = mode.getDisplacements(), loadSnapshot = mode.getQueuedAccelerations();
+    cellSnapshot.displacement = 99; arraySnapshot[0] = 99; loadSnapshot[0] = 99; diag.totalEnergy = 99;
+    assert.notEqual(mode.getCell(1, 2).displacement, 99); assert.notEqual(mode.getDisplacements()[0], 99);
+    assert.equal(mode.getCell(0, 0).queuedAcceleration, 0); assert.notEqual(mode.getDiagnostics().totalEnergy, 99);
+    for (const bad of [-1, 0.5, NaN, Infinity, 2**32, 2**32 + 1]) {
+        assert.throws(() => new physics.WaveMembrane(bad, 3, 1, 1));
+        assert.throws(() => new physics.WaveMembrane(3, bad, 1, 1, config));
+        for (const [x, y] of [[bad, 0], [0, bad]]) {
+            assert.throws(() => mode.getCell(x, y));
+            assert.throws(() => mode.setCellState(x, y, 0, 0));
+            assert.throws(() => mode.queueAcceleration(x, y, 1));
+            assert.throws(() => mode.clearAcceleration(x, y));
+        }
+    }
+    assert.throws(() => mode.getCell(8, 0)); assert.throws(() => mode.getCell(0, 6));
+    for (const field of ["maxCells", "maxSubsteps", "maxCellWork"]) {
+        for (const count of [-1, 0, 0.5, NaN, Infinity, 2**32, 2**32 + 1]) {
+            const invalid = {...config, [field]: count};
+            assert.throws(() => mode.setConfig(invalid));
+            assert.throws(() => new physics.WaveMembrane(8, 6, 0.3, 0.4, invalid));
+            assert.equal(mode.getConfig()[field], config[field]);
+        }
+    }
+    assert.throws(() => mode.setConfig({...config, maxCells: 47}));
+    assert.throws(() => mode.setConfig({...config, boundary: 99}));
+    assert.throws(() => new physics.WaveMembrane(0, 3, 1, 1));
+    assert.throws(() => new physics.WaveMembrane(2, 2, 1, 1));
+    assert.throws(() => new physics.WaveMembrane(2**31, 2, 1, 1, {...config, maxCells: 2**32 - 1}));
+    for (const spacing of [0, -1, NaN, Infinity]) assert.throws(() => new physics.WaveMembrane(3, 3, spacing, 1));
+    const beforeInvalid = mode.getDisplacements();
+    for (const values of [null, {}, {length: 48}, new Float64Array(48), Array(47).fill(0), new Array(2**32 - 1)])
+        assert.throws(() => mode.setState(values, velocities));
+    assert.throws(() => mode.setState(beforeInvalid, []));
+    assert.throws(() => mode.setState(Array(48), velocities)); // Sparse entries are not numbers.
+    assert.throws(() => mode.setState(["1", ...beforeInvalid.slice(1)], velocities));
+    assert.throws(() => mode.setState([NaN, ...beforeInvalid.slice(1)], velocities));
+    assert.throws(() => mode.setState(Array(48).fill(3), [Infinity, ...velocities.slice(1)]));
+    assert.deepEqual(mode.getDisplacements(), beforeInvalid);
+    assert.throws(() => mode.setCellState(0, 0, NaN)); assert.throws(() => mode.queueAcceleration(0, 0, Infinity));
+
+    const uniformConfig = {...config, tension: 1, surfaceDensity: 2, maxSubstep: 0.01};
+    const uniform = new physics.WaveMembrane(2, 3, 1, 1, uniformConfig);
+    uniform.setState(Array(6).fill(3), Array(6).fill(-2));
+    for (let y = 0; y < 3; ++y) for (let x = 0; x < 2; ++x) uniform.queueAcceleration(x, y, 4);
+    uniform.step(0); assert.deepEqual(uniform.getQueuedAccelerations(), Array(6).fill(4));
+    const beforeZero = uniform.getCell(0, 0), beforeDiag = uniform.getDiagnostics();
+    for (const dt of [-1, NaN, Infinity, 100]) {
+        assert.throws(() => uniform.step(dt)); assert.deepEqual(uniform.getCell(0, 0), beforeZero);
+        assert.deepEqual(uniform.getDiagnostics(), beforeDiag);
+    }
+    uniform.setConfig({...uniformConfig, maxCellWork: 6});
+    assert.throws(() => uniform.step(0.5)); assert.deepEqual(uniform.getQueuedAccelerations(), Array(6).fill(4));
+    uniform.setConfig({...uniformConfig, maxSubsteps: 1});
+    assert.throws(() => uniform.step(0.5)); assert.deepEqual(uniform.getCell(0, 0), beforeZero);
+    uniform.setConfig(uniformConfig); uniform.step(0.5);
+    for (const cell of uniform.getDisplacements()) assert.ok(Math.abs(cell - 2.5) < 1e-13);
+    for (const speed of uniform.getVelocities()) assert.ok(Math.abs(speed) < 1e-13);
+    assert.deepEqual(uniform.getQueuedAccelerations(), Array(6).fill(0));
+    uniform.queueAcceleration(0, 0, 1e308);
+    const overflowState = uniform.getDisplacements(), overflowDiag = uniform.getDiagnostics();
+    assert.throws(() => uniform.step(0.01)); assert.deepEqual(uniform.getDisplacements(), overflowState);
+    assert.deepEqual(uniform.getDiagnostics(), overflowDiag); assert.equal(uniform.getCell(0, 0).queuedAcceleration, 1e308);
+    uniform.clearAcceleration(0, 0); uniform.queueAcceleration(0, 0, 1); uniform.clearAccelerations();
+    assert.deepEqual(uniform.getQueuedAccelerations(), Array(6).fill(0));
+    uniform.setConfig({...uniformConfig, damping: 0.7}); uniform.setState(Array(6).fill(0), Array(6).fill(2));
+    uniform.step(0.5);
+    for (const speed of uniform.getVelocities()) assert.ok(Math.abs(speed - 2 * Math.exp(-0.7)) < 2e-14);
+    assert.ok(uniform.getDiagnostics().kineticEnergy < 6);
+
+    defaults.setCellState(1, 1, 0.01); defaults.queueAcceleration(1, 1, 2); defaults.step(0.01);
+    for (const [x, y] of [[0, 0], [0, 1], [2, 1], [1, 0], [1, 2]]) {
+        assert.equal(defaults.getCell(x, y).displacement, 0); assert.equal(defaults.getCell(x, y).velocity, 0);
+        assert.throws(() => defaults.setCellState(x, y, 1));
+        assert.throws(() => defaults.setCellState(x, y, 0, 1));
+        assert.throws(() => defaults.queueAcceleration(x, y, 1));
+    }
+    const edgesBefore = defaults.getDisplacements();
+    assert.throws(() => defaults.setState(Array(9).fill(1), Array(9).fill(0)));
+    assert.deepEqual(defaults.getDisplacements(), edgesBefore);
+    defaults.setConfig({...defaults.getConfig(), boundary: physics.WaveBoundary.Periodic}); defaults.queueAcceleration(0, 0, 1);
+    assert.throws(() => defaults.setConfig({...defaults.getConfig(), boundary: physics.WaveBoundary.FixedZero}));
+    assert.equal(defaults.getConfig().boundary, physics.WaveBoundary.Periodic);
+    defaults.clearAccelerations(); defaults.setConfig({...defaults.getConfig(), boundary: physics.WaveBoundary.FixedZero});
+    mode.delete(); uniform.delete(); defaults.delete();
+    assert.equal(cellSnapshot.displacement, 99); assert.equal(arraySnapshot[0], 99); assert.equal(loadSnapshot[0], 99);
+    assert.equal(diag.totalEnergy, 99); assert.equal(config.maxSubstep, 0.001);
+}
+
 function testGravity(physics) {
     const defaults = new physics.NBodyGravity();
     const config = defaults.getConfig();
@@ -71,6 +191,7 @@ function testGravity(physics) {
 async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
+    testWaves(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
     for (const key of ["maxSubstepsPerAdvance", "solverIterations", "maximumCcdImpacts"])
@@ -446,7 +567,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, and N-body gravity");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, and membrane waves");
 }
 
 main().catch((error) => {

@@ -8,6 +8,8 @@ It models linear, small transverse displacement of a uniform taut membrane:
 u_{tt}=c^2(u_{xx}+u_{yy})-2\gamma u_t+a,\qquad c^2=T/\sigma.
 \]
 
+Owned JavaScript grids are also available through [WebAssembly bindings](webassembly.md#owned-scalar-wave-grids), with copied snapshots and checked integer inputs.
+
 Displacement u is in metres, velocity in m/s, queued acceleration a in m/s²,
 tension T in N/m and surface density sigma in kg/m². `damping` is gamma in 1/s;
 the velocity decay coefficient is twice gamma. T and sigma must be strictly
