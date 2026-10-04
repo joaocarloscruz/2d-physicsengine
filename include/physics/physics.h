@@ -12,6 +12,7 @@
 #include "physics/core/collisions/continuous_collision.h"
 #include "physics/core/fluids/dfsph_solver.h"
 #include "physics/core/fluids/wcsph_solver.h"
+#include "physics/core/fluids/periodic_mac_grid.h"
 #include "physics/core/fluids/coupled_fluid_simulation.h"
 #include "physics/core/state_export.h"
 #include "physics/core/spatial_queries.h"

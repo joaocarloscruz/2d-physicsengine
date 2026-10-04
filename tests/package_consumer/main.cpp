@@ -46,6 +46,15 @@ int main() {
     PhysicsEngine::WaveMembrane wave(2, 2, 1, 1, waveConfig);
     wave.setState(std::vector<double>(4), std::vector<double>(4, 2));
     wave.step(0.25);
+    PhysicsEngine::PeriodicMacGridConfig macConfig;
+    macConfig.columns=2; macConfig.rows=2; macConfig.spacingX=.25; macConfig.spacingY=.5;
+    PhysicsEngine::PeriodicMacGrid mac(macConfig);
+    PhysicsEngine::MacVelocityState macState; macState.xFaces={1,-1,1,-1}; macState.yFaces.assign(4,.5);
+    mac.setVelocities(macState);
+    const auto projection=mac.project();
+    if(projection.finalDivergenceRms>projection.targetDivergenceRms
+        ||std::abs(mac.velocities().xFaces[0])>1e-12
+        ||mac.velocities().yFaces!=macState.yFaces) return 1;
     if (std::abs(wave.getDisplacements()[0] - 0.5) > 1e-12
         || std::abs(wave.getDiagnostics().kineticEnergy - 8) > 1e-12) return 1;
     return std::abs(body->position.x-1) < 1e-6f
