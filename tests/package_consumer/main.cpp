@@ -58,6 +58,15 @@ int main() {
     PhysicsEngine::MaxwellGridConfig maxwellConfig;
     maxwellConfig.columns=2; maxwellConfig.rows=2;
     PhysicsEngine::MaxwellGrid maxwell(maxwellConfig);
+    PhysicsEngine::ElasticWaveGridConfig elasticConfig;
+    elasticConfig.columns=2;elasticConfig.rows=2;
+    PhysicsEngine::ElasticWaveGrid elastic(elasticConfig);
+    auto elasticState=elastic.getState();elasticState.vx.assign(4,2);elasticState.sigmaXX.assign(4,3);
+    elastic.setState(elasticState);elastic.step(.01);
+    if(elastic.getState().vx!=elasticState.vx||elastic.getState().sigmaXX!=elasticState.sigmaXX
+        ||elastic.getDiagnostics().lastCellVisits!=16
+        ||std::abs(elastic.getDiagnostics().totalEnergy-14.75)>1e-12
+        ||std::abs(elastic.getOutOfPlaneStress()[0]-.75)>1e-12) return 1;
     auto fields=maxwell.getState();
     fields.ez.assign(4,1); fields.hx.assign(4,2); fields.hy.assign(4,-3);
     maxwell.setState(fields); maxwell.step(.01);

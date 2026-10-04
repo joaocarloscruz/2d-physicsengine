@@ -20,3 +20,4 @@
 #include "physics/core/prismatic_joint.h"
 #include "physics/core/wave_membrane.h"
 #include "physics/core/maxwell_grid.h"
+#include "physics/core/elastic_wave_grid.h"
