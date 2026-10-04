@@ -3,6 +3,27 @@ const createPhysicsEngineModule = require("./physics_engine.js");
 
 async function main() {
     const physics = await createPhysicsEngineModule();
+    const charge = new physics.ChargedParticle({x: 0, y: 0}, {x: 2, y: 0}, 3, 6);
+    charge.step(Math.PI / 8, {electric: {x: 0, y: 0}, magnetic: 2});
+    assert.ok(Math.abs(charge.getPosition().x - 0.5) < 1e-12);
+    assert.ok(Math.abs(charge.getPosition().y + 0.5) < 1e-12);
+    assert.ok(Math.abs(charge.getVelocity().y + 2) < 1e-12);
+    assert.ok(Math.abs(charge.getKineticEnergy() - 6) < 1e-12);
+    assert.equal(charge.getMass(), 3);
+    assert.equal(charge.getCharge(), 6);
+    const snapshot = charge.getPosition();
+    snapshot.x = 99; // Observers return JS values, not borrowed mutable state.
+    assert.ok(Math.abs(charge.getPosition().x - 0.5) < 1e-12);
+    assert.throws(() => charge.setState({x: NaN, y: 0}, {x: 0, y: 0}));
+    assert.throws(() => charge.step(-1, {electric: {x: 0, y: 0}, magnetic: 0}));
+    charge.setState({x: 0, y: 0}, {x: 0, y: 0});
+    charge.step(0.5, {electric: {x: 2, y: 0}, magnetic: 0});
+    assert.ok(Math.abs(charge.getPosition().x - 0.5) < 1e-12);
+    assert.ok(Math.abs(charge.getVelocity().x - 2) < 1e-12);
+    charge.delete();
+    const neutral = new physics.ChargedParticle();
+    assert.equal(neutral.getCharge(), 0);
+    neutral.delete();
     const engine = new physics.Engine();
     const simulationConfig = engine.getSimulationConfig();
     assert.equal(simulationConfig.solverIterations, 10);
@@ -138,7 +159,7 @@ async function main() {
     engine.clearBodies();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, and particles");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, joint motors/limits, exports, particles, and electromagnetic motion");
 }
 
 main().catch((error) => {

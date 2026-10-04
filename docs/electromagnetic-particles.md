@@ -59,7 +59,8 @@ fields and numeric rejection. These are tests of prescribed-field motion.
 
 This module does not evolve fields or include particle interactions, radiation,
 relativity, collisions or automatic coupling to `World`, fluids or deformable
-bodies. It has no JavaScript bindings. Nonrelativistic velocities are the caller's
+bodies. [JavaScript bindings](webassembly.md) use the same double-precision model.
+Nonrelativistic velocities are the caller's
 physical regime; the API does not impose a speed-of-light constraint.
 
 Invalid inputs throw `std::invalid_argument`. Nonrepresentable derived values

@@ -108,3 +108,19 @@ use radians relative to the construction pose. Query settings with
 `getLowerLimit` and `getUpperLimit`. The handle remains accepted by
 `engine.addJoint` and `engine.removeJoint`; delete it once when finished.
 See [joint behavior and limitations](joints-and-sleeping.md).
+
+`ChargedParticle` independently integrates a test charge in prescribed uniform
+fields. Use either its default neutral constructor or all four explicit arguments:
+
+```javascript
+const charge = new physics.ChargedParticle({x: 0, y: 0}, {x: 2, y: 0}, 3, 6);
+charge.step(0.1, {electric: {x: 0, y: 0}, magnetic: 2});
+console.log(charge.getPosition(), charge.getVelocity(), charge.getKineticEnergy());
+charge.delete();
+```
+
+`getPosition` and `getVelocity` return independent plain JavaScript values with
+double-precision coordinates. `setState(position, velocity)` validates both values.
+Supply the field argument on every `step` call; zero fields give free motion.
+The object is independent of `Engine` and owns no borrowed handles. See
+[the physical scope, units and numerical limits](electromagnetic-particles.md).

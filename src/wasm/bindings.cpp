@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "engine.h"
+#include "physics/core/charged_particle.h"
 #include "physics/core/material.h"
 #include "physics/core/fixed_step_runner.h"
 #include "physics/core/particles/particle_system.h"
@@ -49,6 +50,23 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
     value_object<Vector2>("Vector2")
         .field("x", &Vector2::x)
         .field("y", &Vector2::y);
+
+    value_object<Vector2d>("Vector2d")
+        .field("x", &Vector2d::x)
+        .field("y", &Vector2d::y);
+    value_object<UniformElectromagneticField>("UniformElectromagneticField")
+        .field("electric", &UniformElectromagneticField::electric)
+        .field("magnetic", &UniformElectromagneticField::magnetic);
+    class_<ChargedParticle>("ChargedParticle")
+        .constructor<>()
+        .constructor<Vector2d, Vector2d, double, double>()
+        .function("getPosition", optional_override([](const ChargedParticle& p) { return p.getPosition(); }))
+        .function("getVelocity", optional_override([](const ChargedParticle& p) { return p.getVelocity(); }))
+        .function("getMass", &ChargedParticle::getMass)
+        .function("getCharge", &ChargedParticle::getCharge)
+        .function("getKineticEnergy", &ChargedParticle::getKineticEnergy)
+        .function("setState", &ChargedParticle::setState)
+        .function("step", &ChargedParticle::step);
 
     value_object<Material>("Material")
         .field("density", &Material::density)
