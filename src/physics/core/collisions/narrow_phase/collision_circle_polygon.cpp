@@ -68,9 +68,7 @@ namespace PhysicsEngine {
         float radius = circleShape->GetRadius();
 
         float minOverlap = std::numeric_limits<float>::max();
-        Vector2 smallestAxis;
-        Vector2 containmentEscapeDirection;
-        bool smallestAxisUsesContainment = false;
+        Vector2 escapeDirection;
 
         // Returns false when the projections are separated or only touching.
         // For containment, the ordinary intersection width is not the distance
@@ -87,33 +85,12 @@ namespace PhysicsEngine {
                 return false;
             }
 
-            const bool contains =
-                (minP <= minC && maxP >= maxC) ||
-                (minC <= minP && maxC >= maxP);
-
-            float overlap;
-            Vector2 escapeDirection;
-            if (contains) {
-                const float moveNegative = maxC - minP;
-                const float movePositive = maxP - minC;
-                if (moveNegative < movePositive) {
-                    overlap = moveNegative;
-                    escapeDirection = axis * -1.0f;
-                } else {
-                    overlap = movePositive;
-                    escapeDirection = axis;
-                }
-            } else {
-                overlap = std::min(maxP, maxC) - std::max(minP, minC);
-            }
-
+            const float moveNegative = maxC - minP;
+            const float movePositive = maxP - minC;
+            const float overlap = std::min(moveNegative, movePositive);
             if (overlap < minOverlap) {
                 minOverlap = overlap;
-                smallestAxis = axis;
-                smallestAxisUsesContainment = contains;
-                if (contains) {
-                    containmentEscapeDirection = escapeDirection;
-                }
+                escapeDirection = moveNegative < movePositive ? axis * -1.0f : axis;
             }
             return true;
         };
@@ -142,20 +119,9 @@ namespace PhysicsEngine {
         // 4. Resolve Collision
         manifold.hasCollision = true;
         manifold.penetration = minOverlap;
-        if (smallestAxisUsesContainment) {
-            // The solver moves A along -normal and B along +normal.
-            manifold.normal = (a == circleBody)
-                ? containmentEscapeDirection * -1.0f
-                : containmentEscapeDirection;
-        } else {
-            manifold.normal = smallestAxis;
-
-            // Ensure normal points from A to B
-            Vector2 direction = b->GetPosition() - a->GetPosition();
-            if (direction.dot(manifold.normal) < 0.0f) {
-                manifold.normal = manifold.normal * -1.0f;
-            }
-        }
+        // The solver moves A along -normal and B along +normal. Use the
+        // projected geometry: a body's local origin need not lie in its shape.
+        manifold.normal = a == circleBody ? escapeDirection * -1.0f : escapeDirection;
 
         // Contact point is the point on the circle surface along the collision normal (towards the other body)
         Vector2 pointOnCircle;

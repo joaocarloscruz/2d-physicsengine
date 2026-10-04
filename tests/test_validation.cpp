@@ -142,3 +142,46 @@ TEST_CASE("Particle rejects invalid integration timesteps", "[validation][Partic
         std::invalid_argument
     );
 }
+
+
+TEST_CASE("Self intersecting polygons are rejected in either winding", "[review][shape]") {
+    std::vector<Vector2> star;
+    for (int i : {0, 2, 4, 1, 3}) {
+        const float angle = i * 6.28318530718f / 5;
+        star.emplace_back(std::cos(angle), std::sin(angle));
+    }
+    REQUIRE_THROWS_AS(Polygon(star), std::invalid_argument);
+    std::reverse(star.begin(), star.end());
+    REQUIRE_THROWS_AS(Polygon(star), std::invalid_argument);
+}
+
+TEST_CASE("Polygon validation is independent of world unit scale", "[review][shape]") {
+    const auto square = Polygon::MakeBox(0.0001f, 0.0001f);
+    REQUIRE(square.GetArea() == Catch::Approx(1e-8f));
+    REQUIRE(square.GetInertia(1) == Catch::Approx(1e-8f / 6));
+}
+
+TEST_CASE("Polygon inertia uses signed area for an offset origin", "[review][shape]") {
+    std::vector<Vector2> vertices{{5, -1}, {7, -1}, {7, 1}, {5, 1}};
+    for (int winding = 0; winding < 2; ++winding) {
+        Polygon box(vertices);
+        // Parallel-axis theorem: unit mass, 2x2 square, center at (6, 0).
+        REQUIRE(box.GetArea() == Catch::Approx(4));
+        REQUIRE(box.GetInertia(1) == Catch::Approx(36 + 2.0f / 3));
+        std::reverse(vertices.begin(), vertices.end());
+    }
+}
+
+TEST_CASE("Circle polygon contact direction follows geometry rather than body origins", "[review][collision]") {
+    Polygon offsetBox({{5, -1}, {7, -1}, {7, 1}, {5, 1}});
+    RigidBody polygon(offsetBox, Material{}, {}, true);
+    RigidBody circle(Circle(1), Material{}, {4.5f, 0});
+    const auto contact = CheckCollision(&circle, &polygon);
+    REQUIRE(contact.hasCollision);
+    REQUIRE(contact.penetration == Catch::Approx(0.5f));
+    REQUIRE(contact.normal.x == Catch::Approx(1));
+    REQUIRE(CheckCollision(&polygon, &circle).normal.x == Catch::Approx(-1));
+    const Vector2 separated = circle.GetPosition() - contact.normal * (contact.penetration + 0.001f);
+    circle.SetPosition(separated);
+    REQUIRE_FALSE(CheckCollision(&circle, &polygon).hasCollision);
+}

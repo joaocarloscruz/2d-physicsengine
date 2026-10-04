@@ -55,23 +55,27 @@ namespace PhysicsEngine {
                 throw std::invalid_argument("Polygon requires at least three vertices.");
             }
 
-            float winding = 0.0f;
-            for (size_t i = 0; i < vertices.size(); ++i) {
-                const Vector2& current = vertices[i];
-                const Vector2& next = vertices[(i + 1) % vertices.size()];
-                const Vector2& afterNext = vertices[(i + 2) % vertices.size()];
-                if (!std::isfinite(current.x) || !std::isfinite(current.y)) {
+            for (const Vector2& vertex : vertices) {
+                if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
                     throw std::invalid_argument("Polygon vertices must be finite.");
                 }
-
-                const float cross = (next - current).cross(afterNext - next);
-                if (std::abs(cross) <= 1e-6f) {
-                    throw std::invalid_argument("Polygon edges must form a non-degenerate convex shape.");
-                }
-                if (winding == 0.0f) {
+            }
+            // Every other vertex must lie strictly on the same side of every
+            // edge. Local turn tests alone also accept self-intersecting stars.
+            // Double precision avoids an absolute area threshold tied to units.
+            double winding = 0;
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                const auto& a = vertices[i];
+                const auto& b = vertices[(i + 1) % vertices.size()];
+                const double dx = static_cast<double>(b.x) - a.x;
+                const double dy = static_cast<double>(b.y) - a.y;
+                for (size_t j = 0; j < vertices.size(); ++j) {
+                    if (j == i || j == (i + 1) % vertices.size()) continue;
+                    const double cross = dx * (static_cast<double>(vertices[j].y) - a.y)
+                        - dy * (static_cast<double>(vertices[j].x) - a.x);
+                    if (cross == 0 || (winding != 0 && (cross > 0) != (winding > 0)))
+                        throw std::invalid_argument("Polygon must be simple, strictly convex and non-degenerate.");
                     winding = cross;
-                } else if ((cross > 0.0f) != (winding > 0.0f)) {
-                    throw std::invalid_argument("Polygon must be convex with consistent winding.");
                 }
             }
         }
@@ -102,32 +106,34 @@ namespace PhysicsEngine {
         // ----------------------------------------------------
 
         float GetArea() const override {
-            float doubleArea = 0.0f;
+            double doubleArea = 0.0;
             size_t count = vertices.size();
             for (size_t i = 0; i < count; ++i) {
                 Vector2 p1 = vertices[i];
                 Vector2 p2 = vertices[(i + 1) % count];
-                doubleArea += (p1.x * p2.y - p1.y * p2.x);
+                doubleArea += static_cast<double>(p1.x) * p2.y - static_cast<double>(p1.y) * p2.x;
             }
-            return std::abs(doubleArea) * 0.5f;
+            return static_cast<float>(std::abs(doubleArea) * 0.5);
         }
 
         float GetInertia(float mass) const override {
-            float numerator = 0.0f;
-            float denominator = 0.0f;
+            double numerator = 0.0;
+            double denominator = 0.0;
             size_t count = vertices.size();
             if (count < 3) return 0.0f;
 
             for (size_t i = 0; i < count; ++i) {
                 Vector2 p1 = vertices[i];
                 Vector2 p2 = vertices[(i + 1) % count];
-                float cross = std::abs(p1.x * p2.y - p1.y * p2.x);
-                float intTerm = (p1.magnitudeSquared() + p1.dot(p2) + p2.magnitudeSquared());
+                const double cross = static_cast<double>(p1.x) * p2.y - static_cast<double>(p1.y) * p2.x;
+                const double intTerm = static_cast<double>(p1.x) * p1.x + static_cast<double>(p1.y) * p1.y
+                    + static_cast<double>(p1.x) * p2.x + static_cast<double>(p1.y) * p2.y
+                    + static_cast<double>(p2.x) * p2.x + static_cast<double>(p2.y) * p2.y;
                 numerator += cross * intTerm;
                 denominator += cross;
             }
             if (denominator == 0.0f) return 0.0f;
-            return (mass / 6.0f) * (numerator / denominator);
+            return static_cast<float>((mass / 6.0) * (numerator / denominator));
         }
 
         const std::vector<Vector2>& getVertices() const { return vertices; }
