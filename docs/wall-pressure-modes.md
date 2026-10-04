@@ -70,6 +70,9 @@ Tait-EOS column at spacing .1:
 | Cubic | 2.5 | 2.41757 | 2.27455 |
 | Cubic | 4 | 1.86553 | 1.78556 |
 
+The [complete signed-mode report](data/fluid-wall-signed-582bf00-clang23.json)
+records all refinement states and pressure-work measurements.
+
 At cubic h/dx=2.5, vertical force residual/weight changes from .006489 to
 .006354; bottom-interior acceleration RMS remains 2.90344. Improvements are
 not uniform across neighbor ratios. These are prepared-state observations,

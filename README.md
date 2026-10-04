@@ -106,6 +106,8 @@ examples run without graphics and are included in the CTest smoke checks.
 - [WCSPH consistency diagnostic and formulation plan](docs/fluid-consistency-diagnostic.md)
 - [Opt-in matched cubic kernels: measurements and limits](docs/cubic-kernel-experiments.md)
 - [Sampled-wall force and pressure-work audit](docs/fluid-wall-audit.md)
+- [Opt-in signed wall-pressure extrapolation](docs/wall-pressure-modes.md)
+- [Experimental planar reflection and its measured limits](docs/planar-reflected-experiment.md)
 - [WCSPH and boundaries](docs/wcsph-solver.md)
 - [Fluid–rigid coupling](docs/fluid-rigid-coupling.md)
 
