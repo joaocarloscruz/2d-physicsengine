@@ -34,6 +34,9 @@ clock and diagnostic snapshots. It does not advect the velocity field.
 finite-volume solver](periodic-euler-gas.md), with owned double cell averages,
 first-order unsplit Rusanov fluxes, strict positivity/CFL and bounded work,
 stored conservation diagnostics and transactional state/clock publication.
+Its explicit [second-order option](periodic-euler-second-order.md) adds common
+conserved-slope limiting, SSPRK2 and independently bounded stage-CFL retries;
+the first-order `step()` default remains unchanged.
 
 `MaxwellGrid` and its configuration/state/diagnostic types support independent
 [periodic homogeneous TMz electromagnetic fields](maxwell-grids.md), with

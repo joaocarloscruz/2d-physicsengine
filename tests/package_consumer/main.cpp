@@ -108,6 +108,14 @@ int main() {
         ||gas.primitives().pressure[0]!=1 ||gas.time()!=.01 ||gasStep.substeps!=1
         ||gasStep.cellVisits!=40 ||gasStep.totalEnergyDefect!=0
         ||gas.lastStep().cellVisits!=gasStep.cellVisits) return 1;
+    PhysicsEngine::EulerGasSecondOrderConfig highOptions;
+    highOptions.maximumAttempts=1; highOptions.maximumSubsteps=1;
+    highOptions.maximumCellVisits=76;
+    const auto highStep=gas.stepSecondOrder(.01, highOptions);
+    if(gas.state().density!=gasState.density ||gas.state().totalEnergy!=gasState.totalEnergy
+        ||highStep.cellVisits!=76 ||highStep.reconstructionTrials!=8 ||highStep.attempts!=1
+        ||gas.time()!=.02 ||gas.lastSecondOrderStep().cellVisits!=highStep.cellVisits
+        ||gas.lastStep().cellVisits!=highStep.cellVisits) return 1;
     scalar.setState({1,2,1,2});
     scalar.setVelocities({{.25,.25,.25,.25},{0,0,0,0}});
     const auto transported=scalar.step(.1);

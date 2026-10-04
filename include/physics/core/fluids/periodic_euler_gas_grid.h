@@ -37,7 +37,21 @@ struct EulerGasDiagnostics {
     std::size_t substeps = 0, cellVisits = 0;
     bool zeroDurationNoOp = false;
 };
-// Independent first-order unsplit ideal-gas Euler finite-volume solver.
+struct EulerGasSecondOrderConfig : EulerGasStepConfig {
+    std::size_t maximumAttempts = 20000, maximumRetriesPerSubstep = 16;
+    static constexpr std::size_t MaximumAttempts = 1000000, MaximumRetriesPerSubstep = 64;
+    void Validate() const;
+};
+struct EulerGasSecondOrderDiagnostics : EulerGasDiagnostics {
+    // Counts include rejected CFL attempts and reconstruction trials.
+    std::size_t attempts = 0, rejectedAttempts = 0, reconstructionPreparations = 0;
+    std::size_t reconstructionTrials = 0, limitedSlopeCells = 0, positivityLimitedCells = 0;
+    std::size_t zeroSlopeFallbackCells = 0, rangeLimitedCells = 0;
+    std::size_t forwardEulerStages = 0, blendPasses = 0;
+    double minimumSlopeScale = 1, maximumRejectedCfl = 0;
+};
+// Independent periodic ideal-gas Euler finite-volume solver. First-order default;
+// opt-in second-order conserved reconstruction and SSPRK2.
 // Immutable homogeneous geometry/medium, periodic boundaries, no sources.
 // Row-major cell averages i+columns*j, centers ((i+.5)dx,(j+.5)dy).
 // rho: kg/m^3; momenta: kg/(m^2 s); total/internal energy and pressure: J/m^3.
@@ -52,11 +66,17 @@ class PeriodicEulerGasGrid {
     double time() const noexcept { return time_; }
     void setState(const EulerGasState &state);
     EulerGasDiagnostics step(double duration, const EulerGasStepConfig &options = {});
+    // Explicit opt-in conserved MC reconstruction plus SSPRK2. Its strict
+    // invariant-domain bound is 2*h*(alphaX/dx+alphaY/dy) <= cflSafety < 1.
+    EulerGasSecondOrderDiagnostics stepSecondOrder(double duration,
+                                                   const EulerGasSecondOrderConfig &options = {});
+    EulerGasSecondOrderDiagnostics lastSecondOrderStep() const { return secondOrderDiagnostics_; }
 
   private:
     EulerGasGridConfig config_;
     EulerGasState state_;
     EulerGasDiagnostics diagnostics_;
+    EulerGasSecondOrderDiagnostics secondOrderDiagnostics_;
     double time_ = 0;
 };
 } // namespace PhysicsEngine

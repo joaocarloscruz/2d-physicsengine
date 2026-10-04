@@ -61,6 +61,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_mac_diffusion.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_scalar_transport.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_euler_gas_grid.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/periodic_euler_gas_second_order.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle_spatial_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/sph_kernels.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/wcsph_solver.cpp
@@ -135,6 +136,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(maxwell_ohmic_demo PRIVATE PhysicsEngine::Engine)
         add_executable(euler_gas_demo examples/euler_gas_demo.cpp)
         target_link_libraries(euler_gas_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(euler_gas_second_order_demo examples/euler_gas_second_order_demo.cpp)
+        target_link_libraries(euler_gas_second_order_demo PRIVATE PhysicsEngine::Engine)
         add_executable(maxwell_grid_demo examples/maxwell_grid_demo.cpp)
         target_link_libraries(maxwell_grid_demo PRIVATE PhysicsEngine::Engine)
         add_executable(electrostatic_grid_demo examples/electrostatic_grid_demo.cpp)
@@ -150,6 +153,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
             add_test(NAME scalar_transport_smoke COMMAND scalar_transport_demo)
             add_test(NAME euler_gas_smoke COMMAND euler_gas_demo)
+            add_test(NAME euler_gas_second_order_smoke COMMAND euler_gas_second_order_demo)
             add_test(NAME maxwell_grid_smoke COMMAND maxwell_grid_demo)
             add_test(NAME electrostatic_grid_smoke COMMAND electrostatic_grid_demo)
             add_test(NAME maxwell_ohmic_smoke COMMAND maxwell_ohmic_demo)
@@ -291,6 +295,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_mac_diffusion.cpp
         ${TESTS_SRC_DIR}/test_scalar_transport.cpp
         ${TESTS_SRC_DIR}/test_euler_gas_grid.cpp
+        ${TESTS_SRC_DIR}/test_euler_gas_second_order.cpp
         ${TESTS_SRC_DIR}/test_electrostatic_grid.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
