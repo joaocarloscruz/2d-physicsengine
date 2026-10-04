@@ -16,6 +16,54 @@ double Positive(double x) {
         throw std::invalid_argument("Elastic wave coefficient is not positively representable.");
     return x;
 }
+// Scale before accumulating, rather than dividing each sample by the cell count.
+// Neumaier compensation retains small terms exposed by signed cancellation.
+class ScaledMean {
+    double scale_ = 0, sum_ = 0, correction_ = 0;
+    static double RetainedProduct(double a, double b) {
+        const double result = Checked(a * b);
+        if (a != 0 && b != 0 && result == 0)
+            throw std::overflow_error("Elastic mean normalization underflows.");
+        return result;
+    }
+
+  public:
+    void add(double x) {
+        if (x == 0)
+            return;
+        const double magnitude = std::abs(x);
+        if (magnitude > scale_) {
+            if (scale_ != 0) {
+                const double factor = scale_ / magnitude;
+                if (factor == 0 && (sum_ != 0 || correction_ != 0))
+                    throw std::overflow_error("Elastic mean rescaling erases a contribution.");
+                sum_ = RetainedProduct(sum_, factor);
+                correction_ = RetainedProduct(correction_, factor);
+            }
+            scale_ = magnitude;
+        }
+        const double term = x / scale_;
+        if (term == 0)
+            throw std::overflow_error("Elastic mean normalization erases a contribution.");
+        const double next = sum_ + term;
+        correction_ +=
+            std::abs(sum_) >= std::abs(term) ? (sum_ - next) + term : (term - next) + sum_;
+        sum_ = next;
+    }
+    double value(std::size_t count) const {
+        if (scale_ == 0)
+            return 0;
+        const double normalized = Checked(sum_ + correction_);
+        if (normalized == 0)
+            return 0;
+        const double quotient = normalized / double(count);
+        const double result = quotient != 0 ? Checked(scale_ * quotient)
+                                            : Checked((scale_ / double(count)) * normalized);
+        if (result == 0)
+            throw std::overflow_error("Elastic mean underflows float64 range.");
+        return result;
+    }
+};
 struct Coefficients {
     double ix, iy, ir, b, ib, im, kinetic, trace, deviator, shear, rateTrace, rateShear, cp, cs,
         rate, limit, zz;
@@ -142,6 +190,7 @@ ElasticWaveDiagnostics ElasticWaveGrid::measure(const ElasticWaveState &s, doubl
     const auto nx = config_.columns, ny = config_.rows, n = nx * ny;
     const double rootN = std::sqrt(double(n));
     double kv = 0, sv = 0, correction = 0;
+    ScaledMean vxMean, vyMean, xxMean, yyMean, xyMean, zzMean;
     bool kinetic = false, stress = false, rate = false;
     for (std::size_t j = 0; j < ny; ++j)
         for (std::size_t i = 0; i < nx; ++i) {
@@ -156,17 +205,17 @@ ElasticWaveDiagnostics ElasticWaveGrid::measure(const ElasticWaveState &s, doubl
                 sv = Checked(std::hypot(sv, v));
             kinetic = kinetic || s.vx[k] != 0 || s.vy[k] != 0;
             stress = stress || s.sigmaXX[k] != 0 || s.sigmaYY[k] != 0 || s.sigmaXY[k] != 0;
-            d.meanVx = Checked(d.meanVx + s.vx[k] / n);
-            d.meanVy = Checked(d.meanVy + s.vy[k] / n);
-            d.meanSigmaXX = Checked(d.meanSigmaXX + s.sigmaXX[k] / n);
-            d.meanSigmaYY = Checked(d.meanSigmaYY + s.sigmaYY[k] / n);
-            d.meanSigmaXY = Checked(d.meanSigmaXY + s.sigmaXY[k] / n);
+            vxMean.add(s.vx[k]);
+            vyMean.add(s.vy[k]);
+            xxMean.add(s.sigmaXX[k]);
+            yyMean.add(s.sigmaYY[k]);
+            xyMean.add(s.sigmaXY[k]);
             d.maxAbsVelocity = std::max({d.maxAbsVelocity, std::abs(s.vx[k]), std::abs(s.vy[k])});
             d.maxAbsStress = std::max({d.maxAbsStress, std::abs(s.sigmaXX[k]),
                                        std::abs(s.sigmaYY[k]), std::abs(s.sigmaXY[k])});
             const double zz =
                 Checked(Checked(zzFactor_ * s.sigmaXX[k]) + Checked(zzFactor_ * s.sigmaYY[k]));
-            d.meanSigmaZZ = Checked(d.meanSigmaZZ + zz / n);
+            zzMean.add(zz);
             d.maxAbsSigmaZZ = std::max(d.maxAbsSigmaZZ, std::abs(zz));
             const double defect = compatibilityAt(s, i, j);
             d.compatibilityRms = Checked(std::hypot(d.compatibilityRms, defect / rootN));
@@ -182,6 +231,12 @@ ElasticWaveDiagnostics ElasticWaveGrid::measure(const ElasticWaveState &s, doubl
                     correction = Checked(std::hypot(correction, v));
             }
         }
+    d.meanVx = vxMean.value(n);
+    d.meanVy = vyMean.value(n);
+    d.meanSigmaXX = xxMean.value(n);
+    d.meanSigmaYY = yyMean.value(n);
+    d.meanSigmaXY = xyMean.value(n);
+    d.meanSigmaZZ = zzMean.value(n);
     if (d.maxAbsCompatibility > 0 && d.compatibilityRms == 0)
         throw std::overflow_error("Elastic compatibility RMS underflows.");
     d.kineticEnergy = Energy(kv, kinetic);

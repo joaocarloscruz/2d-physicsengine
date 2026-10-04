@@ -530,3 +530,82 @@ TEST_CASE("Elastic auxetic staged modulus clock and ownership semantics remain r
     REQUIRE(a.getDiagnostics().lastSubsteps == 0);
     REQUIRE(a.getDiagnostics().modifiedEnergyStep == 0);
 }
+
+TEST_CASE("Elastic aggregate subnormal energies preserve constant stored means",
+          "[elastic][range]") {
+    ElasticWaveGridConfig c;
+    c.columns = c.rows = 512;
+    c.density = 1e308;
+    ElasticWaveGrid g(c);
+    auto s = g.getState();
+    const double value = 7e-319;
+    std::fill(s.vx.begin(), s.vx.end(), value);
+    g.setState(s);
+    const auto d = g.getDiagnostics();
+    INFO("stored=" << value << " reported=" << d.meanVx);
+    // Independent aggregate: sqrt(N*rho/2)*v avoids per-particle energy underflow.
+    const double rootAggregate = std::sqrt(double(s.vx.size())) * std::sqrt(c.density / 2) * value;
+    REQUIRE(rootAggregate * rootAggregate == std::numeric_limits<double>::denorm_min());
+    REQUIRE(d.kineticEnergy == rootAggregate * rootAggregate);
+    REQUIRE(d.meanVx == value);
+    g.step(.01);
+    REQUIRE(g.getDiagnostics().meanVx == value);
+    REQUIRE(g.getDiagnostics().lastCellVisits == 4 * s.vx.size());
+
+    std::fill(s.vy.begin(), s.vy.end(), -value);
+    g.setState(s);
+    REQUIRE(g.getDiagnostics().meanVx == value);
+    REQUIRE(g.getDiagnostics().meanVy == -value);
+
+    c.density = 1;
+    c.lambda = c.shearModulus = 1e-308;
+    ElasticWaveGrid stress(c);
+    auto t = stress.getState();
+    std::fill(t.sigmaXX.begin(), t.sigmaXX.end(), value);
+    std::fill(t.sigmaYY.begin(), t.sigmaYY.end(), value);
+    std::fill(t.sigmaXY.begin(), t.sigmaXY.end(), value);
+    stress.setState(t);
+    const auto sd = stress.getDiagnostics();
+    const double stressRootAggregate =
+        std::sqrt(double(t.sigmaXX.size())) * value *
+        std::hypot(std::sqrt(.5 / (c.lambda + c.shearModulus)), std::sqrt(.5 / c.shearModulus));
+    REQUIRE(stressRootAggregate * stressRootAggregate ==
+            2 * std::numeric_limits<double>::denorm_min());
+    REQUIRE(sd.strainEnergy == stressRootAggregate * stressRootAggregate);
+    REQUIRE(sd.meanSigmaXX == value);
+    REQUIRE(sd.meanSigmaYY == value);
+    REQUIRE(sd.meanSigmaXY == value);
+    REQUIRE(sd.meanSigmaZZ == stress.getOutOfPlaneStress()[0]);
+    REQUIRE(sd.meanSigmaZZ ==
+            Catch::Approx(.5 * value).epsilon(0).margin(std::numeric_limits<double>::denorm_min()));
+}
+TEST_CASE("Elastic means retain signed cancellation and reject erased dynamic ranges",
+          "[elastic][range]") {
+    ElasticWaveGridConfig c;
+    c.columns = c.rows = 2;
+    ElasticWaveGrid g(c);
+    auto s = g.getState();
+    s.vx = {1e15, 1, -1e15, 3};
+    s.vy = {-1e15, -1, 1e15, -3};
+    s.sigmaXX = s.vx;
+    s.sigmaYY = s.vy;
+    s.sigmaXY = s.vx;
+    g.setState(s);
+    auto d = g.getDiagnostics();
+    REQUIRE(d.meanVx == Catch::Approx(1).epsilon(0).margin(3e-16));
+    REQUIRE(d.meanVy == Catch::Approx(-1).epsilon(0).margin(3e-16));
+    REQUIRE(d.meanSigmaXX == Catch::Approx(1).epsilon(0).margin(3e-16));
+    REQUIRE(d.meanSigmaYY == Catch::Approx(-1).epsilon(0).margin(3e-16));
+    REQUIRE(d.meanSigmaXY == Catch::Approx(1).epsilon(0).margin(3e-16));
+    REQUIRE(d.meanSigmaZZ == 0);
+    const auto before = g.getState();
+    s.vx = {1e100, 1e-300, -1e100, 0};
+    REQUIRE_THROWS_AS(g.setState(s), std::overflow_error);
+    Same(g.getState(), before);
+    Same(g.getDiagnostics(), d);
+    // Same erased contribution, encountered before accumulator rescaling.
+    s.vx = {1e-300, 1e100, -1e100, 0};
+    REQUIRE_THROWS_AS(g.setState(s), std::overflow_error);
+    Same(g.getState(), before);
+    Same(g.getDiagnostics(), d);
+}
