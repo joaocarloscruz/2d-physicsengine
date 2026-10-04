@@ -116,3 +116,14 @@ h/dx=2, with unchanged caller mass/rho0 and default legacy behavior. All nine
 legacy `[!mayfail]` cases remain unchanged. Perturbation, unclamped tensile
 clumping and sampled-wall startup controls still expose unsupported regimes;
 these must not be inferred solved from the rest improvement.
+
+
+## Sampled-wall operator audit (2026-10-04)
+
+The [wall force/work audit](fluid-wall-audit.md) distinguishes exact Tait EOS
+initialization from uninitialized summation, inferred reaction from applied
+feedback, and aggregate weight balance from local wall/corner acceleration.
+Constant-pressure phase probes identify a scale-invariant sampled-wall
+quadrature defect. Pressure-work residuals expose an untracked virtual-wall
+energy obligation; they are not by themselves a proof of instability. No
+production operator is changed and all nine #44 failure targets remain intact.

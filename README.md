@@ -104,6 +104,7 @@ examples run without graphics and are included in the CTest smoke checks.
 - [Existing numerical validation](docs/numerical-validation.md)
 - [WCSPH consistency diagnostic and formulation plan](docs/fluid-consistency-diagnostic.md)
 - [Opt-in matched cubic kernels: measurements and limits](docs/cubic-kernel-experiments.md)
+- [Sampled-wall force and pressure-work audit](docs/fluid-wall-audit.md)
 - [WCSPH and boundaries](docs/wcsph-solver.md)
 - [Fluid–rigid coupling](docs/fluid-rigid-coupling.md)
 
