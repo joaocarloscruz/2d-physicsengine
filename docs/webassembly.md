@@ -132,3 +132,50 @@ double-precision coordinates. `setState(position, velocity)` validates both valu
 Supply the field argument on every `step` call; zero fields give free motion.
 The object is independent of `Engine` and owns no borrowed handles. See
 [the physical scope, units and numerical limits](electromagnetic-particles.md).
+
+## Owned soft-body simulations
+
+`SoftBody` is an independent mass-spring simulation, with default construction
+or a complete configuration object. It does not join `Engine` storage or
+automatically collide/couple with rigid bodies, particles or fluids.
+
+```javascript
+const defaults = new physics.SoftBody();
+const config = defaults.getConfig();
+defaults.delete();
+config.maxSubstep = 0.001;
+const cloth = new physics.SoftBody(config);
+try {
+    const a = cloth.addParticle({x: 0, y: 0}, {x: 0, y: 0}, 1, true);
+    const b = cloth.addParticle({x: 1.2, y: 0}, {x: 0, y: 0}, 1, false);
+    cloth.addSpring(a, b, 1, 4, 0);
+    cloth.applyForce(b, 0, -2);
+    cloth.step(0.1);
+    console.log(cloth.getParticle(b), cloth.getSpring(0), cloth.getDiagnostics());
+} finally {
+    cloth.delete();
+}
+```
+
+Use `getParticleCount`/`getSpringCount` and `getParticle(index)`/`getSpring(index)`
+to inspect topology. They return plain copied JS objects, including nested
+position, velocity and force values; snapshots require no `delete()` and remain
+safe after the simulation is deleted. `getConfig`, `getUniformAcceleration`,
+`getAccumulatedForce(index)` and `getDiagnostics` also return copies.
+
+`addParticle(position)` supplies native defaults; its full form takes position,
+velocity, mass and fixed status. `addSpring(first, second, restLength, stiffness)`
+defaults damping to zero, or accepts damping as a fifth argument.
+`setParticleState(index, position[, velocity])`, `setFixed`, `applyImpulse`,
+`setUniformAcceleration` and `setConfig` retain native validation. `applyForce`
+accepts either `(index, {x, y})` or `(index, doubleX, doubleY)`; `clearForces()`
+clears all pending forces and `clearForces(index)` clears one node.
+
+Indices and configuration counts must be finite exact nonnegative integers
+within the WASM index range; indices must also refer to existing elements.
+Fractional, negative, nonfinite and wrapped values are rejected before any cast.
+Native configuration, topology and step budgets remain in force. Modify a
+complete object returned by `getConfig` when changing settings. A failed step
+preserves state and queued loads; `step(0)` retains loads without integration,
+and a successful positive step consumes them. See [native units and numerical
+scope](soft-bodies.md). Delete each owned simulation once when finished.
