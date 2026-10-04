@@ -67,6 +67,13 @@ body.delete();
 shape.delete();
 ```
 
+Simulation iteration/substep/CCD counts must be positive integers within the
+native signed 32-bit range. Particle-system indices and reserve capacities must
+be nonnegative integers within the native unsigned 32-bit range; indices must
+also identify an existing particle. Fractional, non-finite and overflowing
+values throw before mutation instead of truncating or wrapping. `reserve(0)`
+is valid. Configuration getters retain the same plain object fields.
+
 Collision filtering uses 32-bit category and mask fields. Two bodies collide
 only when each body's category is included in the other body's mask. New bodies
 default to category `0x00000001` and mask `0xFFFFFFFF`, preserving the original

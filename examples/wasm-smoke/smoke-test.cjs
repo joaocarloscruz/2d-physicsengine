@@ -71,6 +71,34 @@ function testGravity(physics) {
 async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
+    const integerEngine = new physics.Engine();
+    const integerConfig = integerEngine.getSimulationConfig();
+    for (const key of ["maxSubstepsPerAdvance", "solverIterations", "maximumCcdImpacts"])
+        for (const value of [-1, 0, 0.5, 3.5, NaN, Infinity, 2**31, 2**32, 2**32 + 1]) {
+            assert.throws(() => integerEngine.setSimulationConfig({...integerConfig, [key]: value}));
+            assert.deepEqual(integerEngine.getSimulationConfig(), integerConfig);
+        }
+    const validCounts = {...integerConfig, maxSubstepsPerAdvance: 3, solverIterations: 7, maximumCcdImpacts: 9};
+    integerEngine.setSimulationConfig(validCounts);
+    assert.deepEqual(integerEngine.getSimulationConfig(), validCounts);
+    integerEngine.delete();
+    const indexedParticles = physics.createParticleSystem();
+    indexedParticles.reserve(0); indexedParticles.reserve(2);
+    indexedParticles.addParticle({x: 7, y: 0}, {x: 0, y: 0}, 2);
+    for (const index of [-1, 0.5, NaN, Infinity, 1, 2**32, 2**32 + 1]) {
+        assert.throws(() => indexedParticles.getParticlePosition(index));
+        assert.throws(() => indexedParticles.getParticleVelocity(index));
+        assert.throws(() => indexedParticles.applyForce(index, {x: 100, y: 0}));
+        assert.throws(() => indexedParticles.removeParticle(index));
+        assert.equal(indexedParticles.size(), 1);
+    }
+    for (const count of [-1, 0.5, NaN, Infinity, 2**32, 2**32 + 1])
+        assert.throws(() => indexedParticles.reserve(count));
+    indexedParticles.applyForce(0, {x: 2, y: 0}); indexedParticles.step(0.5);
+    assert.ok(Math.abs(indexedParticles.getParticlePosition(0).x - 7.125) < 1e-6);
+    assert.equal(indexedParticles.getParticleVelocity(0).x, 0.5);
+    indexedParticles.removeParticle(0); assert.equal(indexedParticles.size(), 0);
+    indexedParticles.delete();
     const soft = new physics.SoftBody();
     const softConfig = soft.getConfig();
     assert.equal(softConfig.maxParticles, 100000);

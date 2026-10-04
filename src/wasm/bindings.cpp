@@ -1,6 +1,7 @@
 #include <emscripten/bind.h>
 
 #include <memory>
+#include "checked_indices.h"
 
 #include "engine.h"
 #include "physics/core/charged_particle.h"
@@ -16,6 +17,34 @@
 
 namespace PhysicsEngine {
 namespace {
+
+// Keep integer input fields as JS doubles until the complete native call can
+// validate them. Embind otherwise truncates/wraps before native validation.
+struct SimulationConfigInput : SimulationConfig {
+    double substepCount = 8, iterationCount = 10, ccdCount = 32;
+};
+int SignedCount(double value) {
+    const auto count = Wasm::Count(value);
+    if (count > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::invalid_argument("Simulation count exceeds native integer range");
+    return static_cast<int>(count);
+}
+void SetSimulationConfig(Engine& engine, const SimulationConfigInput& input) {
+    SimulationConfig native = input;
+    native.maxSubstepsPerAdvance = SignedCount(input.substepCount);
+    native.solverIterations = SignedCount(input.iterationCount);
+    native.maximumCcdImpacts = SignedCount(input.ccdCount);
+    engine.setSimulationConfig(native);
+}
+SimulationConfigInput GetSimulationConfig(const Engine& engine) {
+    SimulationConfigInput result;
+    const auto& native = engine.getSimulationConfig();
+    static_cast<SimulationConfig&>(result) = native;
+    result.substepCount = native.maxSubstepsPerAdvance;
+    result.iterationCount = native.solverIterations;
+    result.ccdCount = native.maximumCcdImpacts;
+    return result;
+}
 
 RigidBodyPtr CreateRigidBody(
     Shape* shape,
@@ -79,10 +108,10 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("staticFriction", &Material::staticFriction)
         .field("dynamicFriction", &Material::dynamicFriction);
 
-    value_object<SimulationConfig>("SimulationConfig")
+    value_object<SimulationConfigInput>("SimulationConfig")
         .field("fixedTimeStep", &SimulationConfig::fixedTimeStep)
-        .field("maxSubstepsPerAdvance", &SimulationConfig::maxSubstepsPerAdvance)
-        .field("solverIterations", &SimulationConfig::solverIterations)
+        .field("maxSubstepsPerAdvance", &SimulationConfigInput::substepCount)
+        .field("solverIterations", &SimulationConfigInput::iterationCount)
         .field("positionCorrectionFactor", &SimulationConfig::positionCorrectionFactor)
         .field("penetrationSlop", &SimulationConfig::penetrationSlop)
         .field("warmStartFactor", &SimulationConfig::warmStartFactor)
@@ -96,7 +125,7 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("enableSleeping", &SimulationConfig::enableSleeping)
         .field("sleepEnergyThreshold", &SimulationConfig::sleepEnergyThreshold)
         .field("sleepTimeThreshold", &SimulationConfig::sleepTimeThreshold)
-        .field("maximumCcdImpacts", &SimulationConfig::maximumCcdImpacts);
+        .field("maximumCcdImpacts", &SimulationConfigInput::ccdCount);
 
     value_object<FixedStepResult>("FixedStepResult")
         .field("stepsPerformed", &FixedStepResult::stepsPerformed)
@@ -197,10 +226,10 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
 
     class_<ParticleSystem>("ParticleSystem")
         .smart_ptr<ParticleSystemPtr>("ParticleSystemPtr")
-        .function("reserve", &ParticleSystem::reserve)
+        .function("reserve", optional_override([](ParticleSystem& s, double count) { s.reserve(Wasm::Count(count)); }))
         .function("addParticle", &ParticleSystem::addParticle)
-        .function("removeParticle", &ParticleSystem::removeParticle)
-        .function("applyForce", &ParticleSystem::applyForce)
+        .function("removeParticle", optional_override([](ParticleSystem& s, double index) { s.removeParticle(Wasm::Index(index, s.size())); }))
+        .function("applyForce", optional_override([](ParticleSystem& s, double index, Vector2 force) { s.applyForce(Wasm::Index(index, s.size()), force); }))
         .function("clear", &ParticleSystem::clear)
         .function("step", &ParticleSystem::step)
         .function("setUniformAcceleration", &ParticleSystem::setUniformAcceleration)
@@ -209,15 +238,15 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("empty", &ParticleSystem::empty)
         .function("getParticlePosition", optional_override([](
             const ParticleSystem& system,
-            std::size_t index
+            double index
         ) {
-            return system.getParticles().at(index).position;
+            return system.getParticles().at(Wasm::Index(index, system.size())).position;
         }))
         .function("getParticleVelocity", optional_override([](
             const ParticleSystem& system,
-            std::size_t index
+            double index
         ) {
-            return system.getParticles().at(index).velocity;
+            return system.getParticles().at(Wasm::Index(index, system.size())).velocity;
         }));
 
     function("createParticleSystem", &CreateParticleSystem);
@@ -230,8 +259,8 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("resetTiming", &Engine::resetTiming)
         .function("getAccumulatedTime", &Engine::getAccumulatedTime)
         .function("getTotalStepCount", &Engine::getTotalStepCount)
-        .function("setSimulationConfig", &Engine::setSimulationConfig)
-        .function("getSimulationConfig", &Engine::getSimulationConfig)
+        .function("setSimulationConfig", &SetSimulationConfig)
+        .function("getSimulationConfig", &GetSimulationConfig)
         .function("getLastStepStatistics", &Engine::getLastStepStatistics)
         .function("addBody", &Engine::addBody)
         .function("removeBody", &Engine::removeBody)
