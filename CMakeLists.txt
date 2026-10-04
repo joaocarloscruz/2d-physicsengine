@@ -210,6 +210,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_kernel_family.cpp
         ${TESTS_SRC_DIR}/test_fluid_wall_audit.cpp
         ${TESTS_SRC_DIR}/test_wall_pressure_modes.cpp
+        ${TESTS_SRC_DIR}/test_planar_reflected_operator.cpp
         ${TESTS_SRC_DIR}/test_physics_invariants.cpp
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
@@ -245,6 +246,8 @@ elseif(BUILD_TESTING)
     target_link_libraries(fluid_consistency_diagnostic PRIVATE Engine)
     add_executable(fluid_wall_diagnostic benchmarks/fluid_wall_diagnostic.cpp)
     target_link_libraries(fluid_wall_diagnostic PRIVATE Engine)
+    add_executable(planar_reflected_diagnostic benchmarks/planar_reflected_diagnostic.cpp)
+    target_link_libraries(planar_reflected_diagnostic PRIVATE Engine)
 
     enable_testing()
     add_test(NAME engine_tests COMMAND engine_tests_runner)
@@ -286,4 +289,7 @@ elseif(BUILD_TESTING)
     add_test(NAME fluid_signed_wall_diagnostic_smoke COMMAND fluid_wall_diagnostic --quick --signed-pressure
         --output ${CMAKE_BINARY_DIR}/fluid-wall-signed-quick.json)
     set_tests_properties(fluid_signed_wall_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
+    add_test(NAME planar_reflected_diagnostic_smoke COMMAND planar_reflected_diagnostic --quick
+        --output ${CMAKE_BINARY_DIR}/planar-reflected-quick.json)
+    set_tests_properties(planar_reflected_diagnostic_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
 endif()
