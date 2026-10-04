@@ -12,6 +12,103 @@ Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
 and return owned collections with exact BigInt body IDs, retained body handles
 and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
 
+## Owned periodic electrostatic grids
+
+`PeriodicElectrostaticGrid` solves `-permittivity*Lap(phi)=charge` on an immutable
+periodic rectangle, with `E=-grad(phi)` and zero-mean potential gauge. It is a
+static solve of prescribed grid charge density: it has no clock, particle
+deposition, particle feedback or automatic World/Maxwell coupling. See the
+[native equations, staggering, compatibility policy and scale limits](periodic-electrostatic-grids.md).
+
+```javascript
+const grid = new physics.PeriodicElectrostaticGrid({
+    columns: 2, rows: 2, spacingX: 1, spacingY: 1, permittivity: 2
+});
+let snapshot;
+try {
+    const diagnostics = grid.solve([1, -1, 1, -1], {
+        absoluteGaussTolerance: 1e-10, relativeGaussTolerance: 1e-10,
+        maximumIterations: 1000, maximumCellVisits: 100000000
+    });
+    snapshot = grid.getSnapshot(); // phi=[.125,-.125,.125,-.125]
+    console.log(diagnostics.finalGaussRms, diagnostics.fieldEnergy); // 0, .25
+} finally {
+    grid.delete();
+}
+console.log(snapshot.field.xFaces); // [-.25,.25,-.25,.25], still owned.
+```
+
+Default construction uses 16×16 cells, unit spacings and permittivity 1.
+`solve(charge)` supplies the four solve defaults shown above; an explicit options
+object must contain all four fields. `getConfig()` returns all five geometry
+fields. Each dimension must be an exact integer at least two, with at most
+262144 total cells. Iteration/work counts are checked as doubles before integer
+conversion, with hard maxima 1000000/1000000000. Wrapped, fractional, negative
+and nonfinite counts reject. Zero iterations are valid when the actual zero-field
+candidate meets the chosen tolerance; zero work cannot certify even zero source.
+A zero-source success charges 52 logical cell visits per cell. JavaScript copies
+and allocation add bounded linear work outside the native stencil-visit count.
+
+Charge is a dense ordinary array of finite primitive numbers, row-major with
+exactly `columns*rows` entries. The synchronous boundary uses a privately
+captured native geometry getter, checks the complete shape before entries, and
+copies charge and the four primitive option fields before wiring the receiver
+into native code. Throwing getters/proxies retain their original JS exception;
+nested synchronous calls and receiver deletion during capture are checked safely.
+Native rejection becomes an owned `Error`. See the supported
+[exception boundary scope](wasm-exception-boundary.md).
+
+The snapshot is a plain owning object containing `originalCharge`,
+`effectiveCharge`, `potential`, `field:{xFaces,yFaces}`, `gaussResidual`, `curl`
+and the complete native `diagnostics`. Every array has one entry per cell;
+fields are staggered at faces and curl at corners. Inputs and returned snapshots
+can be mutated or retained after deletion without changing the native grid.
+No borrowed memory, typed views, vector wrappers or snapshot cleanup are used.
+Every successful solve publishes the entire snapshot together; any failed input,
+work, convergence, range or physical audit retains the previous snapshot, apart
+from any explicit mutation performed by a user callback.
+
+Periodic compatibility requires zero integrated charge. Only the fixed native
+roundoff band admits a measured mean correction, with original/effective source,
+both integrated charges, removed mean, maximum correction and its allowance
+reported. Material nonneutrality rejects. `finalGaussRms` audits the actual stored
+field against the effective source; `originalGaussRms` includes the reported
+source correction. Absolute Gauss tolerance has charge-density units; relative
+tolerance is dimensionless. A deliberately loose tolerance can accept an
+inaccurate zero field, so energy agreement alone does not establish accuracy.
+Diagnostics include field/source energies, signed residual-energy correction,
+its bound and the scale-aware energy identity error/allowance, along with gauge,
+field means, curl and bounded work statistics. In SI, charge is C/m³,
+permittivity F/m, potential V, field V/m, integrated charge C/m and energy J/m
+per unit out-of-plane depth. Unrepresentable derived quantities reject; finite
+inputs do not promise arbitrary-range accuracy.
+
+The shared Node smoke helper checks analytic two-cell and anisotropic Fourier
+fields, an independent reduced dense solve, continuum refinement, physical stored
+Gauss/curl/energy audits, source scaling, neutrality, ownership, replay and late
+rollback. Probe-enabled stress repeats foreign/native failures and array/options
+reentrancy/deletion while checking exact stack, live allocation and exception
+counter stability.
+
+Local validation on 2026-10-04 used Emscripten 6.0.3 and Node 22.16.0 on Windows,
+with at most two build workers. Full smoke/stress passed in optimized Release
+with probes ON and Debug `-O1 -fsanitize=address,undefined -fno-omit-frame-pointer`
+with linker `-fsanitize=address,undefined -g`, using
+`ASAN_OPTIONS=halt_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. Electrostatic stress runs
+1000 batches/23000 listed rejections plus array/options nesting and receiver
+deletion. Its warmed Release stack/live-heap/uncaught counters remained
+142912/16416/0; sanitized counters remained 312269264/4965/0. These compare each
+build against itself. The physical helper also checks four-cell weighted-Gauss
+cases with `dx=dy=3e-154`, `permittivity=1e-308` and charge amplitudes `1e150`
+and `1e154`: the latter has an unrepresentable raw opposing-face difference,
+while normalized potential, field and energy match the analytic answer.
+Potential/face-field continuum refinement ratios approach 4.003/4.002.
+A separate Release build with probes OFF passed full smoke and verified that
+all boundary test classes/functions and the stack observer are absent. The
+[reproduction commands below](#owned-plane-strain-elastic-waves) cover the same
+shared smoke/stress entry points; no larger stack or test-only reset was used.
+
 ## Owned periodic scalar transport
 
 `PeriodicScalarTransport` owns periodic cell-average density `q` and prescribed,

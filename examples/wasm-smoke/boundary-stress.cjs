@@ -249,6 +249,7 @@ const createModule = require('./physics_engine.js');
         console.log(`PASS: scalar boundary stress; 1000 batches/21000 rejection checks, stack=${scalarStack}, live heap=${scalarBefore.heap}, uncaught=${scalarBefore.uncaught}; unchanged scalar/advector/clock/diagnostics`);
     }
     require("./elastic-wave-tests.cjs").stress(physics, probe);
+    require("./electrostatic-tests.cjs").stress(physics, probe);
     probe.delete();
     assert.equal(physics.boundaryTestStats().objects, 0);
     assert.equal(physics.boundaryTestStats().values, 1); // test static field only

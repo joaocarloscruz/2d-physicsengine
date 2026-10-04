@@ -34,9 +34,12 @@ A foreign JavaScript exception raised through `emscripten::val` inside native
 code does **not** generally unwind native RAII objects under JS EH. Consequently,
 the array setters `WaveMembrane.setState`, `PeriodicMacGrid.setVelocities` and
 `MaxwellGrid.setState`, `ElasticWaveGrid.setState`, and the periodic scalar
-state/velocity setters first snapshot their inputs in JavaScript. Captured native
+state/velocity setters first snapshot their inputs in JavaScript. The static
+electrostatic solve `PeriodicElectrostaticGrid.solve` captures its charge array and all four
+primitive option fields before native receiver wiring, so an options getter may
+also safely throw, reenter or delete the receiver. Captured native
 sizing observers, rather than user-shadowed methods, bound the copy to the
-receiver's allocated grid size (with the 262144 MAC/Maxwell/elastic/scalar hard cell cap).
+receiver's allocated grid size (with the 262144 MAC/Maxwell/elastic/scalar/electrostatic hard cell cap).
 All array shapes are checked before reading any entries. Entries must be own,
 dense, finite numbers; typed arrays are not accepted. Accessors and proxy traps
 may throw before native conversion/allocation, and reentrant receiver deletion

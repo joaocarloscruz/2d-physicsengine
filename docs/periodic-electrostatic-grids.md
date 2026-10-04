@@ -183,7 +183,8 @@ The bounded headless example uses a unit-square analytic sinusoidal potential,
 JSON lines report second-order potential/face-field errors, actual stored Gauss
 and original-source defects, correction/neutrality band, energies, curl and work.
 Charge sampling is at cell centers; this example does not infer accuracy from the
-Poisson residual alone. No JavaScript bindings are included in this native module.
+Poisson residual alone. [Owned JavaScript bindings](webassembly.md#owned-periodic-electrostatic-grids)
+expose the same static solve, copied snapshots, diagnostics and native budgets.
 
 One Windows Clang 23.1.1 optimized Release run produced:
 

@@ -963,6 +963,7 @@ async function main() {
     testScalarTransport(physics);
     testMaxwell(physics);
     require("./elastic-wave-tests.cjs").smoke(physics);
+    require("./electrostatic-tests.cjs").smoke(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
@@ -1340,7 +1341,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, and periodic TMz Maxwell fields");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves and static electrostatics");
 }
 
 main().catch((error) => {

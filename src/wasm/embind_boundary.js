@@ -12,12 +12,18 @@ addToLibrary({
     // A foreign JS exception from an array accessor inside emscripten::val
     // bypasses C++ RAII in JS EH. Snapshot these bounded public array inputs
     // before entering native code; check every shape before reading any entry.
-    let arrays, count, maxwell = false, elastic = false;
+    let arrays, count, maxwell = false, elastic = false, electrostatic = false;
     if (name === 'PeriodicScalarTransport.setState' || name === 'PeriodicScalarTransport.setVelocities') {
       const config = physicsSizingGetters['PeriodicScalarTransport.getConfig'].call(self);
       count = config.columns * config.rows;
       if (count > 262144) throw new RangeError('Scalar cell cap exceeded');
       arrays = args;
+    } else if (name === 'PeriodicElectrostaticGrid.solve') {
+      const config = physicsSizingGetters['PeriodicElectrostaticGrid.getConfig'].call(self);
+      count = config.columns * config.rows;
+      if (count > 262144) throw new RangeError('Electrostatic cell cap exceeded');
+      arrays = [args[0]];
+      electrostatic = true;
     } else if (name === 'PeriodicMacGrid.setVelocities') {
       const config = physicsSizingGetters['PeriodicMacGrid.getConfig'].call(self);
       count = config.columns * config.rows;
@@ -60,6 +66,19 @@ addToLibrary({
       }
       return copy;
     });
+    if (electrostatic) {
+      if (args.length === 1) return copies;
+      // Capture options before receiver wiring too: an options getter may
+      // delete the owner or make a reentrant bound call.
+      const options = {};
+      for (const key of ['absoluteGaussTolerance', 'relativeGaussTolerance', 'maximumIterations', 'maximumCellVisits']) {
+        const value = args[1][key];
+        if (typeof value !== 'number' || !Number.isFinite(value))
+          throw new TypeError(name + ' options require finite numbers');
+        Object.defineProperty(options, key, {value, enumerable: true});
+      }
+      return [copies[0], options];
+    }
     if (elastic) return [{vx: copies[0], vy: copies[1], sigmaXX: copies[2], sigmaYY: copies[3], sigmaXY: copies[4]}];
     return maxwell ? [{ez: copies[0], hx: copies[1], hy: copies[2]}] : copies;
   },
@@ -120,7 +139,7 @@ addToLibrary({
     // A user-shadowed getConfig/getCellCount cannot enlarge snapshot work.
     if (humanName === 'PeriodicMacGrid.getConfig' || humanName === 'WaveMembrane.getCellCount' ||
         humanName === 'MaxwellGrid.getConfig' || humanName === 'PeriodicScalarTransport.getConfig' ||
-        humanName === 'ElasticWaveGrid.getConfig')
+        humanName === 'ElasticWaveGrid.getConfig' || humanName === 'PeriodicElectrostaticGrid.getConfig')
       physicsSizingGetters[humanName] = invoker;
     return invoker;
   },
