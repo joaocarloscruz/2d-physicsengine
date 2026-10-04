@@ -1,6 +1,7 @@
 #include "catch_amalgamated.hpp"
 #include "physics/core/world.h"
 #include "physics/core/forces/gravity.h"
+#include <limits>
 
 using namespace PhysicsEngine;
 namespace {
@@ -105,4 +106,104 @@ TEST_CASE("Moving a static support wakes a settled body", "[sleep]") {
     floor->SetPosition({0, -5}); world.step();
     REQUIRE(ball->IsAwake());
     REQUIRE(ball->velocity.y < 0);
+}
+
+TEST_CASE("Revolute motors obey the torque budget across solver iterations", "[joints][motor]") {
+    for (const int iterations : {1, 10, 40}) {
+        SimulationConfig config; config.solverIterations = iterations;
+        config.enableAngularVelocityLimit = false;
+        World world(config);
+        auto a = Body({}, true), b = Body({});
+        b->SetMass(2);
+        world.addBody(a); world.addBody(b);
+        auto joint = std::make_shared<RevoluteJoint>(a, b);
+        joint->setMotor(true, 100, 0.2f);
+        world.addJoint(joint);
+        world.step(0.1f);
+        REQUIRE(b->angularVelocity == Catch::Approx(0.2 * 0.1 / b->inertia));
+        REQUIRE(joint->getMotorTorque() == Catch::Approx(0.2));
+        REQUIRE(a->angularVelocity == 0);
+        world.step(0);
+        REQUIRE(joint->getMotorTorque() == 0);
+        REQUIRE(b->angularVelocity == Catch::Approx(0.2 * 0.1 / b->inertia));
+    }
+}
+
+TEST_CASE("Motor acceleration scales with elapsed time", "[joints][motor]") {
+    for (const int steps : {1, 2, 20}) {
+        World world;
+        auto a = Body({}, true), b = Body({});
+        b->SetMass(1);
+        world.addBody(a); world.addBody(b);
+        auto joint = std::make_shared<RevoluteJoint>(a, b);
+        joint->setMotor(true, -10, 0.01f);
+        world.addJoint(joint);
+        for (int i = 0; i < steps; ++i) world.step(0.5f / steps);
+        REQUIRE(b->angularVelocity == Catch::Approx(-0.01 * 0.5 / b->inertia));
+        REQUIRE(joint->getMotorTorque() == Catch::Approx(-0.01));
+    }
+}
+
+TEST_CASE("Motor impulses conserve two-body angular momentum and brake without overshoot", "[joints][motor]") {
+    World world;
+    auto a = Body({}), b = Body({});
+    a->SetMass(1); b->SetMass(3);
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    joint->setMotor(true, 4, 100);
+    world.addJoint(joint);
+    world.step(0.01f);
+    REQUIRE(a->angularVelocity == Catch::Approx(-3));
+    REQUIRE(b->angularVelocity == Catch::Approx(1));
+    REQUIRE(a->inertia * a->angularVelocity + b->inertia * b->angularVelocity == Catch::Approx(0).margin(1e-7));
+    REQUIRE(std::abs(joint->getMotorTorque()) <= 100);
+    joint->setMotor(true, 0, 100);
+    world.step(0.01f);
+    REQUIRE(a->angularVelocity == Catch::Approx(0).margin(1e-6));
+    REQUIRE(b->angularVelocity == Catch::Approx(0).margin(1e-6));
+    REQUIRE(joint->getMotorTorque() < 0);
+}
+
+TEST_CASE("Motor commands validate atomically and disabled motors leave rotation free", "[joints][motor][validation]") {
+    World world;
+    auto a = Body({}, true), b = Body({});
+    world.addBody(a); world.addBody(b);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    world.addJoint(joint);
+    REQUIRE_FALSE(joint->isMotorEnabled());
+    joint->setMotor(true, 2, 3);
+    REQUIRE_THROWS_AS(joint->setMotor(false, std::numeric_limits<float>::infinity(), 4), std::invalid_argument);
+    REQUIRE_THROWS_AS(joint->setMotor(false, 4, -1), std::invalid_argument);
+    REQUIRE_THROWS_AS(joint->setMotor(false, 4, std::numeric_limits<float>::quiet_NaN()), std::invalid_argument);
+    REQUIRE(joint->isMotorEnabled());
+    REQUIRE(joint->getMotorSpeed() == 2);
+    REQUIRE(joint->getMaxMotorTorque() == 3);
+    b->SetAngularVelocity(5);
+    joint->setMotor(false, 2, 3);
+    world.step(0.1f);
+    REQUIRE(b->angularVelocity == 5);
+    REQUIRE(joint->getMotorTorque() == 0);
+    joint->setMotor(true, 2, 0);
+    world.step(0.1f);
+    REQUIRE(b->angularVelocity == 5);
+}
+
+TEST_CASE("A slow motor wakes its island and keeps driving below the sleep threshold", "[joints][motor][sleep]") {
+    SimulationConfig config; config.enableSleeping = true; config.sleepTimeThreshold = 0.05f;
+    World world(config);
+    auto a = Body({}, true), b = Body({}), c = Body({1, 0});
+    world.addBody(a); world.addBody(b); world.addBody(c);
+    auto joint = std::make_shared<RevoluteJoint>(a, b);
+    world.addJoint(joint);
+    world.addJoint(std::make_shared<DistanceJoint>(b, c, 1));
+    for (int i = 0; i < 30; ++i) world.step(0.01f);
+    REQUIRE_FALSE(b->IsAwake()); REQUIRE_FALSE(c->IsAwake());
+    joint->setMotor(true, 0.001f, 0.001f);
+    REQUIRE(b->IsAwake());
+    for (int i = 0; i < 30; ++i) world.step(0.01f);
+    REQUIRE(b->IsAwake()); REQUIRE(c->IsAwake());
+    REQUIRE(b->angularVelocity == Catch::Approx(0.001f));
+    joint->setMotor(false, 0, 0);
+    for (int i = 0; i < 30; ++i) world.step(0.01f);
+    REQUIRE_FALSE(b->IsAwake()); REQUIRE_FALSE(c->IsAwake());
 }

@@ -211,7 +211,8 @@ void World::step(float deltaTime) {
         }
     }
     for (const auto& joint : joints) {
-        if (joint->getBodyA()->contactWakeRequested || joint->getBodyB()->contactWakeRequested) {
+        joint->prepareStep(deltaTime);
+        if (joint->preventsSleeping() || joint->getBodyA()->contactWakeRequested || joint->getBodyB()->contactWakeRequested) {
             joint->getBodyA()->Wake(); joint->getBodyB()->Wake();
         }
     }
@@ -344,7 +345,8 @@ void World::step(float deltaTime) {
             if (solved) break;
         }
         if (simulationConfig.enableSleeping && deltaTime > 0) {
-            bool canSleep = true;
+            bool canSleep = std::none_of(island.joints.begin(), island.joints.end(),
+                [](const JointPtr& joint) { return joint->preventsSleeping(); });
             for (auto* body : island.bodies) {
                 const float specificEnergy = 0.5f*(body->velocity.magnitudeSquared()
                     + body->inertia*body->inverseMass*body->angularVelocity*body->angularVelocity);

@@ -10,9 +10,28 @@ Removing a body removes its attached joints. Removing a joint wakes both endpoin
 Joint and contact velocity constraints share the iteration budget. Position
 projection corrects drift using the configured correction bound and tolerance.
 Distance constraints use scalar effective mass; revolute constraints solve a 2×2
-point-mass system including angular inertia. No motors, limits or compliance are
+point-mass system including angular inertia. Limits and compliance are not yet
 implemented. Connected bodies still collide unless their collision masks exclude
 each other. The tests include analytical momentum transfer and 3,000-step pendulums.
+
+## Revolute speed motors
+
+`joint->setMotor(true, speed, maxTorque)` drives angular velocity of body B relative
+to A. Speed is in radians/second, with positive speed counterclockwise; the maximum
+torque is non-negative (N m when using SI units). Motors default to disabled.
+Use zero speed for a torque-limited brake and `setMotor(false, speed, maxTorque)`
+to disable a drive. Set commands between steps or from post-solve collision events.
+Changing a command wakes both endpoints and the next step propagates that wake to
+their island. An enabled nonzero-speed motor with positive torque prevents sleep,
+including when it is stalled or its speed is below the sleep-energy threshold.
+
+Each step accumulates motor impulse across all solver passes, bounded by
+`maxTorque * deltaTime`; increasing the iteration count does not increase available
+torque. `getMotorTorque()` reports the signed average torque applied to B during the
+last step, including zero for a zero-duration or sleeping step. Impulses on A and B
+are equal and opposite. The drive updates velocity in the constraint phase after
+pose integration, so driven motion converges with smaller fixed timesteps. As with
+contact impulses, configured integration speed caps do not cap solver impulses.
 
 Dynamic contact/joint graphs form independent islands. Sharing the same static
 floor does not merge separate islands. Each awake island is solved independently.

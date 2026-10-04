@@ -13,6 +13,8 @@ public:
 protected:
     friend class World;
     IJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 localAnchorA, Vector2 localAnchorB);
+    virtual void prepareStep(float deltaTime) {}
+    virtual bool preventsSleeping() const { return false; }
     virtual void solveVelocity() = 0;
     virtual bool solvePosition(float tolerance, float maxCorrection) = 0;
     RigidBodyPtr a, b;
@@ -36,8 +38,22 @@ class RevoluteJoint final : public IJoint {
 public:
     RevoluteJoint(RigidBodyPtr a, RigidBodyPtr b,
         Vector2 localAnchorA = {}, Vector2 localAnchorB = {});
+    // Speed is body B relative to A in radians/second; torque is non-negative.
+    void setMotor(bool enabled, float speed, float maxTorque);
+    bool isMotorEnabled() const { return motorEnabled; }
+    float getMotorSpeed() const { return motorSpeed; }
+    float getMaxMotorTorque() const { return maxMotorTorque; }
+    double getMotorTorque() const;
 protected:
+    void prepareStep(float deltaTime) override;
+    bool preventsSleeping() const override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
+private:
+    bool motorEnabled = false;
+    float motorSpeed = 0;
+    float maxMotorTorque = 0;
+    float stepDuration = 0;
+    double motorImpulse = 0;
 };
 }

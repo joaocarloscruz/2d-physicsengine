@@ -72,7 +72,36 @@ bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
 
 RevoluteJoint::RevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 la, Vector2 lb)
     : IJoint(std::move(a), std::move(b), la, lb) {}
+void RevoluteJoint::setMotor(bool enabled, float speed, float maxTorque) {
+    if (!std::isfinite(speed) || !std::isfinite(maxTorque) || maxTorque < 0)
+        throw std::invalid_argument("Motor speed must be finite and maximum torque finite and non-negative.");
+    if (motorEnabled == enabled && motorSpeed == speed && maxMotorTorque == maxTorque) return;
+    motorEnabled = enabled;
+    motorSpeed = speed;
+    maxMotorTorque = maxTorque;
+    a->Wake(); b->Wake();
+}
+double RevoluteJoint::getMotorTorque() const {
+    return stepDuration > 0 ? motorImpulse / stepDuration : 0;
+}
+void RevoluteJoint::prepareStep(float deltaTime) {
+    stepDuration = deltaTime;
+    motorImpulse = 0;
+}
+bool RevoluteJoint::preventsSleeping() const {
+    return motorEnabled && maxMotorTorque > 0 && motorSpeed != 0;
+}
 void RevoluteJoint::solveVelocity() {
+    const double angularMass = static_cast<double>(a->inverseInertia) + b->inverseInertia;
+    if (motorEnabled && stepDuration > 0 && angularMass > 0) {
+        const double speed = static_cast<double>(b->angularVelocity) - a->angularVelocity;
+        const double cap = static_cast<double>(maxMotorTorque) * stepDuration;
+        const double nextImpulse = std::clamp(motorImpulse + (motorSpeed - speed) / angularMass, -cap, cap);
+        const double impulse = nextImpulse - motorImpulse;
+        motorImpulse = nextImpulse;
+        a->angularVelocity = static_cast<float>(a->angularVelocity - a->inverseInertia * impulse);
+        b->angularVelocity = static_cast<float>(b->angularVelocity + b->inverseInertia * impulse);
+    }
     const Vector2 pa = getAnchorA(), pb = getAnchorB();
     const Vector2 ra = pa-a->position, rb = pb-b->position;
     const Vector2 velocity = b->GetVelocityAtPoint(pb)-a->GetVelocityAtPoint(pa);
