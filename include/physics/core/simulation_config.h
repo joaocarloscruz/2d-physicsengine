@@ -17,6 +17,7 @@ struct SimulationConfig {
     float maxLinearSpeed = 200.0f;
     bool enableAngularVelocityLimit = true;
     float maxAngularSpeed = 30.0f;
+    int maximumCcdImpacts = 32;
     bool enableSleeping = false;
     float sleepEnergyThreshold = 0.0005f; // kinetic energy per unit mass
     float sleepTimeThreshold = 0.5f;

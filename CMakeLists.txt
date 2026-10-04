@@ -27,6 +27,7 @@ endif()
 # --- Engine Library
 add_library(Engine ${ENGINE_LIBRARY_TYPE}
     src/engine.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/continuous_collision.cpp
     ${PHYSICS_SRC_DIR}/core/joints.cpp
     ${PHYSICS_SRC_DIR}/math/vector2.cpp
     ${PHYSICS_SRC_DIR}/math/matrix2x2.cpp
@@ -102,6 +103,7 @@ else()
     # --- Native Test Executable
     add_executable(engine_tests_runner
         ${TESTS_SRC_DIR}/main_tests.cpp
+        ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_collision_events.cpp
         ${TESTS_SRC_DIR}/test_ownership.cpp

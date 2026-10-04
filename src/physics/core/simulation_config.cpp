@@ -10,6 +10,9 @@ void SimulationConfig::Validate() const {
         !std::isfinite(sleepTimeThreshold) || sleepTimeThreshold <= 0) {
         throw std::invalid_argument("Sleep thresholds must be finite, energy non-negative and time positive.");
     }
+    if (maximumCcdImpacts <= 0) {
+        throw std::invalid_argument("Maximum CCD impacts must be positive.");
+    }
     if (!std::isfinite(fixedTimeStep) || fixedTimeStep <= 0.0f) {
         throw std::invalid_argument("Fixed timestep must be positive and finite.");
     }

@@ -65,6 +65,8 @@ namespace PhysicsEngine {
         bool IsStatic() const;
         bool IsAwake() const { return !isStatic && awake; }
         void Wake() { if (!isStatic) { awake = true; sleepTime = 0; } }
+        bool IsCcdEnabled() const { return ccdEnabled; }
+        void SetCcdEnabled(bool enabled) { ccdEnabled = enabled; }
 
         // setters
 
@@ -85,6 +87,7 @@ namespace PhysicsEngine {
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;
+        bool ccdEnabled = false;
         bool awake = true;
         float sleepTime = 0;
         bool applyingAutomaticForces = false;

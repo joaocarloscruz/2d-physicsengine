@@ -95,6 +95,8 @@ private:
         RigidBodyPtr bodyB;
     };
     void dispatchEvents();
+    std::vector<CollisionManifold> advanceCcd(const std::vector<Vector2>& starts,
+        float deltaTime, SimulationStatistics& statistics);
     void endContacts(std::uint64_t bodyId);
     std::unordered_map<ContactKey, PendingEvent, ContactKeyHash> contactEvents;
     std::vector<PendingEvent> pendingEvents;

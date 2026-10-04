@@ -1,6 +1,7 @@
 #include "physics/core/world.h"
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
+#include "physics/core/collisions/continuous_collision.h"
 #include "physics/math/matrix2x2.h"
 #include <utility>
 #include <algorithm>
@@ -214,6 +215,12 @@ void World::step(float deltaTime) {
     for (auto& generator : universalForceRegistry)
         for (auto& body : bodies) applyAutomaticForce(*body, *generator);
 
+    std::vector<Vector2> starts;
+    const bool useCcd = deltaTime > 0 && std::any_of(bodies.begin(), bodies.end(),
+        [](const RigidBodyPtr& body) { return body->IsCcdEnabled(); });
+    if (useCcd) {
+        for (const auto& body : bodies) starts.push_back(body->position);
+    }
     // Integrate velocities and positions
     for (RigidBodyPtr& body : bodies) {
         if (body->IsAwake()) {
@@ -223,6 +230,9 @@ void World::step(float deltaTime) {
             body->orientation = std::remainder(body->orientation, 6.283185307179586f);
         }
     }
+
+    const auto impacts = useCcd ? advanceCcd(starts, deltaTime, statistics)
+        : std::vector<CollisionManifold>{};
 
     // Detect contacts once, then solve the prepared constraints in distinct
     // velocity and position phases.
@@ -337,6 +347,24 @@ void World::step(float deltaTime) {
         }
     }
 
+    // A transient swept impact also participates in the lifecycle, even when
+    // its bodies have separated again by the end of this step.
+    for (auto manifold : impacts) {
+        CanonicalizeManifold(manifold);
+        const auto key = ContactKey::From(manifold.A, manifold.B);
+        if (!activeContacts.insert(key).second) continue;
+        PendingEvent event;
+        event.phase = contactEvents.count(key) ? EventPhase::Persist : EventPhase::Begin;
+        event.event = {key.first, key.second, manifold.normal, manifold.penetration,
+            manifold.contacts, manifold.contactCount};
+        event.manifold = manifold;
+        for (const auto& body : bodies) {
+            if (body.get() == manifold.A) event.bodyA = body;
+            if (body.get() == manifold.B) event.bodyB = body;
+        }
+        contactEvents.insert_or_assign(key, event);
+        pendingEvents.push_back(event);
+    }
     for (auto it = contactCache.begin(); it != contactCache.end();) {
         if (activeContacts.find(it->first) == activeContacts.end()) {
             it = contactCache.erase(it);
@@ -356,6 +384,75 @@ void World::step(float deltaTime) {
         }
     }
     dispatchEvents();
+}
+
+std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& starts,
+    float deltaTime, SimulationStatistics& statistics) {
+    std::vector<Vector2> motion;
+    for (std::size_t i=0; i<bodies.size(); ++i) {
+        motion.push_back((bodies[i]->position-starts[i])/deltaTime);
+        bodies[i]->position = starts[i];
+    }
+    std::vector<CollisionManifold> impacts;
+    float remaining = deltaTime;
+    for (int iteration=0; iteration<simulationConfig.maximumCcdImpacts; ++iteration) {
+        SweepHit earliest;
+        std::size_t hitA = 0, hitB = 0;
+        for (std::size_t i=0; i<bodies.size(); ++i) {
+            for (std::size_t j=i+1; j<bodies.size(); ++j) {
+                const auto& a = bodies[i]; const auto& b = bodies[j];
+                if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
+                    (a->IsStatic() && b->IsStatic()) || !a->CanCollideWith(*b)) continue;
+                SweepHit hit;
+                if (a->shape->type == ShapeType::CIRCLE && b->shape->type == ShapeType::CIRCLE) {
+                    hit = SweepCircleCircle(a->position, motion[i]*remaining, a->shape->GetRadius(),
+                        b->position, motion[j]*remaining, b->shape->GetRadius());
+                } else if (a->shape->type == ShapeType::CIRCLE || b->shape->type == ShapeType::CIRCLE) {
+                    const bool firstCircle = a->shape->type == ShapeType::CIRCLE;
+                    const auto& circle = firstCircle ? a : b;
+                    const auto& polygon = firstCircle ? b : a;
+                    std::vector<Vector2> vertices;
+                    const auto rotation = Matrix2x2::rotation(polygon->orientation);
+                    for (const auto& v : static_cast<const Polygon*>(polygon->shape.get())->getVertices())
+                        vertices.push_back(polygon->position + rotation*v);
+                    hit = SweepCirclePolygon(circle->position,
+                        motion[firstCircle ? i : j]*remaining, circle->shape->GetRadius(),
+                        vertices, motion[firstCircle ? j : i]*remaining);
+                    if (!firstCircle) hit.normal = hit.normal*-1.0f;
+                }
+                // Ignore resting/separating pairs, including initial overlap.
+                if (hit.hit && (motion[j]-motion[i]).dot(hit.normal) < -1e-6f &&
+                    (!earliest.hit || hit.fraction < earliest.fraction)) {
+                    earliest = hit; hitA = i; hitB = j;
+                }
+            }
+        }
+        const float advance = remaining*(earliest.hit ? earliest.fraction : 1.0f);
+        for (std::size_t i=0; i<bodies.size(); ++i)
+            bodies[i]->position = bodies[i]->position + motion[i]*advance;
+        remaining -= advance;
+        if (!earliest.hit) return impacts;
+        CollisionManifold manifold;
+        manifold.A = bodies[hitA].get(); manifold.B = bodies[hitB].get();
+        manifold.hasCollision = true;
+        manifold.normal = earliest.normal;
+        manifold.contactPoint = earliest.point;
+        manifold.contactCount = 1;
+        manifold.contacts[0] = {earliest.point, 0, 0x60000001u};
+        bodies[hitA]->Wake(); bodies[hitB]->Wake();
+        ContactImpulseCache cache;
+        auto constraint = CollisionResolver::PrepareConstraint(manifold, cache, simulationConfig);
+        for (int i=0; i<simulationConfig.solverIterations; ++i)
+            CollisionResolver::SolveVelocity(constraint);
+        impacts.push_back(manifold);
+        ++statistics.ccdImpactCount;
+        motion[hitA] = bodies[hitA]->IsStatic() ? Vector2{} : bodies[hitA]->velocity;
+        motion[hitB] = bodies[hitB]->IsStatic() ? Vector2{} : bodies[hitB]->velocity;
+        if (remaining <= 0) return impacts;
+    }
+    // Stay at the last safe time when the work budget is exhausted.
+    statistics.ccdIterationLimitReached = true;
+    return impacts;
 }
 
 void World::endContacts(std::uint64_t bodyId) {
