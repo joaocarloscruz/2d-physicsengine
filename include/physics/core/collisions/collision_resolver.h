@@ -8,8 +8,8 @@
 
 namespace PhysicsEngine {
     struct ContactImpulse {
-        float normal = 0.0f;
-        float tangent = 0.0f;
+        double normal = 0.0;
+        double tangent = 0.0;
     };
 
     struct CachedContactImpulse {
@@ -26,9 +26,9 @@ namespace PhysicsEngine {
         Vector2 localAnchorA;
         Vector2 localAnchorB;
         float penetration = 0.0f;
-        float normalMass = 0.0f;
-        float tangentMass = 0.0f;
-        float velocityBias = 0.0f;
+        double normalMass = 0.0;
+        double tangentMass = 0.0;
+        double velocityBias = 0.0;
         std::uint32_t featureId = 0;
         ContactImpulse impulse;
     };

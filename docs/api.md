@@ -60,6 +60,28 @@ wake state. Integration uses double intermediates and a stable speed norm for
 optional velocity caps. This does not roll back other bodies already advanced by
 a failing `World::step`; contact and joint solvers are also separate operations.
 
+Contact effective masses, restitution bias and cached normal/tangent impulses
+use double precision. A physical contact impulse may exceed float range while
+its resulting body velocities remain representable. Lever arms, point velocities,
+world-anchor midpoints and impulse products use double intermediates; local
+anchors still require finite float storage. Each normal, friction or position
+pair correction stages both endpoints' proposed float state before publishing
+either. A genuine result overflow throws `std::overflow_error` and preserves
+both endpoints for that correction; the corresponding internal impulse/cache
+update occurs only after an accepted velocity correction. Earlier corrections
+in the same contact patch, other contacts and prior World work are not rolled
+back. These internal corrections preserve pending loads and do not issue
+external wake requests.
+
+The contact solver rejects nonfinite consumed legacy body/manifold/cache values,
+invalid dynamic inverse mass/inertia, nonzero static inverse properties and
+invalid friction/restitution. Contact normals retain the existing finite unit
+normal contract from collision detection without an additional norm tolerance.
+For compatibility, finite legacy velocities on static bodies contribute to
+relative point velocity, while contact corrections leave their stored state
+unchanged. `ContactImpulse`, `ContactConstraintPoint` and cache layouts changed;
+these are internal solver interfaces, and all native consumers must rebuild.
+
 The standalone `SoftBody` module stages each step and leaves particle state and
 substep diagnostics unchanged when numerical or work-budget checks fail. Its
 validated state, finite anchors and integration limits are described in
