@@ -174,3 +174,67 @@ These are reproducible fixture observations, not acceptance bands. The scale
 fix preserves the tested ordinary resting behavior but does not resolve the
 coarse stack's large displacement or establish accuracy at arbitrary aspect
 ratios. Elapsed wall time remains excluded from deterministic comparisons.
+
+## Coupled normal solve before/after (#85)
+
+[Committed compact matrices](data/two-point-contact-e78d60a-clang23.json) compare
+the unchanged #78 tool and geometry on baseline `e78d60a` against block solver
+`e61f918b`. These are Windows x86_64 / Release / Clang 23.1.1 / LLVM-MinGW runs.
+No #83 polygon geometry changes are present. The quick matrix has 120 rows and
+the full matrix 432; both before and after have zero execution failures. Each
+row preserves the same fixture, dt, iterations, warming, two-second duration,
+restitution, friction and position-correction settings. Metric arrays use the
+file's `metricColumns` order; timing is intentionally excluded from comparison.
+
+Reproduce on each solver revision with:
+
+```
+rigid_contact_benchmark --quick --output contact-quick.json
+rigid_contact_benchmark --output contact-full.json
+```
+
+The following rows use dt=1/60, four iterations and warm-start factor zero.
+Units are those of the original benchmark, with unit-width boxes and gravity
+9.81. Terminal speed is the maximum in the last measurement window, not an
+equilibrium proof.
+
+| Fixture/metric | Before | After |
+| --- | ---: | ---: |
+| Rest maximum displacement | .006310654 | .005594164 |
+| Rest terminal peak speed | .001549836 | <2e-17 |
+| Stack 3 maximum displacement | .039466849 | .025882346 |
+| Stack 3 terminal peak speed | .143089017 | .075699497 |
+| Stack 6 maximum displacement | 1.245568253 | .132167443 |
+| Stack 6 maximum angle change | .392756552 | .015142203 |
+| Stack 6 terminal peak speed | 2.641057693 | .611564854 |
+| Stack 12 maximum displacement | 5.763417436 | 4.364174749 |
+| Stack 12 terminal peak speed | 7.514678190 | 5.800470342 |
+| High-friction incline downhill displacement | .049150199 | .054801652 |
+| High-friction incline terminal peak speed | .003454870 | .006303004 |
+
+The large stack improvement is useful but leaves substantial unsupported motion
+at low iteration count. The high-friction incline **regresses**: coupled normals
+followed by sequential tangents do not guarantee exact static friction balance.
+Other rows also worsen. Examples from the full matrix are:
+
+* Stack 3, dt=1/60, four iterations, warm=.8: maximum displacement
+  .025323955 → .026761522.
+* Stack 6, dt=1/120, ten iterations, warm=1: maximum displacement
+  .040788640 → .041782490.
+* Stack 12, dt=1/120, twenty iterations, warm=1: maximum displacement
+  .093813828 → .095684075.
+* Stack 12, dt=1/120, four iterations, warm=0: peak penetration
+  .100649223 → .106642150, despite the improvement in worst-case matrix maxima.
+
+Low-friction sliding is nearly unchanged: full-matrix maximum displacement
+4.514235288 → 4.514235749. Small per-row increases also exist, including
+downhill displacement 4.510639973 → 4.510706119 at dt=1/240, ten iterations and
+no warming. The isolated analytic impact maximum velocity error is 1.11e-7
+afterward; independent impact momentum/angular/energy tests pass. These tool
+observations retain their original classification and do not replace physical
+acceptance criteria with a successful benchmark exit.
+
+No old thresholds were widened and no difficult fixtures were removed. The
+remaining friction/position/manifold coupling and tall-stack limits require
+separate work; the [normal block derivation](contact-solver.md#coupled-two-point-normal-impulses)
+states its conditioning and approximate fallback explicitly.
