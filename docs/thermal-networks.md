@@ -63,6 +63,15 @@ for every dynamic node with nonzero incident conductance. Defaults are
 `maxLinks=300000`. The safety factor must be in `(0,1]`. Reservoir nodes do not
 restrict the conduction timestep, because their temperature is held constant.
 
+The implementation rounds conductance row sums and rates conservatively upward,
+then applies a small degree-dependent floating-point margin to the bound. The actual partition
+timestep must satisfy that representable conduction limit; tolerance for decimal
+`maxSubstep` partitions cannot enlarge the physical bound. At an exact theoretical
+boundary, this can require one more substep than real-arithmetic division suggests,
+including when `safetyFactor=1`. It avoids negative temperatures caused solely by
+rounding an outgoing heat transfer above a node's available energy. Temperatures
+are not clipped, and actual excessive external cooling is still rejected.
+
 With zero external power, the update is a convex combination of the old node and
 neighbour temperatures. It therefore obeys the conduction maximum principle:
 temperatures stay between the previous minimum and maximum, including reservoirs,
@@ -114,5 +123,9 @@ zero Kelvin, timestep underflow, or a substep budget violation throws
 queued powers, reservoir exchanges and diagnostics. Power accumulation overflow
 also leaves the pending load unchanged. No intermediate partial step is exposed.
 Extreme finite inputs may overflow derived rates, fluxes or ledgers and are
-rejected. Identical inputs and builds use deterministic insertion order;
+rejected. Link transfers use exponent-scaled multiplication of `h*G*deltaT`, so
+a finite full transfer is not rejected merely because an intermediate `G*deltaT`
+or `h*G` overflows; the same calculation avoids losing a representable transfer
+through intermediate underflow. A genuinely overflowing complete transfer is
+rejected transactionally. Identical inputs and builds use deterministic insertion order;
 cross-platform bitwise reproduction is not promised.

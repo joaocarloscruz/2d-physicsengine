@@ -1,6 +1,7 @@
 #include "catch_amalgamated.hpp"
 #include "physics/physics.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -107,6 +108,55 @@ TEST_CASE("ThermalNetwork graph bound preserves the conduction maximum principle
         REQUIRE(network.getDiagnostics().minimumTemperature >= 0);
         REQUIRE(network.getDiagnostics().maximumTemperature <= 400);
     }
+}
+
+TEST_CASE("ThermalNetwork unit safety factor stays positive at the representable conduction bound", "[Thermal]") {
+    // This exact pair formerly produced -1.3877787807814457e-17 K without power.
+    constexpr double capacity = 8.117670883489172;
+    constexpr double conductance = 7.0724471232455031;
+    constexpr double hot = 0.10820222073046995;
+    const double duration = 1.0 / (conductance / capacity);
+    for (const double scale : {1.0, 1e-200, 1e-50, 1e50, 1e200}) {
+        for (const int degree : {1, 3, 17}) {
+            for (const bool reservoirs : {false, true}) {
+                CAPTURE(scale, degree, reservoirs);
+                ThermalNetworkConfig config;
+                config.safetyFactor = 1;
+                config.maxSubstep = 10;
+                ThermalNetwork graph(config);
+                graph.addNode(hot, scale * capacity);
+                for (int i = 0; i < degree; ++i) {
+                    graph.addNode(0, scale * capacity * (2 + 0.25 * i), reservoirs);
+                    graph.addLink(0, i + 1, scale * conductance * (i + 1) / (degree * (degree + 1) / 2));
+                    if (i > 0) graph.addLink(i, i + 1, scale * conductance / (2 * degree));
+                }
+                const double energy = graph.getDiagnostics().totalEnergy;
+                for (int step = 0; step < 20; ++step) {
+                    REQUIRE_NOTHROW(graph.step(duration));
+                    const auto d = graph.getDiagnostics();
+                    REQUIRE(d.minimumTemperature >= 0);
+                    REQUIRE(d.maximumTemperature <= hot);
+                    if (!reservoirs) REQUIRE(d.totalEnergy == Catch::Approx(energy).epsilon(2e-13));
+                    else REQUIRE(d.totalEnergy - energy == Catch::Approx(d.totalReservoirHeat).epsilon(2e-13));
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("ThermalNetwork does not round a truly above-bound conduction step down", "[Thermal]") {
+    ThermalNetworkConfig config;
+    config.maxSubstep = 2;
+    config.safetyFactor = 1;
+    config.maxSubsteps = 1;
+    ThermalNetwork graph(config);
+    graph.addNode(100, 1);
+    graph.addNode(0, 1, true);
+    graph.addLink(0, 1, 1);
+    const double tooLarge = std::nextafter(1.0, 2.0);
+    REQUIRE_THROWS_AS(graph.step(tooLarge), std::runtime_error);
+    REQUIRE(graph.getNodes()[0].temperature == 100);
+    REQUIRE(graph.getNodes()[1].reservoirHeat == 0);
 }
 
 TEST_CASE("ThermalNetwork pair heat flow has equal and opposite energy transfers", "[Thermal]") {
@@ -301,11 +351,13 @@ TEST_CASE("ThermalNetwork derived overflow and staged failures are atomic", "[Th
         REQUIRE(network.getNodes()[1].externalPower == 1);
     }
     SECTION("Heat flux") {
-        ThermalNetwork network;
+        ThermalNetworkConfig config;
+        config.maxSubstep = 10;
+        ThermalNetwork network(config);
         network.addNode(0, 1, true);
         network.addNode(2, 1, true);
         network.addLink(0, 1, 1e308);
-        REQUIRE_THROWS_AS(network.step(0.01), std::runtime_error);
+        REQUIRE_THROWS_AS(network.step(10), std::runtime_error);
         REQUIRE(network.getNodes()[0].reservoirHeat == 0);
         REQUIRE(network.getDiagnostics().totalReservoirHeat == 0);
     }
@@ -354,6 +406,29 @@ TEST_CASE("ThermalNetwork derived overflow and staged failures are atomic", "[Th
         network.applyPower(0, 1);
         REQUIRE_THROWS_AS(network.step(0.01), std::runtime_error);
         REQUIRE(network.getNodes()[0].externalPower == 1);
+    }
+}
+
+TEST_CASE("ThermalNetwork finite heat transfers survive intermediate overflow or underflow", "[Thermal]") {
+    for (const auto& parameters : {
+        std::array<double, 3>{0.01, 1e308, 2},
+        std::array<double, 3>{1e-200, 1e-200, 1e200},
+        std::array<double, 3>{1e200, 1e200, 1e-200}}) {
+        const double duration = parameters[0];
+        const double conductance = parameters[1];
+        const double temperature = parameters[2];
+        ThermalNetworkConfig config;
+        config.maxSubstep = duration;
+        ThermalNetwork network(config);
+        network.addNode(0, 1, true);
+        network.addNode(temperature, temperature > 1 ? 1.0 / temperature : 1.0, true);
+        network.addLink(0, 1, conductance);
+        REQUIRE_NOTHROW(network.step(duration));
+        const double expected = duration == 0.01 ? 2e306 : duration;
+        REQUIRE(network.getNodes()[0].reservoirHeat == Catch::Approx(-expected).epsilon(2e-15));
+        REQUIRE(network.getNodes()[1].reservoirHeat == Catch::Approx(expected).epsilon(2e-15));
+        REQUIRE(network.getDiagnostics().lastReservoirHeat == 0);
+        REQUIRE(network.getNodes()[1].temperature == temperature);
     }
 }
 

@@ -21,25 +21,51 @@ double checked(double value) {
     if (!std::isfinite(value)) throw std::runtime_error("Thermal network arithmetic overflow");
     return value;
 }
+// Multiply the complete transfer without overflow/underflow in an intermediate
+// product. frexp exponents sum to at most about 3*1074 for finite doubles.
+double heatTransfer(double h, double conductance, double difference) {
+    if (conductance == 0.0 || difference == 0.0) return 0.0;
+    int eh, eg, et;
+    const double mh = std::frexp(h, &eh);
+    const double mg = std::frexp(conductance, &eg);
+    const double mt = std::frexp(difference, &et);
+    return checked(std::scalbn((mh * mg) * mt, eh + eg + et));
+}
 double totalEnergy(const std::vector<ThermalNode>& nodes) {
     double result = 0.0;
     for (const auto& node : nodes) result = checked(result + checked(node.heatCapacity * node.temperature));
     return result;
 }
-double maximumSubstep(const std::vector<ThermalNode>& nodes,
+double conductionSubstep(const std::vector<ThermalNode>& nodes,
                       const std::vector<ThermalLink>& links, const ThermalNetworkConfig& c) {
     std::vector<double> conductance(nodes.size(), 0.0);
+    std::vector<std::size_t> degree(nodes.size(), 0);
     for (const auto& link : links) {
-        if (!nodes[link.first].fixed)
-            conductance[link.first] = checked(conductance[link.first] + link.conductance);
-        if (!nodes[link.second].fixed)
-            conductance[link.second] = checked(conductance[link.second] + link.conductance);
+        if (link.conductance == 0.0) continue;
+        if (!nodes[link.first].fixed) {
+            conductance[link.first] = checked(std::nextafter(
+                checked(conductance[link.first] + link.conductance), std::numeric_limits<double>::infinity()));
+            ++degree[link.first];
+        }
+        if (!nodes[link.second].fixed) {
+            conductance[link.second] = checked(std::nextafter(
+                checked(conductance[link.second] + link.conductance), std::numeric_limits<double>::infinity()));
+            ++degree[link.second];
+        }
     }
-    double h = c.maxSubstep;
+    double h = std::numeric_limits<double>::infinity();
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         if (conductance[i] == 0.0) continue;
-        const double rate = checked(conductance[i] / nodes[i].heatCapacity);
-        if (rate > 0.0) h = std::min(h, c.safetyFactor / rate);
+        const double rate = checked(std::nextafter(checked(conductance[i] / nodes[i].heatCapacity),
+                                                  std::numeric_limits<double>::infinity()));
+        // Directed rounding bounds the true row sum/rate; a small additional
+        // margin covers transfer accumulation and the final temperature divide.
+        const double allowance = 16.0 * std::numeric_limits<double>::epsilon() *
+                                 (static_cast<double>(degree[i]) + 1.0);
+        if (allowance >= 0.5) throw std::runtime_error("Thermal graph exceeds bound precision");
+        const double margin = 1.0 - allowance;
+        const double bound = std::nextafter((c.safetyFactor / rate) * margin, 0.0);
+        h = std::min(h, bound);
     }
     return h;
 }
@@ -96,13 +122,25 @@ void ThermalNetwork::step(double dt) {
         lastExternalEnergy_ = lastReservoirHeat_ = 0.0;
         return;
     }
-    const double limit = maximumSubstep(nodes_, links_, config_);
+    const double conductionLimit = conductionSubstep(nodes_, links_, config_);
+    const double limit = std::min(config_.maxSubstep, conductionLimit);
     const double requested = dt / limit;
     const double roundoff = 64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, requested);
     if (!(limit > 0.0) || !std::isfinite(requested) ||
         requested > static_cast<double>(config_.maxSubsteps) + roundoff)
         throw std::runtime_error("Thermal substep budget exceeded");
-    const double count = std::max(1.0, std::ceil(requested - roundoff));
+    double count = std::max(1.0, std::ceil(requested - roundoff));
+    // Decimal maxSubstep partitions can use roundoff tolerance, but never let
+    // that tolerance enlarge a physical conduction bound at safetyFactor=1.
+    if (dt / count > conductionLimit) {
+        count = std::ceil(dt / conductionLimit);
+        if (dt / count > conductionLimit) {
+            if (count + 1.0 == count) throw std::runtime_error("Thermal substep count precision exhausted");
+            count += 1.0;
+        }
+    }
+    if (count > static_cast<double>(config_.maxSubsteps))
+        throw std::runtime_error("Thermal substep budget exceeded");
     // Avoid converting a rounded SIZE_MAX double to an out-of-range size_t.
     const std::size_t substeps = count >= static_cast<double>(config_.maxSubsteps)
         ? config_.maxSubsteps : static_cast<std::size_t>(count);
@@ -119,8 +157,8 @@ void ThermalNetwork::step(double dt) {
         }
         // Equal/opposite transfers use the same old temperatures: explicit Euler.
         for (const auto& link : links_) {
-            const double transfer = checked(h * checked(link.conductance *
-                (state[link.second].temperature - state[link.first].temperature)));
+            const double transfer = heatTransfer(h, link.conductance,
+                state[link.second].temperature - state[link.first].temperature);
             heat[link.first] = checked(heat[link.first] + transfer);
             heat[link.second] = checked(heat[link.second] - transfer);
         }
