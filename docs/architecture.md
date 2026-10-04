@@ -86,7 +86,7 @@ cyclotron motion and crossed-field drift. These standalone modules have no autom
 mechanical or fluid coupling; `ChargedParticle` does not evolve fields.
 See [electromagnetic particles](electromagnetic-particles.md).
 
-`MaxwellGrid` separately evolves source-free homogeneous periodic TMz fields
+`MaxwellGrid` separately evolves homogeneous periodic TMz fields
 Ez/Hx/Hy on a staggered rectangular grid. A symmetric magnetic-half/electric-full/
 magnetic-half update keeps all output components synchronous. Strict CFL and
 cell-work bounds constrain transactional steps. Its fixed-step modified energy
@@ -94,6 +94,12 @@ is conserved in exact arithmetic; physical energy oscillates. Diagnostics measur
 div H (div B divided by uniform permeability), without projecting initial
 divergence. It has no particle-field coupling or connection to the prescribed
 fields above. See [Maxwell fields](maxwell-grids.md) for units and boundaries.
+An explicit `stepOhmic` operation adds homogeneous scalar conductivity with
+symmetric exact electric-decay subflows. It reports analytic split Joule work,
+measured electric loss, the wave map's physical-energy change and their residual
+separately. Fixed-step modified energy contracts in exact arithmetic; physical
+energy can still oscillate. There is no temperature or thermal-network feedback.
+See [Ohmic evolution and energy accounts](maxwell-ohmic.md).
 
 `PeriodicElectrostaticGrid` separately solves static homogeneous Poisson fields
 from caller-prescribed periodic charge. A fixed roundoff band permits only a

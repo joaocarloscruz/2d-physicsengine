@@ -4,11 +4,11 @@ A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodi
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
 viscosity, conservative scalar transport, neutral periodic electrostatics,
-periodic TMz electromagnetic fields,
+periodic TMz electromagnetic fields with optional Ohmic evolution,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
-scalar transport, Maxwell fields
+scalar transport, static electrostatics, lossless Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
@@ -99,6 +99,8 @@ a periodic grid projection. `mac_diffusion_demo` measures implicit viscosity,
 its achieved velocity residual and dissipation. `maxwell_grid_demo` compares
 oscillating physical field energy with the fixed-step modified invariant and
 reports magnetic divergence. These are separate bounded operations/models.
+`maxwell_ohmic_demo` distinguishes analytic decay-subflow Joule heating,
+represented electric loss and the wave integrator's physical-energy change.
 `scalar_transport_demo` measures conservative donor-cell transport and its
 first-order numerical diffusion under a frozen periodic face-velocity field.
 `elastic_wave_demo` measures a plane-strain P wave's physical and modified energy,
@@ -128,6 +130,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
 - [Periodic MAC viscosity and dissipation](docs/periodic-mac-diffusion.md)
 - [Periodic homogeneous TMz electromagnetic fields](docs/maxwell-grids.md)
+- [Homogeneous Ohmic evolution and Joule energy accounting](docs/maxwell-ohmic.md)
 - [Neutral periodic electrostatic potential and fields](docs/periodic-electrostatic-grids.md)
 - [Rigid-contact physical benchmark](docs/rigid-contact-benchmark.md)
 - [Polygon manifold geometry and scale limits](docs/polygon-manifold-numerics.md)
