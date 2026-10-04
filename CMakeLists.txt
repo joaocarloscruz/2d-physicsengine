@@ -136,6 +136,7 @@ if(EMSCRIPTEN)
         src/wasm/thermal_bindings.cpp
         src/wasm/gravity_bindings.cpp
         src/wasm/wave_bindings.cpp
+        src/wasm/mac_bindings.cpp
         src/wasm/query_bindings.cpp
     )
 

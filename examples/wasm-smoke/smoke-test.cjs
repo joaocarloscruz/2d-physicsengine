@@ -264,10 +264,158 @@ function testGravity(physics) {
     singular.delete();
 }
 
+function testMacProjection(physics) {
+    const near = (actual, expected, tolerance = 2e-12) => assert.ok(Math.abs(actual - expected) <= tolerance,
+        `MAC: ${actual} != ${expected} within ${tolerance}`);
+    const mean = a => a.reduce((sum, x) => sum + x / a.length, 0);
+    const rms = a => Math.sqrt(a.reduce((sum, x) => sum + x*x / a.length, 0));
+    const options = {density: 3, timeStep: 0.2, absoluteDivergenceTolerance: 1e-10,
+        relativeDivergenceTolerance: 1e-10, maximumIterations: 1000, maximumCellVisits: 100000000};
+    const mode = (c, mx, my, u, v, meanX = 0, meanY = 0) => {
+        const xFaces = [], yFaces = [];
+        for (let j = 0; j < c.rows; ++j) for (let i = 0; i < c.columns; ++i) {
+            xFaces.push(meanX + u*Math.sin(2*Math.PI*(mx*i/c.columns + my*(j+0.5)/c.rows) + 0.31));
+            yFaces.push(meanY + v*Math.sin(2*Math.PI*(mx*(i+0.5)/c.columns + my*j/c.rows) + 0.31));
+        }
+        return {xFaces, yFaces};
+    };
+    // Independently derived staggered Fourier symbol, including duplicate
+    // forward/backward edges on either two-cell periodic axis.
+    for (const [columns, rows] of [[12,10], [2,5], [5,2], [2,2]]) {
+        const c = {columns, rows, spacingX: 0.23, spacingY: 0.41};
+        const grid = new physics.PeriodicMacGrid(c);
+        const ax = 2*Math.sin(Math.PI/columns)/c.spacingX, ay = 2*Math.sin(Math.PI/rows)/c.spacingY;
+        const eigenvalue = ax*ax + ay*ay;
+        const longitudinal = mode(c, 1, 1, ax, ay, 0.17, -0.28);
+        grid.setVelocities(longitudinal.xFaces, longitudinal.yFaces);
+        const divergence = grid.getDivergence();
+        for (let j = 0; j < rows; ++j) for (let i = 0; i < columns; ++i) {
+            const phase = 2*Math.PI*((i+0.5)/columns + (j+0.5)/rows) + 0.31;
+            near(divergence[i+columns*j], eigenvalue*Math.cos(phase));
+        }
+        const d = grid.project(options), p = grid.getLastProjection(), v = grid.getVelocities();
+        assert.ok(d.iterations <= 2); assert.ok(d.cellVisits > 0);
+        assert.deepEqual(d, p.diagnostics); assert.equal(d.density, 3); assert.equal(d.timeStep, 0.2);
+        assert.ok(d.finalDivergenceRms <= d.targetDivergenceRms);
+        near(d.finalMeanX, 0.17); near(d.finalMeanY, -0.28);
+        near(d.potentialMean, 0); near(d.pressureMean, 0);
+        for (let j = 0; j < rows; ++j) for (let i = 0; i < columns; ++i) {
+            const k = i+columns*j, phase = 2*Math.PI*((i+0.5)/columns + (j+0.5)/rows) + 0.31;
+            near(p.potential[k], -Math.cos(phase)); near(p.pressure[k], -15*Math.cos(phase), 3e-11);
+            near(v.xFaces[k], 0.17); near(v.yFaces[k], -0.28);
+        }
+        const transverse = mode(c, 1, 1, ay, -ax, 0.71, -0.27);
+        grid.setVelocities(transverse.xFaces, transverse.yFaces);
+        const td = grid.project(), tv = grid.getVelocities();
+        for (let k = 0; k < columns*rows; ++k) {
+            near(tv.xFaces[k], transverse.xFaces[k]); near(tv.yFaces[k], transverse.yFaces[k]);
+        }
+        near(td.finalMeanX, 0.71); near(td.finalMeanY, -0.27); near(td.finalDivergenceRms, 0);
+        grid.delete();
+    }
+    const c = {columns: 17, rows: 12, spacingX: 0.17, spacingY: 0.31};
+    const grid = new physics.PeriodicMacGrid(c), n = c.columns*c.rows;
+    const input = mode(c, 1, 2, 0.7, -0.3, 0.17, -0.28), second = mode(c, 3, 1, -0.2, 0.8);
+    for (let k = 0; k < n; ++k) { input.xFaces[k] += second.xFaces[k]; input.yFaces[k] += second.yFaces[k]; }
+    grid.setVelocities(input.xFaces, input.yFaces);
+    const loose = {...options, density: 7, timeStep: 0.031, relativeDivergenceTolerance: 0,
+        absoluteDivergenceTolerance: rms(grid.getDivergence())*0.65};
+    const d = grid.project(loose), p = grid.getLastProjection(), div = grid.getDivergence();
+    near(d.initialKineticEnergy, 0.5*loose.density*c.spacingX*c.spacingY*
+        [...input.xFaces, ...input.yFaces].reduce((sum, x) => sum+x*x, 0), 2e-13);
+    near(d.finalDivergenceRms, rms(div)); assert.ok(d.finalDivergenceRms > 1e-8);
+    assert.ok(d.finalDivergenceRms <= loose.absoluteDivergenceTolerance);
+    near(d.divergencePotentialInnerProduct, loose.density*c.spacingX*c.spacingY*
+        div.reduce((sum, x, i) => sum+x*p.potential[i], 0), 2e-13);
+    assert.ok(Math.abs(d.velocityCorrectionInnerProduct) <= d.residualEnergyBound+d.roundoffEnergyAllowance);
+    assert.ok(Math.abs(d.velocityCorrectionInnerProduct+d.divergencePotentialInnerProduct) <= d.roundoffEnergyAllowance);
+    assert.ok(Math.abs(d.storageEnergyError) <= d.roundoffEnergyAllowance);
+    assert.ok(d.finalKineticEnergy <= d.initialKineticEnergy+d.residualEnergyBound+d.roundoffEnergyAllowance);
+    near(d.finalMeanX, d.initialMeanX); near(d.finalMeanY, d.initialMeanY);
+    near(mean(p.potential), 0); near(mean(p.pressure), 0);
+    for (let k = 0; k < n; ++k) near(p.pressure[k], loose.density/loose.timeStep*p.potential[k]);
+
+    // Budget exactly sufficient must succeed; one cell visit less fails late
+    // in the staged solve and retains both arrays and all prior diagnostics.
+    grid.setVelocities(input.xFaces, input.yFaces);
+    const sufficient = grid.project(options);
+    grid.setVelocities(input.xFaces, input.yFaces);
+    assert.deepEqual(grid.project({...options, maximumCellVisits: sufficient.cellVisits}), sufficient);
+    grid.setVelocities(input.xFaces, input.yFaces);
+    const beforeV = grid.getVelocities(), beforeP = grid.getLastProjection();
+    const unchanged = () => { assert.deepEqual(grid.getVelocities(), beforeV); assert.deepEqual(grid.getLastProjection(), beforeP); };
+    for (const fail of [ {...options, maximumIterations: 0}, {...options, maximumIterations: 1},
+        {...options, maximumCellVisits: 0}, {...options, maximumCellVisits: sufficient.cellVisits-1},
+        {...options, timeStep: 0}, {...options, density: 1e300, timeStep: 1e-300},
+        {...options, absoluteDivergenceTolerance: -1}, {...options, relativeDivergenceTolerance: NaN} ]) {
+        assert.throws(() => grid.project(fail)); unchanged();
+    }
+    const constantX = Array(n).fill(0.7), constantY = Array(n).fill(-0.2);
+    grid.setVelocities(constantX, constantY);
+    const zero = grid.project({...options, maximumIterations: 0});
+    assert.equal(zero.zeroDivergenceNoOp, true); assert.equal(zero.iterations, 0);
+    assert.deepEqual(grid.getDivergence(), Array(n).fill(0));
+    assert.deepEqual(grid.getVelocities(), {xFaces: constantX, yFaces: constantY});
+    assert.deepEqual(grid.getLastProjection().potential, Array(n).fill(0));
+    assert.deepEqual(grid.getLastProjection().pressure, Array(n).fill(0));
+    const countBeforeV = grid.getVelocities(), countBeforeP = grid.getLastProjection();
+    const countUnchanged = () => { assert.deepEqual(grid.getVelocities(), countBeforeV); assert.deepEqual(grid.getLastProjection(), countBeforeP); };
+    for (const field of ["maximumIterations", "maximumCellVisits"]) {
+        for (const bad of [-1, 0.5, NaN, Infinity, -Infinity, 2**32, 2**32+100000, Number.MAX_VALUE]) {
+            assert.throws(() => grid.project({...options, [field]: bad})); countUnchanged();
+        }
+        assert.throws(() => grid.project({...options, [field]: field === "maximumIterations" ? 1000001 : 1000000001}));
+        countUnchanged();
+    }
+    assert.equal(grid.project({...options, maximumIterations: 1000000, maximumCellVisits: 1000000000}).zeroDivergenceNoOp, true);
+    const constantBefore = grid.getVelocities(), projectionBefore = grid.getLastProjection();
+    const setterUnchanged = () => { assert.deepEqual(grid.getVelocities(), constantBefore); assert.deepEqual(grid.getLastProjection(), projectionBefore); };
+    for (const bad of [[], Array(n+1).fill(0), new Float64Array(n), {length:n}, null, Array(2**32-1)]) {
+        assert.throws(() => grid.setVelocities(bad, constantY)); setterUnchanged();
+        assert.throws(() => grid.setVelocities(constantX, bad)); setterUnchanged();
+    }
+    for (const bad of ["1", undefined, null, {}, NaN, Infinity, -Infinity, 1n]) {
+        const x = constantX.slice(), y = constantY.slice(); x[n-1] = bad;
+        assert.throws(() => grid.setVelocities(x, y)); setterUnchanged();
+        x[n-1] = 0.7; y[n-1] = bad;
+        assert.throws(() => grid.setVelocities(x, y)); setterUnchanged();
+    }
+    let reads = 0;
+    const watched = constantX.slice(); Object.defineProperty(watched, 0, {get() { ++reads; throw Error("must not read"); }});
+    assert.throws(() => grid.setVelocities(watched, [])); assert.equal(reads, 0); setterUnchanged();
+    const sparse = Array(n); assert.throws(() => grid.setVelocities(sparse, constantY)); setterUnchanged();
+
+    const copyConfig = grid.getConfig(), copyV = grid.getVelocities(), copyP = grid.getLastProjection(), copyDiv = grid.getDivergence();
+    assert.ok(Array.isArray(copyV.xFaces)); assert.ok(Array.isArray(copyP.pressure)); assert.ok(Array.isArray(copyDiv));
+    assert.equal(Object.getPrototypeOf(copyP), Object.prototype); assert.equal(typeof copyP.diagnostics.delete, "undefined");
+    assert.equal(Object.getPrototypeOf(copyP.diagnostics), Object.prototype);
+    copyConfig.columns = 99; copyV.xFaces[0] = 99; copyP.potential[0] = 99; copyP.diagnostics.cellVisits = 99; copyDiv[0] = 99;
+    assert.deepEqual(grid.getConfig(), c); setterUnchanged();
+    constantX[0] = 99; constantY[0] = 99; setterUnchanged();
+    const huge = Array(n).fill(Number.MAX_VALUE); grid.setVelocities(huge, huge);
+    const hugeBefore = grid.getVelocities(); assert.throws(() => grid.project());
+    assert.deepEqual(grid.getVelocities(), hugeBefore); assert.deepEqual(grid.getLastProjection(), projectionBefore);
+    grid.delete();
+    assert.equal(copyV.xFaces[1], 0.7); assert.equal(copyP.pressure[1], 0); assert.equal(copyP.diagnostics.zeroDivergenceNoOp, true);
+    assert.equal(copyConfig.rows, c.rows); assert.equal(copyDiv[1], 0);
+
+    const defaults = new physics.PeriodicMacGrid();
+    const defaultConfig = defaults.getConfig(); assert.deepEqual(defaultConfig, {columns:16, rows:16, spacingX:1, spacingY:1});
+    assert.equal(defaults.project().zeroDivergenceNoOp, true); defaults.delete();
+    for (const field of ["columns", "rows"]) for (const bad of [0, 1, -1, 2.5, NaN, Infinity, 2**32, 2**32+2, 262145, Number.MAX_VALUE])
+        assert.throws(() => new physics.PeriodicMacGrid({...defaultConfig, [field]:bad}));
+    assert.throws(() => new physics.PeriodicMacGrid({...defaultConfig, columns:65536, rows:65536}));
+    for (const field of ["spacingX", "spacingY"]) for (const bad of [0, -1, NaN, Infinity, 1e-200, 1e200])
+        assert.throws(() => new physics.PeriodicMacGrid({...defaultConfig, [field]:bad}));
+    const largest = new physics.PeriodicMacGrid({columns:512, rows:512, spacingX:1, spacingY:1});
+    assert.equal(largest.getConfig().columns*largest.getConfig().rows, 262144); largest.delete();
+}
+
 async function main() {
     const physics = await createPhysicsEngineModule();
     testGravity(physics);
     testWaves(physics);
+    testMacProjection(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
@@ -644,7 +792,7 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, and membrane waves");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, and periodic MAC projection");
 }
 
 main().catch((error) => {

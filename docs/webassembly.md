@@ -8,6 +8,97 @@ Scene queries are available through `queryPoint`, `queryCircle`, `rayCastAll`,
 and return owned collections with exact BigInt body IDs, retained body handles
 and copied hit geometry. See [query arguments, filtering and object cleanup](spatial-queries.md#javascript-queries-and-result-ownership).
 
+## Owned periodic MAC projection grids
+
+`PeriodicMacGrid` owns a standalone periodic velocity projection grid.
+`new physics.PeriodicMacGrid()` uses 16 columns, 16 rows and unit spacings.
+The configured constructor accepts a complete plain object with `columns`,
+`rows`, `spacingX` and `spacingY`. Geometry is fixed after construction.
+This module projects velocities; it does not implement advection, viscosity,
+walls, free surfaces, time integration or Engine/World/SPH coupling. See the
+[native operators, physical units and accuracy limits](periodic-mac-projection.md).
+
+```javascript
+const grid = new physics.PeriodicMacGrid({
+    columns: 8, rows: 6, spacingX: 0.1, spacingY: 0.17
+});
+let projection;
+try {
+    const c = grid.getConfig();
+    const n = c.columns * c.rows;
+    const xFaces = Array.from({length: n}, (_, k) =>
+        0.3 + Math.sin(2 * Math.PI * (k % c.columns) / c.columns));
+    grid.setVelocities(xFaces, Array(n).fill(-0.2));
+    const diagnostics = grid.project({
+        density: 1000, timeStep: 0.01,
+        absoluteDivergenceTolerance: 1e-10,
+        relativeDivergenceTolerance: 1e-10,
+        maximumIterations: 1000, maximumCellVisits: 100000000
+    });
+    projection = grid.getLastProjection();
+    console.log(grid.getVelocities(), grid.getDivergence(), diagnostics);
+} finally {
+    grid.delete();
+}
+console.log(projection.pressure); // Plain copied arrays survive grid deletion.
+```
+
+Each array uses index `i + columns*j` and has `columns*rows` entries.
+`xFaces` stores u at `(i*dx, (j+0.5)*dy)`; `yFaces` stores v at
+`((i+0.5)*dx, j*dy)`. Potential, pressure and divergence are cell-centered at
+`((i+0.5)*dx, (j+0.5)*dy)`. Periods are `columns*dx` and `rows*dy`;
+periodic faces are stored once, without a duplicate last row or column.
+
+`getConfig()`, `getVelocities()`, `getDivergence()` and
+`getLastProjection()` return plain copied objects/arrays, including the nested
+`diagnostics` object. Changing inputs after `setVelocities`, mutating a snapshot,
+or deleting the grid cannot change other snapshots. No borrowed WASM memory,
+typed views or vector wrappers are returned; snapshots require no deletion.
+Delete the owned grid handle once when finished.
+
+`setVelocities(xFaces, yFaces)` accepts two plain JS arrays with finite numeric
+entries. Both lengths are checked before either native copy is allocated or
+read; typed arrays, sparse arrays, numeric strings and nonfinite entries are
+rejected. Both components are copied and committed together. The last successful
+projection snapshot remains available after a velocity setter; it describes
+that earlier projection until another projection succeeds.
+
+`project()` uses density 1, pressure-conversion interval 1, absolute and relative
+divergence tolerances `1e-10`, 1000 iterations and 100000000 cell visits.
+`project(options)` requires all six fields shown above. The accepted target is
+`max(absoluteDivergenceTolerance, relativeDivergenceTolerance*initialDivergenceRms)`.
+The stored face velocities must meet the recomputed target. Exactly zero
+divergence preserves velocities and publishes zero potential/pressure with zero
+iterations; diagnostic passes still consume work. `timeStep` converts potential
+to pressure and does not advance a clock. All failed calls retain velocities and
+the complete last successful projection snapshot.
+
+Dimensions and work/iteration counts are checked as JS doubles before native
+integer conversion: negative, fractional, nonfinite and wrapping values are
+rejected. Each dimension is at least 2 and the product is at most 262144 cells,
+checked before allocation. Iterations are bounded by 1000000 and cell visits by
+1000000000. Zero budgets are valid inputs and fail if the operation needs more
+work. Native geometry, tolerance, pressure-scale and arithmetic validation also
+applies; there is no hidden tolerance floor.
+
+Diagnostics expose every native field with these units (m and s when using SI):
+
+| Fields | Units / meaning |
+| --- | --- |
+| `iterations`, `cellVisits`, `zeroDivergenceNoOp` | Accepted iteration/pass work counts; exact-zero initial-divergence flag |
+| `density`, `timeStep` | Accepted density and pressure-conversion interval in s |
+| `initialDivergenceRms`, `finalDivergenceRms`, `targetDivergenceRms`, `removedDivergenceMean` | 1/s |
+| `potentialMean` and snapshot `potential` | m²/s, zero-mean gauge |
+| `pressureMean` and snapshot `pressure` | `density*potential/timeStep`: Pa for kg/m³ density, N/m for kg/m² density |
+| `initialMeanX`, `initialMeanY`, `finalMeanX`, `finalMeanY` | Mean face velocity, m/s |
+| `initialKineticEnergy`, `finalKineticEnergy`, `correctionKineticEnergy` | J per meter of depth for kg/m³ density; J for kg/m² density |
+| `velocityCorrectionInnerProduct`, `divergencePotentialInnerProduct`, `residualEnergyBound`, `storageEnergyError`, `roundoffEnergyAllowance` | Same energy units, including the cell-area and density weights |
+
+Finite tolerance allows the measured residual energy term; success alone does
+not imply exact orthogonality or strict energy decrease. The roundoff allowance
+is a scale-aware heuristic guard, with no absolute energy floor. Consult the
+native derivation before interpreting these diagnostic pairings as physical work.
+
 ## Owned scalar-wave grids
 
 `WaveMembrane` exposes the standalone native uniform membrane solver. Construct
