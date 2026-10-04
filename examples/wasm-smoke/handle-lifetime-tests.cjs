@@ -95,6 +95,34 @@ function batch(p) {
     assert.ok(coercions === 0 || coercions === 1);
     if (!numeric.isDeleted()) numeric.delete();
 
+    // Either Ohmic scalar converter can delete the wired receiver. Retaining
+    // an independent alias makes unintended native entry observable through
+    // fields, clock and diagnostics even if the allocation remains alive.
+    const defaults = new p.MaxwellGrid(), maxwellConfig = defaults.getConfig();
+    defaults.delete();
+    for (const which of [0, 1]) {
+        const receiver = new p.MaxwellGrid({...maxwellConfig, columns:2, rows:2});
+        receiver.setState({ez:Array(4).fill(1), hx:Array(4).fill(2), hy:Array(4).fill(-3)});
+        const retained = receiver.clone();
+        const before = {state:retained.getState(), diagnostics:retained.getDiagnostics()};
+        let coercions = 0;
+        const args = [.1, .7];
+        args[which] = {valueOf() {
+            ++coercions; receiver.delete(); return which === 0 ? .1 : .7;
+        }};
+        assert.throws(() => receiver.stepOhmic(...args),
+            error => coercions ? deleted(error) : error instanceof TypeError);
+        assert.ok(coercions === 0 || coercions === 1);
+        assert.equal(receiver.isDeleted(), coercions === 1);
+        assert.deepEqual({state:retained.getState(), diagnostics:retained.getDiagnostics()}, before);
+        // The surviving owner remains usable after rejection of the dead handle.
+        const report = retained.stepOhmic(.1, .7);
+        assert.equal(report.endTime, .1);
+        assert.ok(report.exactJouleEnergy > 0);
+        if (!receiver.isDeleted()) receiver.delete();
+        retained.delete();
+    }
+
     if (p.BoundaryTestProbe) {
         const property = new p.BoundaryTestProbe({number:1});
         assert.throws(() => { property.value = {get number() {
