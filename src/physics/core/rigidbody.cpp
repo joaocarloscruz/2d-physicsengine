@@ -13,6 +13,17 @@ namespace PhysicsEngine {
             if (!std::isfinite(value)) throw std::invalid_argument("RigidBody state must be finite.");
         }
         void ValidateFinite(Vector2 value) { ValidateFinite(value.x); ValidateFinite(value.y); }
+        float CheckedFloat(double value) {
+            if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
+                throw std::overflow_error("RigidBody result exceeds finite float range.");
+            return static_cast<float>(value);
+        }
+        Vector2 CheckedVector(double x, double y) { return {CheckedFloat(x), CheckedFloat(y)}; }
+        void ValidateInverseProperties(const RigidBody& body) {
+            if (!std::isfinite(body.inverseMass) || body.inverseMass <= 0 ||
+                !std::isfinite(body.inverseInertia) || body.inverseInertia <= 0)
+                throw std::invalid_argument("Dynamic RigidBody inverse mass and inertia must be positive and finite.");
+        }
         void ValidateMaterial(const Material& material) {
             if (!std::isfinite(material.density) || material.density <= 0.0f) {
                 throw std::invalid_argument("Material density must be positive and finite.");
@@ -68,24 +79,34 @@ namespace PhysicsEngine {
     }
 
     void RigidBody::ApplyForce(const Vector2& f) {
-        ValidateFinite(f);
-        if (!applyingAutomaticForces && f.magnitudeSquared() > 0) Wake();
-        force = force + f; 
+        ValidateFinite(f); ValidateFinite(force);
+        const Vector2 next = CheckedVector(static_cast<double>(force.x) + f.x,
+                                          static_cast<double>(force.y) + f.y);
+        if (!applyingAutomaticForces && (f.x != 0 || f.y != 0)) Wake();
+        force = next;
     }
 
     void RigidBody::ApplyTorque(float t) {
-        ValidateFinite(t);
+        ValidateFinite(t); ValidateFinite(torque);
+        const float next = CheckedFloat(static_cast<double>(torque) + t);
         if (!applyingAutomaticForces && t != 0) Wake();
-        torque += t; 
+        torque = next;
     }
 
     void RigidBody::ApplyImpulse(const Vector2& impulse, const Vector2& contactVector) {
         ValidateFinite(impulse); ValidateFinite(contactVector);
         if (isStatic) return;
-        if (impulse.magnitudeSquared() > 0) Wake();
-
-        velocity = velocity + impulse * inverseMass;
-        angularVelocity = angularVelocity + inverseInertia * contactVector.cross(impulse);
+        ValidateFinite(velocity); ValidateFinite(angularVelocity);
+        ValidateInverseProperties(*this);
+        const Vector2 nextVelocity = CheckedVector(
+            velocity.x + static_cast<double>(impulse.x) * inverseMass,
+            velocity.y + static_cast<double>(impulse.y) * inverseMass);
+        const double angularImpulse = static_cast<double>(contactVector.x) * impulse.y
+            - static_cast<double>(contactVector.y) * impulse.x;
+        const float nextAngularVelocity = CheckedFloat(angularVelocity + inverseInertia * angularImpulse);
+        if (impulse.x != 0 || impulse.y != 0) Wake();
+        velocity = nextVelocity;
+        angularVelocity = nextAngularVelocity;
     }
 
     void RigidBody::Integrate(float deltaTime) {
@@ -97,46 +118,46 @@ namespace PhysicsEngine {
             throw std::invalid_argument("RigidBody delta time must be finite and non-negative.");
         }
         if (isStatic) return;
+        ValidateFinite(position); ValidateFinite(orientation);
+        ValidateFinite(velocity); ValidateFinite(angularVelocity);
+        ValidateFinite(force); ValidateFinite(torque);
+        ValidateInverseProperties(*this);
 
-        // --- Velocity Verlet Integration ---
+        // Constant-force integration. Compute in double and publish the complete
+        // body update only after every result is representable. World validates
+        // its private config; the public overload supplies the default config.
+        const double dt = deltaTime;
+        const double ax = static_cast<double>(force.x) * inverseMass;
+        const double ay = static_cast<double>(force.y) * inverseMass;
+        const double alpha = static_cast<double>(torque) * inverseInertia;
+        const Vector2 nextPosition = CheckedVector(
+            position.x + velocity.x * dt + 0.5 * ax * dt * dt,
+            position.y + velocity.y * dt + 0.5 * ay * dt * dt);
+        const float nextOrientation = CheckedFloat(orientation + angularVelocity * dt + 0.5 * alpha * dt * dt);
+        double vx = velocity.x + ax * dt;
+        double vy = velocity.y + ay * dt;
+        double omega = angularVelocity + alpha * dt;
 
-        // 1. Calculate acceleration from forces
-        Vector2 linearAcceleration = force * inverseMass;
-        float angularAcceleration = torque * inverseInertia;
-
-        // 2. Update position
-        // p(t + dt) = p(t) + v(t) * dt + 0.5 * a(t) * dt^2
-        position = position + velocity * deltaTime + linearAcceleration * (0.5f * deltaTime * deltaTime);
-        orientation = orientation + angularVelocity * deltaTime + angularAcceleration * (0.5f * deltaTime * deltaTime);
-
-        // 3. Calculate new acceleration (if forces were dependent on the new position/orientation)
-        // In this simple model, we assume forces are constant over the timestep, so a(t+dt) = a(t)
-        Vector2 nextLinearAcceleration = force * inverseMass;
-        float nextAngularAcceleration = torque * inverseInertia;
-
-        // 4. Update velocity
-        // v(t + dt) = v(t) + 0.5 * (a(t) + a(t+dt)) * dt
-        velocity = velocity + (linearAcceleration + nextLinearAcceleration) * (0.5f * deltaTime);
-        angularVelocity = angularVelocity + (angularAcceleration + nextAngularAcceleration) * (0.5f * deltaTime);
-
-        // 5. Apply optional safety limits. Continuous collision detection is
-        // responsible for tunneling prevention when it is implemented.
+        // Cap the speed without overflowing a float squared norm. Position still
+        // follows the original constant-force trajectory; caps affect final speed.
         if (config.enableLinearVelocityLimit) {
-            const float speedSq = velocity.magnitudeSquared();
-            if (speedSq > config.maxLinearSpeed * config.maxLinearSpeed) {
-                velocity = velocity.normalized() * config.maxLinearSpeed;
+            const double speed = std::hypot(vx, vy);
+            if (speed > config.maxLinearSpeed) {
+                const double scale = config.maxLinearSpeed / speed;
+                vx *= scale;
+                vy *= scale;
             }
         }
         if (config.enableAngularVelocityLimit) {
-            if (angularVelocity > config.maxAngularSpeed) {
-                angularVelocity = config.maxAngularSpeed;
-            }
-            if (angularVelocity < -config.maxAngularSpeed) {
-                angularVelocity = -config.maxAngularSpeed;
-            }
+            omega = std::clamp(omega, -static_cast<double>(config.maxAngularSpeed),
+                               static_cast<double>(config.maxAngularSpeed));
         }
-
-        // 6. Reset forces and torque for the next frame
+        const Vector2 nextVelocity = CheckedVector(vx, vy);
+        const float nextAngularVelocity = CheckedFloat(omega);
+        position = nextPosition;
+        orientation = nextOrientation;
+        velocity = nextVelocity;
+        angularVelocity = nextAngularVelocity;
         force = Vector2(0.0f, 0.0f);
         torque = 0.0f;
     }

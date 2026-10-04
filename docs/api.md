@@ -46,6 +46,13 @@ and reports residuals. CCD impact exhaustion reports a flag and leaves bodies at
 the last safe sweep time. Listener exceptions propagate after clearing queued
 notifications. Export rejects non-finite state instead of emitting invalid JSON.
 
+Rigid-body force/torque accumulation, impulse application and individual
+integration updates check derived float results before publication. An
+`std::overflow_error` preserves that operation's body state, pending loads and
+wake state. Integration uses double intermediates and a stable speed norm for
+optional velocity caps. This does not roll back other bodies already advanced by
+a failing `World::step`; contact and joint solvers are also separate operations.
+
 The standalone `SoftBody` module stages each step and leaves particle state and
 substep diagnostics unchanged when numerical or work-budget checks fail. Its
 validated state, finite anchors and integration limits are described in
