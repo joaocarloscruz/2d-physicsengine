@@ -20,6 +20,7 @@
 #include "joints.h"
 
 namespace PhysicsEngine {
+namespace Detail { struct IntegrationStrategy; struct ExperimentalWorldStep; }
 
 struct ForceRegistration {
     RigidBodyPtr body;
@@ -65,6 +66,8 @@ public:
     const SimulationStatistics& getLastStepStatistics() const;
 
 private:
+    friend struct Detail::ExperimentalWorldStep;
+    bool stepInternal(float deltaTime, Detail::IntegrationStrategy* strategy);
     void requireMutationAllowed() const;
     struct ContactKey {
         std::uint64_t first;

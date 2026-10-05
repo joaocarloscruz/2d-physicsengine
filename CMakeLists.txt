@@ -264,6 +264,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
         ${TESTS_SRC_DIR}/test_contact_load_projection.cpp
         ${TESTS_SRC_DIR}/test_planar_contact_interval.cpp
+        ${TESTS_SRC_DIR}/test_planar_contact_bridge.cpp
         ${TESTS_SRC_DIR}/test_joints.cpp
         ${TESTS_SRC_DIR}/test_joint_arithmetic.cpp
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
@@ -343,6 +344,12 @@ elseif(BUILD_TESTING)
     target_compile_definitions(contact_load_benchmark PRIVATE PHYSICS_CONTACT_LOAD_EXPERIMENT)
     target_link_libraries(contact_load_benchmark PRIVATE PhysicsEngine::Engine)
     add_executable(planar_contact_interval_diagnostic benchmarks/planar_contact_interval_diagnostic.cpp)
+    add_executable(planar_contact_world_benchmark benchmarks/planar_contact_world_benchmark.cpp)
+    target_link_libraries(planar_contact_world_benchmark PRIVATE PhysicsEngine::Engine)
+    add_test(NAME planar_contact_world_benchmark_smoke COMMAND ${CMAKE_COMMAND}
+        -DPROGRAM=$<TARGET_FILE:planar_contact_world_benchmark>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyPlanarWorldJson.cmake)
+    set_tests_properties(planar_contact_world_benchmark_smoke PROPERTIES LABELS "fast;numerical;diagnostic")
     add_test(NAME planar_contact_interval_diagnostic_smoke COMMAND ${CMAKE_COMMAND}
         -DPROGRAM=$<TARGET_FILE:planar_contact_interval_diagnostic>
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyPlanarIntervalJson.cmake)

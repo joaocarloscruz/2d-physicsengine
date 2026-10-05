@@ -1,4 +1,5 @@
 #include "physics/core/world.h"
+#include "experimental_world_step.h"
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include "physics/core/collisions/continuous_collision.h"
@@ -182,7 +183,9 @@ void World::step() {
     step(simulationConfig.fixedTimeStep);
 }
 
-void World::step(float deltaTime) {
+void World::step(float deltaTime) { stepInternal(deltaTime, nullptr); }
+
+bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy) {
     if (stepping || dispatchingEvents) {
         throw std::logic_error("World::step cannot be called from a collision callback.");
     }
@@ -231,6 +234,85 @@ void World::step(float deltaTime) {
     for (auto& generator : universalForceRegistry)
         for (auto& body : bodies) applyAutomaticForce(*body, *generator);
 
+    Detail::IntegrationPlan integrationPlan;
+    bool integratedPlan = false;
+    // Capture engine-owned identities before invoking the const staging seam.
+    // A strategy's proposed endpoint can only target an unchanged owned body.
+    struct Snapshot {
+        RigidBody *body;
+        std::uint64_t id;
+        Vector2 position, velocity, force;
+        float orientation, angularVelocity, torque, mass, inverseMass, inertia, inverseInertia;
+        Material material;
+        std::uint32_t category, mask;
+        bool awake, ccd;
+        explicit Snapshot(RigidBody &b)
+            : body(&b), id(b.GetId()), position(b.position), velocity(b.velocity), force(b.force),
+              orientation(b.orientation), angularVelocity(b.angularVelocity), torque(b.torque),
+              mass(b.mass), inverseMass(b.inverseMass), inertia(b.inertia), inverseInertia(b.inverseInertia),
+              material(b.material), category(b.GetCollisionCategoryBits()), mask(b.GetCollisionMaskBits()),
+              awake(b.IsAwake()), ccd(b.IsCcdEnabled()) {}
+        bool unchanged() const {
+            const auto &b = *body;
+            return b.GetId() == id && b.position == position && b.velocity == velocity &&
+                   b.force == force && b.orientation == orientation &&
+                   b.angularVelocity == angularVelocity && b.torque == torque &&
+                   b.mass == mass && b.inverseMass == inverseMass && b.inertia == inertia &&
+                   b.inverseInertia == inverseInertia && b.material.density == material.density &&
+                   b.material.restitution == material.restitution &&
+                   b.material.staticFriction == material.staticFriction &&
+                   b.material.dynamicFriction == material.dynamicFriction &&
+                   b.GetCollisionCategoryBits() == category && b.GetCollisionMaskBits() == mask &&
+                   b.IsAwake() == awake && b.IsCcdEnabled() == ccd;
+        }
+    };
+    std::vector<Snapshot> stagingSnapshots;
+    if (strategy && bodies.size() == 2)
+        for (const auto &body : bodies) stagingSnapshots.emplace_back(*body);
+    if (strategy && strategy->stage(*this, deltaTime, integrationPlan)) {
+        const auto &p = integrationPlan;
+        const auto member = [&](RigidBody *b) {
+            return std::any_of(bodies.begin(), bodies.end(),
+                               [&](const RigidBodyPtr &owned) { return owned.get() == b; });
+        };
+        const auto finite = [](Vector2 v) { return std::isfinite(v.x) && std::isfinite(v.y); };
+        // Validate identity and the untouched staging snapshot before publication.
+        integratedPlan =
+            bodies.size() == 2 && stagingSnapshots.size() == 2 &&
+            stagingSnapshots[0].unchanged() && stagingSnapshots[1].unchanged() &&
+            joints.empty() && particleSystems.empty() &&
+            !simulationConfig.enableSleeping && !simulationConfig.enableLinearVelocityLimit &&
+            !simulationConfig.enableAngularVelocityLimit && simulationConfig.warmStartFactor == 0 &&
+            std::count_if(bodies.begin(), bodies.end(),
+                          [](const RigidBodyPtr &b) { return b->IsStatic(); }) == 1 &&
+            std::none_of(bodies.begin(), bodies.end(),
+                         [](const RigidBodyPtr &b) { return b->IsCcdEnabled(); }) &&
+            p.body && member(p.body) && p.body->GetId() == p.bodyId && !p.body->IsStatic() &&
+            p.body->IsAwake() && finite(p.position) && finite(p.velocity) &&
+            std::isfinite(p.orientation) && std::isfinite(p.angularVelocity) &&
+            p.body->position == p.startPosition && p.body->velocity == p.startVelocity &&
+            p.body->force == p.startForce && p.body->orientation == p.startOrientation &&
+            p.body->angularVelocity == p.startAngularVelocity && p.body->torque == p.startTorque &&
+            std::isfinite(p.body->inverseMass) && p.body->inverseMass > 0 &&
+            std::isfinite(p.body->inverseInertia) && p.body->inverseInertia > 0;
+        if (integratedPlan && p.closedContact) {
+            const auto &m = p.manifold;
+            integratedPlan = m.hasCollision && m.A && m.B && m.A != m.B && member(m.A) &&
+                             member(m.B) && (m.A == p.body || m.B == p.body) &&
+                             m.contactCount == 2 && p.reaction.contactCount == 2 &&
+                             finite(m.normal) && finite(m.contactPoint) && m.normal.magnitudeSquared() == 1 &&
+                             m.penetration == 0;
+            for (unsigned i = 0; i < 2 && integratedPlan; ++i) {
+                const auto &c = m.contacts[i];
+                const auto &j = p.reaction.contacts[i];
+                integratedPlan = finite(c.position) && c.penetration == 0 &&
+                                 c.featureId == j.featureId && std::isfinite(j.impulse.normal) &&
+                                 j.impulse.normal >= 0 && std::isfinite(j.impulse.tangent);
+            }
+            integratedPlan = integratedPlan && m.contacts[0].featureId != m.contacts[1].featureId;
+        }
+    }
+
     std::vector<Vector2> starts;
     const bool useCcd = deltaTime > 0 && std::any_of(bodies.begin(), bodies.end(),
         [](const RigidBodyPtr& body) { return body->IsCcdEnabled(); });
@@ -241,7 +323,15 @@ void World::step(float deltaTime) {
     for (RigidBodyPtr& body : bodies) {
         if (body->IsAwake()) {
             ++statistics.integratedBodyCount;
-            body->Integrate(deltaTime, simulationConfig);
+            if (integratedPlan && body.get() == integrationPlan.body) {
+                body->position = integrationPlan.position;
+                body->orientation = integrationPlan.orientation;
+                body->velocity = integrationPlan.velocity;
+                body->angularVelocity = integrationPlan.angularVelocity;
+                body->force = {};
+                body->torque = 0;
+            } else
+                body->Integrate(deltaTime, simulationConfig);
 
             body->orientation = std::remainder(body->orientation, 6.283185307179586f);
         }
@@ -253,6 +343,24 @@ void World::step(float deltaTime) {
     // Detect contacts once, then solve the prepared constraints in distinct
     // velocity and position phases.
     potentialCollisions = broadPhase->FindPotentialCollisions(bodies);
+    if (integratedPlan && integrationPlan.closedContact) {
+        const auto &m = integrationPlan.manifold;
+        const bool exists = std::any_of(
+            potentialCollisions.begin(), potentialCollisions.end(), [&](const CollisionPair &pair) {
+                return (pair.first.get() == m.A && pair.second.get() == m.B) ||
+                       (pair.first.get() == m.B && pair.second.get() == m.A);
+            });
+        if (!exists) {
+            RigidBodyPtr a, b;
+            for (const auto &body : bodies) {
+                if (body.get() == m.A)
+                    a = body;
+                if (body.get() == m.B)
+                    b = body;
+            }
+            potentialCollisions.emplace_back(a, b);
+        }
+    }
     statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(
         potentialCollisions.size()
     );
@@ -274,11 +382,15 @@ void World::step(float deltaTime) {
 
     std::vector<ContactConstraint> constraints;
     constraints.reserve(potentialCollisions.size());
-    for (const auto& pair : potentialCollisions) {
-        CollisionManifold manifold = CheckCollision(
-            pair.first.get(),
-            pair.second.get()
-        );
+    ContactConstraint *integratedConstraint = nullptr;
+    for (const auto &pair : potentialCollisions) {
+        const bool closed = integratedPlan && integrationPlan.closedContact &&
+                            ((pair.first.get() == integrationPlan.manifold.A &&
+                              pair.second.get() == integrationPlan.manifold.B) ||
+                             (pair.first.get() == integrationPlan.manifold.B &&
+                              pair.second.get() == integrationPlan.manifold.A));
+        CollisionManifold manifold =
+            closed ? integrationPlan.manifold : CheckCollision(pair.first.get(), pair.second.get());
         if (!manifold.hasCollision) {
             continue;
         }
@@ -292,7 +404,9 @@ void World::step(float deltaTime) {
         auto [contact, inserted] = contactCache.try_emplace(key);
         activeContacts.insert(key);
 
-        if (!inserted) {
+        if (closed)
+            contact->second = integrationPlan.reaction;
+        if (!inserted && !closed) {
             for (std::uint8_t i = 0;
                  i < contact->second.contactCount;
                  ++i) {
@@ -308,6 +422,7 @@ void World::step(float deltaTime) {
             contact->second,
             simulationConfig
         ));
+        if (closed) integratedConstraint = &constraints.back();
         PendingEvent event;
         event.phase = contactEvents.count(key) ? EventPhase::Persist : EventPhase::Begin;
         event.event = {key.first, key.second, manifold.normal, manifold.penetration,
@@ -321,7 +436,7 @@ void World::step(float deltaTime) {
 
     auto islands = buildIslands(constraints);
     statistics.islandCount = static_cast<std::uint32_t>(islands.size());
-    statistics.solverIterationCount = simulationConfig.solverIterations;
+    statistics.solverIterationCount = integratedPlan ? 0 : simulationConfig.solverIterations;
     for (auto& island : islands) {
         wakeIsland(island);
         if (!island.bodies.front()->IsAwake()) {
@@ -330,15 +445,21 @@ void World::step(float deltaTime) {
         }
         ++statistics.solvedIslandCount;
         statistics.solvedConstraintCount += static_cast<std::uint32_t>(island.contacts.size()+island.joints.size());
-        for (auto* constraint : island.contacts) CollisionResolver::WarmStart(*constraint);
-        for (int iter=0; iter<simulationConfig.solverIterations; ++iter) {
-            for (auto* constraint : island.contacts) CollisionResolver::SolveVelocity(*constraint);
+        for (auto* constraint : island.contacts)
+            if (constraint != integratedConstraint) CollisionResolver::WarmStart(*constraint);
+        const bool alreadySolved = integratedPlan && island.joints.empty() &&
+            std::all_of(island.contacts.begin(), island.contacts.end(),
+                        [&](const ContactConstraint *c) { return c == integratedConstraint; });
+        for (int iter=0; !alreadySolved && iter<simulationConfig.solverIterations; ++iter) {
+            for (auto* constraint : island.contacts)
+                if (constraint != integratedConstraint) CollisionResolver::SolveVelocity(*constraint);
             for (const auto& joint : island.joints) joint->solveVelocity();
         }
-        for (int iter=0; iter<simulationConfig.solverIterations; ++iter) {
+        for (int iter=0; !alreadySolved && iter<simulationConfig.solverIterations; ++iter) {
             bool solved = true;
             for (auto* constraint : island.contacts)
-                solved = CollisionResolver::SolvePosition(*constraint) && solved;
+                if (constraint != integratedConstraint)
+                    solved = CollisionResolver::SolvePosition(*constraint) && solved;
             for (const auto& joint : island.joints)
                 solved = joint->solvePosition(simulationConfig.penetrationSlop,
                     simulationConfig.maxPositionCorrection) && solved;
@@ -401,6 +522,7 @@ void World::step(float deltaTime) {
         }
     }
     dispatchEvents();
+    return integratedPlan;
 }
 
 std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& starts,
