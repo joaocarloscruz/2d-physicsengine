@@ -10,8 +10,44 @@
 #include "physics/core/shape.h"
 
 #include <cmath>
+#include <limits>
 
 using namespace PhysicsEngine;
+
+TEST_CASE("Collision dispatch ignores unsupported signed shape tags", "[collision][validation]") {
+    class TaggedShape final : public Shape {
+    public:
+        explicit TaggedShape(ShapeType tag) : Shape(tag) {}
+        float GetArea() const override { return 1; }
+        float GetInertia(float) const override { return 1; }
+        std::unique_ptr<Shape> Clone() const override { return std::make_unique<TaggedShape>(*this); }
+    };
+    RigidBody circle(Circle(1), Material{});
+    RigidBody polygon(Polygon::MakeBox(2, 2), Material{});
+    for (int tag : {-1, std::numeric_limits<int>::min(), static_cast<int>(ShapeType::COUNT),
+                    std::numeric_limits<int>::max()}) {
+        RigidBody unsupported(TaggedShape(static_cast<ShapeType>(tag)), Material{});
+        unsupported.ApplyForce({2, -3});
+        unsupported.SetVelocity({4, 5});
+        for (auto* peer : {&circle, &polygon}) {
+            for (bool reverse : {false, true}) {
+                const auto result = reverse ? CheckCollision(peer, &unsupported)
+                                            : CheckCollision(&unsupported, peer);
+                REQUIRE_FALSE(result.hasCollision);
+                REQUIRE(result.contactCount == 0);
+                REQUIRE(unsupported.position == Vector2{});
+                REQUIRE(unsupported.velocity == Vector2{4, 5});
+                REQUIRE(unsupported.force == Vector2{2, -3});
+                REQUIRE(peer->position == Vector2{});
+                REQUIRE(peer->velocity == Vector2{});
+                REQUIRE(peer->force == Vector2{});
+            }
+        }
+    }
+    // The neighboring valid dispatch entries still resolve their overlaps.
+    REQUIRE(CheckCollision(&circle, &polygon).hasCollision);
+    REQUIRE(CheckCollision(&polygon, &circle).hasCollision);
+}
 
 TEST_CASE("Concentric circles report their full overlap", "[collision][property]") {
     Circle firstShape(2.0f);

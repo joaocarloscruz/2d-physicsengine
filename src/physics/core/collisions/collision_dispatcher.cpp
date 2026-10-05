@@ -39,7 +39,9 @@ namespace PhysicsEngine {
         int typeA = static_cast<int>(a->shape->type);
         int typeB = static_cast<int>(b->shape->type);
 
-        if (typeA >= SHAPE_COUNT || typeB >= SHAPE_COUNT) {
+        // Custom Shape implementations may carry an unsupported signed tag.
+        // Bound both indices before using them to access the dispatch table.
+        if (typeA < 0 || typeA >= SHAPE_COUNT || typeB < 0 || typeB >= SHAPE_COUNT) {
             return {};
         }
 
