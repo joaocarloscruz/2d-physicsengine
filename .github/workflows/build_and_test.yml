@@ -222,7 +222,9 @@ jobs:
   sanitizers:
     name: Address and undefined behavior sanitizers
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The full numerical suite takes about 14 minutes with both sanitizers.
+    # Retain every physical case while allowing bounded runner-speed variation.
+    timeout-minutes: 20
     env:
       ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
