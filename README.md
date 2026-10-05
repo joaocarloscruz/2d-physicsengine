@@ -12,6 +12,8 @@ charged particles, gravity, membrane and elastic waves, periodic projection/visc
 scalar transport, ideal-gas flow, static electrostatics, lossless and Ohmic Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
+Ideal-gas stepping offers the same first-order default and explicit second-order
+method in native and browser APIs, with measured refinement and bounded retries.
 Version 0.2 adds owned shapes, collision lifecycle events, swept circle collisions,
 distance, revolute and prismatic joints with drives and stops, simulation islands,
 optional sleeping, a DFSPH solver, deformable networks, and CSV/JSON exports.
