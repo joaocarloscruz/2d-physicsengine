@@ -151,3 +151,6 @@ Source shape lifetime management is no longer necessary. Default `Material{}` is
 now valid. Null registrations and non-finite state setters now throw consistently.
 
 Prismatic slider joints: see [prismatic-joints.md](prismatic-joints.md); public header `physics/core/prismatic_joint.h`.
+
+Native periodic incompressible timestep: `physics/core/fluids/periodic_incompressible_grid.h`;
+see [layout, conservative fluxes, clocks, budgets and energy accounting](periodic-incompressible-flow.md).

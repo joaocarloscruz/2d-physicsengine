@@ -55,6 +55,14 @@ int main() {
     PhysicsEngine::PeriodicMacGridConfig macConfig;
     macConfig.columns=2; macConfig.rows=2; macConfig.spacingX=.25; macConfig.spacingY=.5;
     PhysicsEngine::PeriodicMacGrid mac(macConfig);
+    PhysicsEngine::PeriodicIncompressibleGridConfig incompressibleConfig;
+    incompressibleConfig.geometry=macConfig; incompressibleConfig.kinematicViscosity=.1;
+    PhysicsEngine::PeriodicIncompressibleGrid incompressible(incompressibleConfig);
+    auto uniformFlow=incompressible.velocities(); uniformFlow.xFaces.assign(4,.7); uniformFlow.yFaces.assign(4,-.2);
+    incompressible.setVelocities(uniformFlow); const auto flowStep=incompressible.step(.01);
+    if(incompressible.velocities().xFaces!=uniformFlow.xFaces||incompressible.time()!=.01
+        ||flowStep.substeps!=1||flowStep.storageEnergyError!=0
+        ||incompressible.lastProjection().diagnostics.timeStep!=.01) return 1;
     PhysicsEngine::MaxwellGridConfig maxwellConfig;
     maxwellConfig.columns=2; maxwellConfig.rows=2;
     PhysicsEngine::MaxwellGrid maxwell(maxwellConfig);

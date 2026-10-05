@@ -59,6 +59,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/fluid_particle.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_mac_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_mac_diffusion.cpp
+    ${PHYSICS_SRC_DIR}/core/fluids/periodic_incompressible_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_scalar_transport.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_euler_gas_grid.cpp
     ${PHYSICS_SRC_DIR}/core/fluids/periodic_euler_gas_second_order.cpp
@@ -130,6 +131,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(mac_projection_demo PRIVATE PhysicsEngine::Engine)
         add_executable(mac_diffusion_demo examples/mac_diffusion_demo.cpp)
         target_link_libraries(mac_diffusion_demo PRIVATE PhysicsEngine::Engine)
+        add_executable(incompressible_flow_demo examples/incompressible_flow_demo.cpp)
+        target_link_libraries(incompressible_flow_demo PRIVATE PhysicsEngine::Engine)
         add_executable(scalar_transport_demo examples/scalar_transport_demo.cpp)
         target_link_libraries(scalar_transport_demo PRIVATE PhysicsEngine::Engine)
         add_executable(maxwell_ohmic_demo examples/maxwell_ohmic_demo.cpp)
@@ -151,6 +154,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME wave_membrane_smoke COMMAND wave_membrane_demo)
             add_test(NAME mac_projection_smoke COMMAND mac_projection_demo)
             add_test(NAME mac_diffusion_smoke COMMAND mac_diffusion_demo)
+            add_test(NAME incompressible_flow_smoke COMMAND incompressible_flow_demo)
             add_test(NAME scalar_transport_smoke COMMAND scalar_transport_demo)
             add_test(NAME euler_gas_smoke COMMAND euler_gas_demo)
             add_test(NAME euler_gas_second_order_smoke COMMAND euler_gas_second_order_demo)
@@ -293,6 +297,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_planar_reflected_operator.cpp
         ${TESTS_SRC_DIR}/test_periodic_mac_grid.cpp
         ${TESTS_SRC_DIR}/test_mac_diffusion.cpp
+        ${TESTS_SRC_DIR}/test_incompressible_flow.cpp
         ${TESTS_SRC_DIR}/test_scalar_transport.cpp
         ${TESTS_SRC_DIR}/test_euler_gas_grid.cpp
         ${TESTS_SRC_DIR}/test_euler_gas_second_order.cpp
