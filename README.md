@@ -3,7 +3,8 @@
 A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
-viscosity, conservative scalar transport, periodic ideal-gas flow, neutral periodic electrostatics,
+viscosity, complete periodic incompressible flow, conservative scalar transport,
+periodic ideal-gas flow, neutral periodic electrostatics,
 periodic TMz electromagnetic fields with optional Ohmic evolution,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
@@ -88,6 +89,11 @@ claim of superiority across all fluid scenes.
 then prints energy, strain and substep diagnostics. It requires no renderer.
 
 `thermal_network_demo` reports conduction and reservoir energy accounting.
+`incompressible_flow_demo` advances a periodic Taylor–Green vortex with conservative
+momentum advection, implicit viscosity and pressure projection, reporting separate
+numerical diffusion, viscous work and projection residuals. The native
+[incompressible flow model](docs/periodic-incompressible-flow.md) documents its
+first-order accuracy, shared work limits and transactional state.
 `euler_gas_demo` evolves periodic ideal-gas cell averages and reports positivity,
 CFL, counted work and mass/momentum/total-energy conservation diagnostics. Its
 first-order Rusanov scheme and range limits are described in
@@ -136,6 +142,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Conservative periodic scalar transport](docs/periodic-scalar-transport.md)
 - [Periodic MAC projection and pressure diagnostics](docs/periodic-mac-projection.md)
 - [Periodic MAC viscosity and dissipation](docs/periodic-mac-diffusion.md)
+- [Complete periodic incompressible flow](docs/periodic-incompressible-flow.md)
 - [Periodic homogeneous TMz electromagnetic fields](docs/maxwell-grids.md)
 - [Homogeneous Ohmic evolution and Joule energy accounting](docs/maxwell-ohmic.md)
 - [Neutral periodic electrostatic potential and fields](docs/periodic-electrostatic-grids.md)
