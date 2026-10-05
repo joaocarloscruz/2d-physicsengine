@@ -44,7 +44,9 @@ the experimental [planar reflected-source operator](planar-reflected-experiment.
 remains a diagnostic prototype with documented consistency limits.
 The [bounded planar contact interval](planar-contact-interval.md) experiment
 resolves stopping and restart times for eligible prescribed-plane inputs;
-it has no World bridge and does not resolve production stack regressions.
+its [World pipeline experiment](planar-contact-world.md) stages endpoints and
+integrated reactions with consistent cache/events for one eligible box/support
+pair. Ordinary World behavior is unchanged; production stack regressions remain.
 
 ## Reproduce and extend
 

@@ -157,6 +157,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Sampled-wall force and pressure-work audit](docs/fluid-wall-audit.md)
 - [Opt-in signed wall-pressure extrapolation](docs/wall-pressure-modes.md)
 - [Experimental planar reflection and its measured limits](docs/planar-reflected-experiment.md)
+- [Experimental planar contact through the World pipeline](docs/planar-contact-world.md)
 - [WCSPH and boundaries](docs/wcsph-solver.md)
 - [Fluid–rigid coupling](docs/fluid-rigid-coupling.md)
 

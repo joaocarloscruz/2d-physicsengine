@@ -3,11 +3,12 @@
 `benchmarks/experimental/planar_contact_interval.h` is a standalone diagnostic
 operator for a nonrotating body under one constant load on one fixed infinite
 plane. It does not replace `World`, contact resolution, integration or public
-configuration, and is not installed. There is no World/benchmark matrix bridge
-in this change. Dynamic contact graphs, stacks, moving supports, joints, CCD,
-sleeping, events, force registration and load consumption retain production
-behavior because this operator is never called by production. **Stacks are not
-fixed.** All nine #44 expected failures and their thresholds remain.
+configuration, and is not installed. A separate
+[complete World pipeline experiment](planar-contact-world.md) now stages this
+operator before integration for one eligible box and fixed support. Ordinary
+`World::step` retains its existing behavior. Dynamic contact graphs, stacks,
+moving supports, joints, CCD and sleeping remain outside the experiment.
+**Stacks are not fixed.** All nine #44 expected failures and thresholds remain.
 
 This addresses a narrower failure of the previous
 [frozen projection experiment](contact-load-integration.md): integrating only the
@@ -46,7 +47,7 @@ initial state. A tangent touch with zero discriminant is a free trajectory,
 without a fabricated impulse. Extreme near-grazing classification is limited by
 double arithmetic; this is not a CCD replacement.
 
-Any eventual World bridge must delegate the **entire** step on `NeedsImpact`,
+The World experiment delegates the **entire** step on `NeedsImpact`,
 unsupported wrench, dynamic-dynamic contact components or excluded lifecycle
 features. It must not publish a partial interval and then call ordinary `step`:
 that would duplicate loads, change event timing and confuse the impulse budget.
