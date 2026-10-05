@@ -9,10 +9,10 @@ expose the same native solver and budgets. It is a bounded initial Euler model;
 it does not resolve the separate SPH validation failures.
 
 `step()` retains this first-order model and its measured baseline. The explicit
-native [`stepSecondOrder()` option](periodic-euler-second-order.md) adds conserved
+native and browser [`stepSecondOrder()` option](periodic-euler-second-order.md) adds conserved
 reconstruction and SSPRK2 with a separate, stricter positivity CFL and bounded
 stage retries. The sections below describe the unchanged first-order method.
-The browser Euler binding remains first-order-only.
+The browser binding preserves both native method and historical observer names.
 
 ## Model, geometry and ownership
 

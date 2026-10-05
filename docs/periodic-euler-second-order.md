@@ -6,9 +6,9 @@ geometry, units, strict admissible stored state and owning snapshots described
 in [the first-order documentation](periodic-euler-gas.md). `step()` remains the
 first-order default, with unchanged update arithmetic and regression inputs.
 There are no additional material models, walls, sources, viscosity or World
-coupling. This second-order option is native-only; the browser Euler binding
-retains first-order `step()` and exposes neither `stepSecondOrder()` nor its
-historical observer. Higher order describes smooth resolved solutions;
+coupling. The browser binding also exposes `stepSecondOrder(duration[, options])`
+and `lastSecondOrderStep()`, while retaining first-order `step()` as the default.
+Higher order describes smooth resolved solutions;
 it does not imply second-order accuracy at shocks or clipped extrema.
 
 ## Reconstruction and invariant domain
@@ -202,3 +202,79 @@ options.maximumAttempts = 10000;
 const auto record = gas.stepSecondOrder(.05, options);
 const auto copied = gas.lastSecondOrderStep();
 ```
+
+## Owned browser API and bounded validation
+
+The same grid exposes both methods in JavaScript. `stepSecondOrder(duration)`
+uses native defaults; an explicit options object must supply all six fields:
+
+```javascript
+const gas = new physics.PeriodicEulerGasGrid({
+    columns: 64, rows: 32, spacingX: 1 / 64, spacingY: 1 / 32, gamma: 1.4
+});
+let retained;
+try {
+    const report = gas.stepSecondOrder(.05, {
+        cflSafety: .9, maxSubstep: .1,
+        maximumSubsteps: 10000, maximumCellVisits: 100000000,
+        maximumAttempts: 20000, maximumRetriesPerSubstep: 16
+    });
+    retained = {state: gas.state(), report, history: gas.lastSecondOrderStep()};
+} finally {
+    gas.delete();
+}
+console.log(retained.report.final.mass); // Plain owned values survive deletion.
+```
+
+The four count fields arrive as doubles and must be finite exact nonnegative
+integers within the native hard limits before integer conversion. Missing fields,
+fractions, infinities, NaN and wrapped-sized values reject. `cflSafety` must be
+finite and strictly between zero and one; `maxSubstep` must be positive/finite.
+All base and extended diagnostic fields and both nested summaries are copied.
+`lastStep()` publishes the most recent base report from either stepping method;
+`lastSecondOrderStep()` preserves its history across first-order calls and
+`setState()`. A successful second-order zero step publishes fresh records in
+both observers, including `minimumSlopeScale=1`, with exactly 3N charged visits.
+
+The shared [Wasm exception boundary](wasm-exception-boundary.md) finishes numeric
+and options conversions before borrowing the native receiver. Throwing getters,
+proxies and coercions preserve their original JavaScript thrown value. Receiver
+deletion and nested calls are covered by the lifetime tests; rejected calls
+preserve fields, clock and both records, except for explicit changes performed
+by the callback itself. Output snapshots hold no borrowed Wasm memory.
+
+`examples/wasm-smoke/euler-second-order-tests.cjs` is included in the existing
+Node smoke and boundary-stress entry points. Its raw physical MC/Rusanov SSPRK2
+oracle checks anisotropic grids, both axes, two-cell layouts and clipped extrema.
+Identical inputs compare first-order and second-order smooth contact/simple-wave
+cell averages at 32/64/128 columns; the second-order errors match the first three
+spatial entries above. Nonlinear simple waves are checked on both axes. A padded
+cubic and separately refined independent semidiscrete RK4 oracle resolve temporal
+errors and report their distinct continuum spatial defects. These are smooth
+accuracy checks; they do not claim second-order shock or extremum accuracy.
+
+Cold compression checks strict positive stored states and common-theta fallback
+at gamma=1.01,1.4,3,20 and physical scales 1e-150,1,1e150. The actual stage-CFL
+Sod retry fixture reproduces 53 attempts, 29 accepted substeps, 24 rejections and
+86912 visits; exact-limit replay and one-less work/attempt/substep budgets audit
+late rollback. Clock stagnation/overflow and stored compression range failures
+also retain the full prior publication. Probe builds compare exact live native
+heap, stack, uncaught-exception and emval counts across physical smoke and 1000
+stress batches. Production builds run the same physical suite and expose no test
+helpers. The bounded 32/64/128 browser refinements fit the existing 25-minute CI
+profiles; local results alone do not establish a hosted pass.
+
+Local 2026-10-05 validation used Emscripten 6.0.3, Node 22.16.0 and at most two
+build workers on Windows. Full optimized smoke/stress took 43/11 seconds;
+ASan/UBSan Debug `-O1` smoke/stress took 554/175 seconds with
+`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. Production Release smoke took
+50 seconds and its exported helper list was empty. The second-order physical
+smoke and 1000 stress batches kept their exact per-build native heap/stack and
+uncaught/emval counts; both uncaught and emval were zero. Native heap sizes and
+stack addresses differ by build and live caller context, so each check compares
+the same build and context before/after rather than comparing addresses between
+profiles. The production module performs the physical checks without test-only
+counters. Reproduce through `node build-wasm/wasm/smoke-test.cjs` and, with probes
+ON, `node build-wasm/wasm/boundary-stress.cjs` after the shared
+[Wasm build configuration](webassembly.md#build-and-verify).

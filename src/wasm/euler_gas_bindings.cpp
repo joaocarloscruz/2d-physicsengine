@@ -13,6 +13,10 @@ struct EulerConfig {
 struct EulerOptions {
     double cflSafety, maxSubstep, maximumSubsteps, maximumCellVisits;
 };
+struct EulerSecondOptions {
+    double cflSafety, maxSubstep, maximumSubsteps, maximumCellVisits;
+    double maximumAttempts, maximumRetriesPerSubstep;
+};
 struct EulerState {
     emscripten::val density, momentumX, momentumY, totalEnergy;
 };
@@ -33,6 +37,16 @@ EulerGasStepConfig Native(EulerOptions c) {
     return {c.cflSafety, c.maxSubstep,
             BoundedCount(c.maximumSubsteps, 0, EulerGasStepConfig::MaximumSubsteps),
             BoundedCount(c.maximumCellVisits, 0, EulerGasStepConfig::MaximumCellVisits)};
+}
+EulerGasSecondOrderConfig Native(EulerSecondOptions c) {
+    EulerGasSecondOrderConfig result;
+    static_cast<EulerGasStepConfig &>(result) =
+        Native(EulerOptions{c.cflSafety, c.maxSubstep, c.maximumSubsteps, c.maximumCellVisits});
+    result.maximumAttempts =
+        BoundedCount(c.maximumAttempts, 0, EulerGasSecondOrderConfig::MaximumAttempts);
+    result.maximumRetriesPerSubstep = BoundedCount(
+        c.maximumRetriesPerSubstep, 0, EulerGasSecondOrderConfig::MaximumRetriesPerSubstep);
+    return result;
 }
 PeriodicEulerGasGrid *CreateDefault() { return new PeriodicEulerGasGrid(); }
 PeriodicEulerGasGrid *CreateConfigured(EulerConfig c) {
@@ -89,6 +103,29 @@ void SetState(PeriodicEulerGasGrid &grid, const EulerState &state) {
         }
     grid.setState(staged);
 }
+template <class Diagnostic>
+emscripten::value_object<Diagnostic> &BaseReportFields(emscripten::value_object<Diagnostic> &report) {
+    return report.field("initial", &EulerGasDiagnostics::initial)
+        .field("final", &EulerGasDiagnostics::final)
+        .field("massDefect", &EulerGasDiagnostics::massDefect)
+        .field("momentumXDefect", &EulerGasDiagnostics::momentumXDefect)
+        .field("momentumYDefect", &EulerGasDiagnostics::momentumYDefect)
+        .field("totalEnergyDefect", &EulerGasDiagnostics::totalEnergyDefect)
+        .field("massRoundoffAllowance", &EulerGasDiagnostics::massRoundoffAllowance)
+        .field("momentumXRoundoffAllowance", &EulerGasDiagnostics::momentumXRoundoffAllowance)
+        .field("momentumYRoundoffAllowance", &EulerGasDiagnostics::momentumYRoundoffAllowance)
+        .field("totalEnergyRoundoffAllowance", &EulerGasDiagnostics::totalEnergyRoundoffAllowance)
+        .field("duration", &EulerGasDiagnostics::duration)
+        .field("timeBefore", &EulerGasDiagnostics::timeBefore)
+        .field("timeAfter", &EulerGasDiagnostics::timeAfter)
+        .field("lastSubstep", &EulerGasDiagnostics::lastSubstep)
+        .field("maximumSignalSpeedX", &EulerGasDiagnostics::maximumSignalSpeedX)
+        .field("maximumSignalSpeedY", &EulerGasDiagnostics::maximumSignalSpeedY)
+        .field("maximumCfl", &EulerGasDiagnostics::maximumCfl)
+        .field("substeps", &EulerGasDiagnostics::substeps)
+        .field("cellVisits", &EulerGasDiagnostics::cellVisits)
+        .field("zeroDurationNoOp", &EulerGasDiagnostics::zeroDurationNoOp);
+}
 } // namespace
 } // namespace PhysicsEngine::Wasm
 
@@ -107,6 +144,13 @@ EMSCRIPTEN_BINDINGS(periodic_euler_gas_grid) {
         .field("maxSubstep", &EulerOptions::maxSubstep)
         .field("maximumSubsteps", &EulerOptions::maximumSubsteps)
         .field("maximumCellVisits", &EulerOptions::maximumCellVisits);
+    value_object<EulerSecondOptions>("EulerGasSecondOrderConfig")
+        .field("cflSafety", &EulerSecondOptions::cflSafety)
+        .field("maxSubstep", &EulerSecondOptions::maxSubstep)
+        .field("maximumSubsteps", &EulerSecondOptions::maximumSubsteps)
+        .field("maximumCellVisits", &EulerSecondOptions::maximumCellVisits)
+        .field("maximumAttempts", &EulerSecondOptions::maximumAttempts)
+        .field("maximumRetriesPerSubstep", &EulerSecondOptions::maximumRetriesPerSubstep);
     value_object<EulerState>("EulerGasState")
         .field("density", &EulerState::density)
         .field("momentumX", &EulerState::momentumX)
@@ -131,27 +175,23 @@ EMSCRIPTEN_BINDINGS(periodic_euler_gas_grid) {
         .field("maximumDensity", &EulerGasSummary::maximumDensity)
         .field("minimumPressure", &EulerGasSummary::minimumPressure)
         .field("maximumPressure", &EulerGasSummary::maximumPressure);
-    value_object<EulerGasDiagnostics>("EulerGasDiagnostics")
-        .field("initial", &EulerGasDiagnostics::initial)
-        .field("final", &EulerGasDiagnostics::final)
-        .field("massDefect", &EulerGasDiagnostics::massDefect)
-        .field("momentumXDefect", &EulerGasDiagnostics::momentumXDefect)
-        .field("momentumYDefect", &EulerGasDiagnostics::momentumYDefect)
-        .field("totalEnergyDefect", &EulerGasDiagnostics::totalEnergyDefect)
-        .field("massRoundoffAllowance", &EulerGasDiagnostics::massRoundoffAllowance)
-        .field("momentumXRoundoffAllowance", &EulerGasDiagnostics::momentumXRoundoffAllowance)
-        .field("momentumYRoundoffAllowance", &EulerGasDiagnostics::momentumYRoundoffAllowance)
-        .field("totalEnergyRoundoffAllowance", &EulerGasDiagnostics::totalEnergyRoundoffAllowance)
-        .field("duration", &EulerGasDiagnostics::duration)
-        .field("timeBefore", &EulerGasDiagnostics::timeBefore)
-        .field("timeAfter", &EulerGasDiagnostics::timeAfter)
-        .field("lastSubstep", &EulerGasDiagnostics::lastSubstep)
-        .field("maximumSignalSpeedX", &EulerGasDiagnostics::maximumSignalSpeedX)
-        .field("maximumSignalSpeedY", &EulerGasDiagnostics::maximumSignalSpeedY)
-        .field("maximumCfl", &EulerGasDiagnostics::maximumCfl)
-        .field("substeps", &EulerGasDiagnostics::substeps)
-        .field("cellVisits", &EulerGasDiagnostics::cellVisits)
-        .field("zeroDurationNoOp", &EulerGasDiagnostics::zeroDurationNoOp);
+    value_object<EulerGasDiagnostics> baseReport("EulerGasDiagnostics");
+    BaseReportFields(baseReport);
+    value_object<EulerGasSecondOrderDiagnostics> highReport("EulerGasSecondOrderDiagnostics");
+    BaseReportFields(highReport)
+        .field("attempts", &EulerGasSecondOrderDiagnostics::attempts)
+        .field("rejectedAttempts", &EulerGasSecondOrderDiagnostics::rejectedAttempts)
+        .field("reconstructionPreparations",
+               &EulerGasSecondOrderDiagnostics::reconstructionPreparations)
+        .field("reconstructionTrials", &EulerGasSecondOrderDiagnostics::reconstructionTrials)
+        .field("limitedSlopeCells", &EulerGasSecondOrderDiagnostics::limitedSlopeCells)
+        .field("positivityLimitedCells", &EulerGasSecondOrderDiagnostics::positivityLimitedCells)
+        .field("rangeLimitedCells", &EulerGasSecondOrderDiagnostics::rangeLimitedCells)
+        .field("zeroSlopeFallbackCells", &EulerGasSecondOrderDiagnostics::zeroSlopeFallbackCells)
+        .field("forwardEulerStages", &EulerGasSecondOrderDiagnostics::forwardEulerStages)
+        .field("blendPasses", &EulerGasSecondOrderDiagnostics::blendPasses)
+        .field("minimumSlopeScale", &EulerGasSecondOrderDiagnostics::minimumSlopeScale)
+        .field("maximumRejectedCfl", &EulerGasSecondOrderDiagnostics::maximumRejectedCfl);
     class_<PeriodicEulerGasGrid>("PeriodicEulerGasGrid")
         .constructor(&CreateDefault, allow_raw_pointers())
         .constructor(&CreateConfigured, allow_raw_pointers())
@@ -159,6 +199,7 @@ EMSCRIPTEN_BINDINGS(periodic_euler_gas_grid) {
         .function("state", &State)
         .function("primitives", &Primitives)
         .function("lastStep", &PeriodicEulerGasGrid::lastStep)
+        .function("lastSecondOrderStep", &PeriodicEulerGasGrid::lastSecondOrderStep)
         .function("time", &PeriodicEulerGasGrid::time)
         .function("setState", &SetState)
         .function("step", optional_override([](PeriodicEulerGasGrid &grid, double duration) {
@@ -167,5 +208,12 @@ EMSCRIPTEN_BINDINGS(periodic_euler_gas_grid) {
         .function("step", optional_override([](PeriodicEulerGasGrid &grid, double duration,
                                                EulerOptions options) {
                       return grid.step(duration, Native(options));
+                  }))
+        .function("stepSecondOrder", optional_override([](PeriodicEulerGasGrid &grid, double duration) {
+                      return grid.stepSecondOrder(duration);
+                  }))
+        .function("stepSecondOrder", optional_override([](PeriodicEulerGasGrid &grid, double duration,
+                                                          EulerSecondOptions options) {
+                      return grid.stepSecondOrder(duration, Native(options));
                   }));
 }

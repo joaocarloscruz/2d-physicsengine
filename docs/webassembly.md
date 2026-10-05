@@ -15,9 +15,11 @@ and copied hit geometry. See [query arguments, filtering and object cleanup](spa
 ## Owned periodic ideal-gas Euler grids
 
 `PeriodicEulerGasGrid` evolves periodic cell averages of density, two momentum
-densities and total energy density. It uses the native first-order Rusanov
+densities and total energy density. `step()` uses the native first-order Rusanov
 scheme, including its numerical diffusion and strict multidimensional CFL
-bound. It models one homogeneous ideal gas; there is no viscosity, reaction,
+bound. The explicit `stepSecondOrder()` option adds conserved MC reconstruction
+and SSPRK2 with a stricter bound at each stage. It models one homogeneous ideal
+gas; there is no viscosity, reaction,
 multiphase flow, rigid wall, or automatic thermal/World coupling. See the
 [native equations, units, positivity conditions and range limits](periodic-euler-gas.md).
 
@@ -81,6 +83,56 @@ primitives and reports remain valid after deletion. The Node suite independently
 checks convex flux splitting, anisotropic/two-cell grids, exact translating
 contact cell averages, nonlinear simple waves on both axes, Sod Riemann averages, refinement, conservation,
 positivity, budget/range/clock rollback, deterministic replay and lifetime stress.
+
+`stepSecondOrder(duration)` uses six defaults; its configured overload requires
+the complete object below. Its duration and geometry rules are the same as
+`step()`, and its native work accounting includes every rejected stage attempt.
+
+```javascript
+const gas2 = new physics.PeriodicEulerGasGrid();
+try {
+    const report = gas2.stepSecondOrder(0.05, {
+        cflSafety: 0.9, maxSubstep: 0.1,
+        maximumSubsteps: 10000, maximumCellVisits: 100000000,
+        maximumAttempts: 20000, maximumRetriesPerSubstep: 16
+    });
+    const history = gas2.lastSecondOrderStep(); // Owning copy, including summaries.
+    console.log(report.substeps, history.attempts);
+} finally {
+    gas2.delete();
+}
+```
+
+The four counts are finite exact nonnegative integers checked as doubles before
+conversion. `maximumAttempts` has hard maximum 1000000 and counts every initial
+candidate and retry; `maximumRetriesPerSubstep` has hard maximum 64 and counts
+discarded stage-CFL candidates before acceptance. The sufficient positivity
+bound is `2*h*(alphaX/dx+alphaY/dy) <= cflSafety < 1` at both reconstructed stages.
+Only a stage-CFL failure retries, with bounded work; arithmetic or stored-state
+failures reject the whole duration. There are no floors or energy repairs.
+
+The returned owning `EulerGasSecondOrderDiagnostics` includes every base field
+plus `attempts`, `rejectedAttempts`, `reconstructionPreparations`,
+`reconstructionTrials`, `limitedSlopeCells`, `positivityLimitedCells`,
+`rangeLimitedCells`, `zeroSlopeFallbackCells`, `forwardEulerStages`, `blendPasses`,
+`minimumSlopeScale` and `maximumRejectedCfl`. `lastStep()` holds the base report
+of either method; `lastSecondOrderStep()` holds the most recent second-order
+record across `setState()` and first-order calls. Initially the second-order
+record is zero with `minimumSlopeScale=1`. A successful `stepSecondOrder(0)`
+publishes fresh records in both observers and charges exactly 3N visits, even
+with zero substep/attempt/retry budgets. A failure preserves both records,
+fields and clock, including failures after accepted unpublished substeps.
+
+The independent browser second-order suite checks physical MC/Rusanov SSPRK2,
+axis exchange/two-cell grids/extrema, identical-input 32/64/128 contact and
+nonlinear simple-wave refinements, padded-cubic and independently refined RK4
+temporal oracles, cold positivity/fallback, actual stage retries, exact work,
+late rollback, clock/range, owning history and all direct duration/options
+getter/valueOf deletion paths. Probe-enabled physical smoke and 1000 stress
+batches compare exact heap/stack/uncaught/emval counts; the production profile
+also checks helper absence. Smooth higher order does not imply second-order
+accuracy at shocks or clipped extrema. See [the second-order physical, resource,
+range and reproduction contract](periodic-euler-second-order.md).
 
 ## Owned periodic electrostatic grids
 

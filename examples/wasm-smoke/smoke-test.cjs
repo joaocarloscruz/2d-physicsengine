@@ -967,6 +967,7 @@ async function main() {
     require("./elastic-wave-tests.cjs").smoke(physics);
     require("./electrostatic-tests.cjs").smoke(physics);
     require("./euler-gas-tests.cjs").smoke(physics);
+    require("./euler-second-order-tests.cjs").smoke(physics);
     testQueries(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
