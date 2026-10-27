@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <numeric>
+#include <limits>
+#include <tuple>
 
 namespace PhysicsEngine {
 
@@ -184,6 +186,54 @@ void World::step() {
 }
 
 void World::step(float deltaTime) { stepInternal(deltaTime, nullptr); }
+
+namespace {
+// Treat each solved contact impulse as a constant force over the step. The
+// integrator has already moved bodies with their pre-contact constant load, so
+// the matching displacement is half of the impulse's velocity change times dt.
+// Linear displacement uses only the tangential impulse; rotation uses the full
+// contact wrench so normal and friction torques stay balanced. Equal and
+// opposite pair terms leave the center of mass on its momentum trajectory.
+void ApplyContactDisplacement(const std::vector<ContactConstraint*>& contacts,
+    const ContactConstraint* skipConstraint, float deltaTime,
+    const std::unordered_set<const RigidBody*>& skipBodies) {
+    struct Delta { double x = 0, y = 0, angle = 0; };
+    std::vector<std::pair<RigidBody*, Delta>> deltas;
+    const auto delta = [&](RigidBody* body) -> Delta& {
+        for (auto& entry : deltas) if (entry.first == body) return entry.second;
+        return deltas.emplace_back(body, Delta{}).second;
+    };
+    const double half = 0.5 * double(deltaTime);
+    for (const auto* c : contacts) {
+        if (c == skipConstraint) continue;
+        for (std::uint8_t i = 0; i < c->pointCount; ++i) {
+            const auto& p = c->points[i];
+            const double px = double(c->normal.x) * p.impulse.normal + double(c->tangent.x) * p.impulse.tangent;
+            const double py = double(c->normal.y) * p.impulse.normal + double(c->tangent.y) * p.impulse.tangent;
+            // Normal settling stays with penetration slop and position correction.
+            const double tx = double(c->tangent.x) * p.impulse.tangent, ty = double(c->tangent.y) * p.impulse.tangent;
+            for (const auto& [body, anchor, sign] : {std::tuple<RigidBody*, Vector2, double>{c->bodyA, p.localAnchorA, -1.0},
+                                                     {c->bodyB, p.localAnchorB, 1.0}}) {
+                if (body->IsStatic() || skipBodies.count(body)) continue;
+                const double cosine = std::cos(double(body->orientation)), sine = std::sin(double(body->orientation));
+                const double rx = cosine * anchor.x - sine * anchor.y, ry = sine * anchor.x + cosine * anchor.y;
+                auto& d = delta(body);
+                d.x += sign * half * body->inverseMass * tx;
+                d.y += sign * half * body->inverseMass * ty;
+                d.angle += sign * half * body->inverseInertia * (rx * py - ry * px);
+            }
+        }
+    }
+    for (const auto& [body, d] : deltas) {
+        const double x = body->position.x + d.x, y = body->position.y + d.y, angle = body->orientation + d.angle;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(angle)
+            || std::abs(x) > std::numeric_limits<float>::max() || std::abs(y) > std::numeric_limits<float>::max())
+            throw std::overflow_error("Contact displacement exceeds finite float range.");
+        body->position = {static_cast<float>(x), static_cast<float>(y)};
+        body->orientation = static_cast<float>(angle);
+    }
+}
+}
 
 bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy) {
     if (stepping || dispatchingEvents) {
@@ -435,6 +485,8 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         pendingEvents.push_back(event);
     }
 
+    std::unordered_set<const RigidBody*> ccdImpacted;
+    for (const auto& impact : impacts) { ccdImpacted.insert(impact.A); ccdImpacted.insert(impact.B); }
     auto islands = buildIslands(constraints);
     statistics.islandCount = static_cast<std::uint32_t>(islands.size());
     statistics.solverIterationCount = integratedPlan ? 0 : simulationConfig.solverIterations;
@@ -456,6 +508,9 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
                 if (constraint != integratedConstraint) CollisionResolver::SolveVelocity(*constraint);
             for (const auto& joint : island.joints) joint->solveVelocity();
         }
+        // Experimental integration strategies own their displacement.
+        if (!alreadySolved && deltaTime > 0 && !strategy && simulationConfig.enableFrictionDisplacementCorrection)
+            ApplyContactDisplacement(island.contacts, integratedConstraint, deltaTime, ccdImpacted);
         for (int iter=0; !alreadySolved && iter<simulationConfig.solverIterations; ++iter) {
             bool solved = true;
             for (auto* constraint : island.contacts)

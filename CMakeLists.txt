@@ -312,6 +312,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
         ${TESTS_SRC_DIR}/test_spatial_queries.cpp
         ${TESTS_SRC_DIR}/test_capsule.cpp
+        ${TESTS_SRC_DIR}/test_friction_displacement.cpp
         ${TESTS_SRC_DIR}/test_circle_queries.cpp
         ${TESTS_SRC_DIR}/test_simulation_config.cpp
         ${TESTS_SRC_DIR}/test_fixed_step.cpp

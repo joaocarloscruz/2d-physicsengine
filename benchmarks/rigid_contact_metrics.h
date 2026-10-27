@@ -72,7 +72,7 @@ inline Moments Measure(const std::vector<RigidBodyPtr>& bodies,double gravity) {
         throw std::runtime_error("Nonfinite diagnostic aggregate");
     return out;
 }
-struct Controls {float dt=1.0f/60;int iterations=10;float warmStart=0.8f;double duration=2;};
+struct Controls {float dt=1.0f/60;int iterations=10;float warmStart=0.8f;double duration=2;bool frictionDisplacement=false;};
 inline void Validate(const Controls& c) {
     if (!std::isfinite(c.dt)||c.dt<1.0f/10000||c.dt>0.1f||c.iterations<1||c.iterations>64
         ||!std::isfinite(c.warmStart)||c.warmStart<0||c.warmStart>1
@@ -136,6 +136,7 @@ inline Result Run(const FixtureSpec& spec,const Controls& controls,StepObservati
         ||!std::isfinite(spec.restitution)||spec.restitution<0||spec.restitution>1)
         throw std::invalid_argument("Invalid bounded diagnostic fixture");
     config.solverIterations=controls.iterations;config.warmStartFactor=controls.warmStart;
+    config.enableFrictionDisplacementCorrection=controls.frictionDisplacement;
     config.enableSleeping=false;config.enableLinearVelocityLimit=false;config.enableAngularVelocityLimit=false;
     config.restitutionVelocityThreshold=0; // Explicit analytical restitution at all incident speeds.
     if(spec.impact)config.positionCorrectionFactor=0; // Isolate the instantaneous impulse oracle.

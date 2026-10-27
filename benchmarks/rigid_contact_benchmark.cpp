@@ -84,11 +84,12 @@ void Write(std::ostream& out,const Result& r,double milliseconds,const FixtureSp
 }
 int main(int argc,char** argv) {
     try {
-        bool quick=false;std::string path;std::optional<double> dt,iterations,warm,duration;
+        bool quick=false,frictionDisplacement=false;std::string path;std::optional<double> dt,iterations,warm,duration;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if(arg=="--quick"){quick=true;continue;}
-            if(arg=="--help"){std::cout<<"rigid_contact_benchmark [--quick] [--output path] [--dt seconds] [--iterations 1..64] [--warm-start 0..1] [--duration .1..8]\n";return 0;}
+            if(arg=="--friction-displacement"){frictionDisplacement=true;continue;}
+            if(arg=="--help"){std::cout<<"rigid_contact_benchmark [--quick] [--friction-displacement] [--output path] [--dt seconds] [--iterations 1..64] [--warm-start 0..1] [--duration .1..8]\n";return 0;}
             if(i+1>=argc)throw std::invalid_argument("Missing option value");
             const std::string value=argv[++i];
             if(arg=="--output")path=value;else if(arg=="--dt")dt=Number(value);
@@ -104,7 +105,7 @@ int main(int argc,char** argv) {
             quick?std::vector<float>{0,0.8f}:std::vector<float>{0,0.8f,1};
         const auto fixtures=Fixtures(quick);std::uint64_t planned=0;
         for(float h:dts)for(int count:counts)for(float factor:warms) {
-            const Controls c{h,count,factor,duration.value_or(2)};Validate(c);
+            const Controls c{h,count,factor,duration.value_or(2),frictionDisplacement};Validate(c);
             for(const auto& fixture:fixtures)planned+=fixture.impact?1:static_cast<std::uint64_t>(std::ceil(c.duration/h));
         }
         if(planned>250000)throw std::invalid_argument("Matrix exceeds the 250000 total World-step work budget");
@@ -113,7 +114,8 @@ int main(int argc,char** argv) {
         out<<std::setprecision(17)<<"{\"schemaVersion\":1,\"quick\":"<<(quick?"true":"false")
            <<",\"gravity\":9.81,\"sleeping\":false,\"linearVelocityLimit\":false,\"angularVelocityLimit\":false,\"ccd\":false"
            <<",\"restitutionVelocityThreshold\":0,\"plannedWorldSteps\":"<<planned
-           <<",\"contactPersistenceIsCacheHitCount\":false,\"timingIsDeterministic\":false";
+           <<",\"contactPersistenceIsCacheHitCount\":false,\"timingIsDeterministic\":false"
+           <<",\"frictionDisplacementCorrection\":"<<(frictionDisplacement?"true":"false");
 #ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
         out<<",\"experimentalIntegration\":\"frozen_geometry_incremental_load_projection\"";
 #endif
@@ -126,7 +128,7 @@ int main(int argc,char** argv) {
 #ifdef PHYSICS_CONTACT_LOAD_EXPERIMENT
                 const auto r=Run<ContactLoadExperiment::World>(fixture,{h,count,factor,duration.value_or(2)},ObserveExperiment);
 #else
-                const auto r=Run(fixture,{h,count,factor,duration.value_or(2)});
+                const auto r=Run(fixture,{h,count,factor,duration.value_or(2),frictionDisplacement});
 #endif
                 const double elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
                 Write(out,r,elapsed,fixture);

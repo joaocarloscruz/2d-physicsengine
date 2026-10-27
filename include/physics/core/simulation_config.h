@@ -21,6 +21,12 @@ struct SimulationConfig {
     bool enableSleeping = false;
     float sleepEnergyThreshold = 0.0005f; // kinetic energy per unit mass
     float sleepTimeThreshold = 0.5f;
+    // Opt-in: treat each solved tangential contact impulse, and the torque of the
+    // complete contact impulse, as a force acting over the step. Bodies then move
+    // by half of that velocity change times the step, matching the constant-load
+    // position integration and removing static-friction creep. Normal settling
+    // keeps the penetration-slop behavior. Not applied with CCD impacts.
+    bool enableFrictionDisplacementCorrection = false;
 
     void Validate() const;
 };
