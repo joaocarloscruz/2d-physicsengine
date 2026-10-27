@@ -10,7 +10,7 @@ periodic TMz electromagnetic fields with optional Ohmic evolution,
 and periodic plane-strain elastic P/S waves.
 WebAssembly exposes rigid bodies, particles, soft bodies, thermal networks,
 charged particles, gravity, membrane and elastic waves, periodic projection/viscosity,
-scalar transport, ideal-gas flow, static electrostatics, lossless and Ohmic Maxwell fields
+complete periodic incompressible flow, scalar transport, ideal-gas flow, static electrostatics, lossless and Ohmic Maxwell fields
 and owned spatial query results;
 see the [JavaScript API](docs/webassembly.md) for supported interfaces.
 Ideal-gas stepping offers the same first-order default and explicit second-order

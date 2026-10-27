@@ -413,6 +413,78 @@ not imply exact orthogonality or strict energy decrease. The roundoff allowance
 is a scale-aware heuristic guard, with no absolute energy floor. Consult the
 native derivation before interpreting these diagnostic pairings as physical work.
 
+## Owned periodic incompressible flow
+
+`PeriodicIncompressibleGrid` owns the native constant-density periodic
+Navier–Stokes timestep: initial projection, conservative donor-cell staggered
+momentum advection, backward-Euler constant viscosity and projection, with a
+simulation clock and copied history. It adds no obstacles, forcing, free
+surfaces, variable density, rigid/SPH coupling or turbulence model; see the
+[native formulation, ledgers and limits](periodic-incompressible-flow.md).
+
+```javascript
+const grid = new physics.PeriodicIncompressibleGrid({
+    geometry: {columns: 16, rows: 16, spacingX: 2 * Math.PI / 16, spacingY: 2 * Math.PI / 16},
+    density: 1, kinematicViscosity: 0.1
+});
+try {
+    const {geometry: g} = grid.config(), n = g.columns * g.rows;
+    const xFaces = [], yFaces = [];
+    for (let j = 0; j < g.rows; ++j) for (let i = 0; i < g.columns; ++i) {
+        xFaces.push(Math.sin(i * g.spacingX) * Math.cos((j + 0.5) * g.spacingY));
+        yFaces.push(-Math.cos((i + 0.5) * g.spacingX) * Math.sin(j * g.spacingY));
+    }
+    grid.setVelocities(xFaces, yFaces);
+    const report = grid.step(0.01, {
+        cflSafety: 0.8,
+        absoluteDivergenceTolerance: 1e-10, relativeDivergenceTolerance: 1e-10,
+        absoluteVelocityTolerance: 1e-10, relativeVelocityTolerance: 1e-10,
+        maximumSubsteps: 1000, maximumIterations: 10000, maximumCellVisits: 100000000
+    });
+    console.log(grid.time(), report.substeps, report.history, grid.lastProjection().pressure);
+} finally {
+    grid.delete();
+}
+```
+
+The methods mirror the native names: `config()`, `velocities()`, `time()`,
+`divergence()` (fresh from the stored faces), `lastStep()`, `lastProjection()`,
+`lastDiffusion()`, `setVelocities(xFaces, yFaces)` and `step(duration[, options])`.
+Faces, potential and pressure use the [MAC layout](#owned-periodic-mac-grids).
+Every getter returns a plain owning copy, including the nested `history` array
+of per-substep records (at most `maximumSubsteps`, each with its own
+`diffusion` and `projection` diagnostics) and `initialProjection`. Mutating a
+copy or deleting the grid changes no other copy.
+
+`setVelocities` retains the clock and every historical observer. Its two arrays
+are captured with the native grid size, read through a private sizing observer
+that a shadowed `config` cannot replace. Both lengths are checked before any
+entry is read; sparse, non-array, non-number and nonfinite inputs are rejected
+without changing state. A zero duration preserves velocities, the clock and the
+operator snapshots and publishes a fresh zero-step report (`zeroStepNoOp`).
+
+`step(duration)` uses the native defaults. `step(duration, options)` requires
+all eight fields. Tolerances must be finite and nonnegative, `cflSafety` lies
+strictly between 0 and 1, and `maximumSubsteps`, `maximumIterations` and
+`maximumCellVisits` stay JavaScript numbers until checked as exact nonnegative
+integers no larger than 10000, 1000000 and 1000000000. Exhausted budgets, final
+stored-state audit failures, range/overflow failures and an unrepresentable
+clock increment throw and leave velocities, clock, `lastStep`, `lastProjection`
+and `lastDiffusion` unchanged.
+
+The reports keep the native energy accounting: donor numerical dissipation,
+viscous dissipation and residual work, projection correction energy and finite
+projection residual work all appear separately. The method is first-order
+splitting; a passing step does not imply second-order or exact divergence-free
+results. The smoke test compares the browser grid with independent JavaScript
+dense projection/diffusion and oriented staggered-flux oracles on anisotropic
+and two-cell axes from compressible input, exact transported-shear multipliers,
+and Taylor–Green velocity (faces), pressure (cell-center point samples, not cell
+averages) and energy refinement. Spatial errors use the continuum solution;
+temporal errors use a 256-step reference on a fixed 12x12 grid. The boundary
+stress test repeats deletion, reentrancy, retained-alias and foreign/native
+failure cases with exact stack, heap, uncaught and emval counts.
+
 ## Owned periodic MAC diffusion
 
 `diffuse()` and `diffuse(options)` call the bounded native backward-Euler

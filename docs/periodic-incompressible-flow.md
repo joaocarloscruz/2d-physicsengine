@@ -143,4 +143,5 @@ grid and is explicitly a numerical reference, separate from the independent
 analytic spatial comparisons. The coarse inviscid case deliberately reports donor energy loss;
 under-resolved results are not claimed to reproduce inviscid continuum flow.
 Walls, free surfaces, obstacles, variable density and turbulence models need
-different formulations. Browser bindings are a subsequent task.
+different formulations. The owned [browser binding](webassembly.md#owned-periodic-incompressible-flow)
+exposes the same timestep, reports and transactions.
