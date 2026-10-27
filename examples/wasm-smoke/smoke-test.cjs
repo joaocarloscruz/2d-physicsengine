@@ -1027,6 +1027,7 @@ async function main() {
     require("./electrostatic-tests.cjs").smoke(physics);
     require("./euler-gas-tests.cjs").smoke(physics);
     require("./euler-second-order-tests.cjs").smoke(physics);
+    require("./incompressible-tests.cjs").smoke(physics);
     testQueries(physics);
     testCapsules(physics);
     const integerEngine = new physics.Engine();
@@ -1406,7 +1407,7 @@ async function main() {
     engine.delete();
     particles.delete();
     require("./handle-lifetime-tests.cjs").smoke(physics);
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, capsules, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, capsules, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic incompressible flow, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
 }
 
 main().catch((error) => {

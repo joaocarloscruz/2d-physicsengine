@@ -1,5 +1,4 @@
-#include "checked_indices.h"
-#include "physics/core/fluids/periodic_mac_grid.h"
+#include "mac_shared.h"
 #include <cmath>
 #include <emscripten/bind.h>
 #include <stdexcept>
@@ -7,9 +6,6 @@
 
 namespace PhysicsEngine::Wasm {
 namespace {
-struct MacGridConfig {
-    double columns, rows, spacingX, spacingY;
-};
 struct MacOptions {
     double density, timeStep, absoluteDivergenceTolerance, relativeDivergenceTolerance;
     double maximumIterations, maximumCellVisits;
@@ -19,16 +15,6 @@ struct MacDiffusionOptions {
     double absoluteVelocityTolerance, relativeVelocityTolerance;
     double maximumIterations, maximumCellVisits;
 };
-struct MacVelocities {
-    emscripten::val xFaces, yFaces;
-};
-struct MacSnapshot {
-    emscripten::val potential, pressure;
-    MacProjectionDiagnostics diagnostics;
-};
-PeriodicMacGridConfig Native(MacGridConfig c) {
-    return {Count(c.columns), Count(c.rows), c.spacingX, c.spacingY};
-}
 MacProjectionConfig Native(MacOptions c) {
     return {c.density,
             c.timeStep,
@@ -48,24 +34,9 @@ PeriodicMacGrid *CreateDefault() {
 PeriodicMacGrid *CreateConfigured(MacGridConfig c) {
     return new PeriodicMacGrid(Native(c));
 }
-MacGridConfig Config(const PeriodicMacGrid &grid) {
-    const auto c = grid.config();
-    return {double(c.columns), double(c.rows), c.spacingX, c.spacingY};
-}
-emscripten::val Copy(const std::vector<double> &values) {
-    auto result = emscripten::val::array();
-    for (std::size_t i = 0; i < values.size(); ++i)
-        result.set(i, values[i]);
-    return result;
-}
-MacVelocities Velocities(const PeriodicMacGrid &grid) {
-    const auto v = grid.velocities();
-    return {Copy(v.xFaces), Copy(v.yFaces)};
-}
-MacSnapshot Projection(const PeriodicMacGrid &grid) {
-    const auto p = grid.lastProjection();
-    return {Copy(p.potential), Copy(p.pressure), p.diagnostics};
-}
+MacGridConfig Config(const PeriodicMacGrid &grid) { return Public(grid.config()); }
+MacVelocities Velocities(const PeriodicMacGrid &grid) { return Public(grid.velocities()); }
+MacSnapshot Projection(const PeriodicMacGrid &grid) { return Public(grid.lastProjection()); }
 void SetVelocities(PeriodicMacGrid &grid, const emscripten::val &x, const emscripten::val &y) {
     using emscripten::val;
     const auto array = val::global("Array");

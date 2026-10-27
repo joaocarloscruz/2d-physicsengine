@@ -223,6 +223,11 @@ addToLibrary({
       count = config.columns * config.rows;
       if (count > 262144) throw new RangeError('MAC cell cap exceeded');
       arrays = args;
+    } else if (name === 'PeriodicIncompressibleGrid.setVelocities') {
+      const config = physicsSizingGetters['PeriodicIncompressibleGrid.config'].call(self);
+      count = config.geometry.columns * config.geometry.rows;
+      if (count > 262144) throw new RangeError('Incompressible cell cap exceeded');
+      arrays = args;
     } else if (name === 'WaveMembrane.setState') {
       count = physicsSizingGetters['WaveMembrane.getCellCount'].call(self);
       arrays = args;
@@ -354,7 +359,7 @@ addToLibrary({
     if (humanName === 'PeriodicMacGrid.getConfig' || humanName === 'WaveMembrane.getCellCount' ||
         humanName === 'MaxwellGrid.getConfig' || humanName === 'PeriodicScalarTransport.getConfig' ||
         humanName === 'ElasticWaveGrid.getConfig' || humanName === 'PeriodicElectrostaticGrid.getConfig' ||
-        humanName === 'PeriodicEulerGasGrid.config')
+        humanName === 'PeriodicEulerGasGrid.config' || humanName === 'PeriodicIncompressibleGrid.config')
       physicsSizingGetters[humanName] = invoker;
     return invoker;
   },
