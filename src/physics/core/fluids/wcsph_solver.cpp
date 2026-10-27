@@ -125,6 +125,12 @@ void WcsphConfig::Validate() const {
             "WCSPH time integration is not recognized."
         );
     }
+    if (!std::isfinite(acousticDamping)
+        || acousticDamping < 0.0f || acousticDamping > 1.0f) {
+        throw std::invalid_argument(
+            "WCSPH acoustic damping must be finite and between zero and one."
+        );
+    }
     if (!std::isfinite(densityDiffusion)
         || densityDiffusion < 0.0f || densityDiffusion > 1.0f) {
         throw std::invalid_argument(
@@ -331,11 +337,37 @@ void WcsphSolver::prepareState(
         }
     };
 
+    // Pressure used by the momentum equation: the EOS pressure plus, when
+    // acousticDamping > 0, a bulk-viscous pressure beta*h*c*(D rho/Dt) built
+    // from the SPH compression rate. It acts only on velocity divergence, so
+    // it damps the acoustic modes of artificial compressibility without
+    // resisting divergence-free motion, and it is dissipative:
+    // sum_i m_i q_i / rho_i^2 (D rho_i/Dt) = sum_i m_i beta h c (D rho_i/Dt)^2 / rho_i^2.
+    std::vector<float> momentumPressure(particles.size());
+    const auto updateMomentumPressure = [this, &particles, &momentumPressure]() {
+        for (std::size_t index = 0; index < particles.size(); ++index) {
+            momentumPressure[index] = particles[index].pressure;
+        }
+        if (config.acousticDamping <= 0.0f) {
+            return;
+        }
+        std::vector<float> compressionRates(particles.size(), 0.0f);
+        densityRateTerms(particles, true, false, compressionRates, nullptr);
+        for (std::size_t index = 0; index < particles.size(); ++index) {
+            const double damping = static_cast<double>(config.acousticDamping)
+                * particles[index].smoothingLength * config.speedOfSound
+                * compressionRates[index];
+            momentumPressure[index] = SphViscosity::CheckedFloat(
+                momentumPressure[index] + damping);
+        }
+    };
+
     std::vector<double> wallPressureNumerator;
     std::vector<double> wallPressureDenominator;
     const auto extrapolateWallPressure = [
         this,
         &particles,
+        &momentumPressure,
         boundaryParticles,
         &wallPressureNumerator,
         &wallPressureDenominator
@@ -366,13 +398,13 @@ void WcsphSolver::prepareState(
                 const double dy = double(particle.position.y) - boundaryParticle.position.y;
                 const double ax = double(config.externalAcceleration.x) - boundaryParticle.acceleration.x;
                 const double ay = double(config.externalAcceleration.y) - boundaryParticle.acceleration.y;
-                extrapolatedPressure = particle.pressure - double(particle.density) * (ax * dx + ay * dy);
+                extrapolatedPressure = momentumPressure[pair.fluid] - double(particle.density) * (ax * dx + ay * dy);
             } else {
                 const Vector2 direction = displacement / distance;
                 const float normalExternalAcceleration = std::max(
                     (config.externalAcceleration - boundaryParticle.acceleration)
                         .dot(direction * -1.0f), 0.0f);
-                extrapolatedPressure = particle.pressure
+                extrapolatedPressure = momentumPressure[pair.fluid]
                     + particle.density * distance * normalExternalAcceleration;
             }
             wallPressureNumerator[pair.boundary] += extrapolatedPressure * weight;
@@ -381,6 +413,7 @@ void WcsphSolver::prepareState(
     };
 
     updateThermodynamicState();
+    updateMomentumPressure();
     if (boundaryParticles && !boundaryPairs.empty()) {
         extrapolateWallPressure();
     }
@@ -410,9 +443,9 @@ void WcsphSolver::prepareState(
                 displacement, first.smoothingLength, config.kernelFamily);
             const Vector2 secondGradient = SphKernels2D::PressureGradient(
                 displacement, second.smoothingLength, config.kernelFamily);
-            const double firstCoefficient = first.pressure
+            const double firstCoefficient = momentumPressure[pair.first]
                 / (static_cast<double>(first.density) * first.density);
-            const double secondCoefficient = second.pressure
+            const double secondCoefficient = momentumPressure[pair.second]
                 / (static_cast<double>(second.density) * second.density);
             const double massProduct = -static_cast<double>(first.mass) * second.mass;
             pressureForce = SphViscosity::CheckedVector(
@@ -420,9 +453,9 @@ void WcsphSolver::prepareState(
                 massProduct * (firstCoefficient * firstGradient.y + secondCoefficient * secondGradient.y));
         } else {
             // Preserve common-gradient continuity, legacy and equal-h arithmetic.
-            const double pressureTerm = first.pressure
+            const double pressureTerm = momentumPressure[pair.first]
                     / (static_cast<double>(first.density) * first.density)
-                + second.pressure / (static_cast<double>(second.density) * second.density);
+                + momentumPressure[pair.second] / (static_cast<double>(second.density) * second.density);
             const double pressureScale = -static_cast<double>(first.mass) * second.mass * pressureTerm;
             pressureForce = SphViscosity::CheckedVector(
                 gradient.x * pressureScale, gradient.y * pressureScale);
@@ -452,7 +485,7 @@ void WcsphSolver::prepareState(
             const double denominator = wallPressureDenominator[pair.boundary];
             double wallPressure = denominator > 0.0
                 ? wallPressureNumerator[pair.boundary] / denominator
-                : particle.pressure;
+                : momentumPressure[pair.fluid];
             const bool signedPressure = config.wallPressureMode == WcsphWallPressureMode::SignedBodyForce;
             if (signedPressure && config.clampNegativePressure)
                 wallPressure = std::max(0.0, wallPressure);
@@ -466,13 +499,13 @@ void WcsphSolver::prepareState(
                     // Keep extrapolated pressure and force products in double;
                     // only the stored resultant force needs to fit Vector2.
                     const double scale = -double(particle.volume) * boundaryParticle.volume
-                        * (particle.pressure + wallPressure) * boundaryParticle.pressureScale;
+                        * (momentumPressure[pair.fluid] + wallPressure) * boundaryParticle.pressureScale;
                     particle.force = SphViscosity::CheckedVector(
                         double(particle.force.x) + pressureGradient.x * scale,
                         double(particle.force.y) + pressureGradient.y * scale);
                 } else {
                     const float pressureScale = -particle.volume * boundaryParticle.volume
-                        * (particle.pressure + static_cast<float>(wallPressure)) * boundaryParticle.pressureScale;
+                        * (momentumPressure[pair.fluid] + static_cast<float>(wallPressure)) * boundaryParticle.pressureScale;
                     particle.force = particle.force + pressureGradient * pressureScale;
                 }
             }
@@ -492,13 +525,27 @@ void WcsphSolver::accumulateDensityRates(
     std::vector<FluidParticle>& particles,
     std::vector<float>* wallDensityRates
 ) const {
-    for (FluidParticle& particle : particles) {
-        particle.densityRate = 0.0f;
+    std::vector<float> rates(particles.size(), 0.0f);
+    const bool continuity = config.densityMode == WcsphDensityMode::Continuity;
+    densityRateTerms(particles, continuity, true, rates, wallDensityRates);
+    for (std::size_t index = 0; index < particles.size(); ++index) {
+        particles[index].densityRate = continuity ? rates[index] : 0.0f;
     }
-    if (config.densityMode == WcsphDensityMode::Continuity) {
+}
+
+void WcsphSolver::densityRateTerms(
+    const std::vector<FluidParticle>& particles,
+    bool includePairs,
+    bool includeDiffusion,
+    std::vector<float>& rates,
+    std::vector<float>* wallDensityRates
+) const {
+    if (includePairs) {
+        const bool diffuse = config.densityMode == WcsphDensityMode::Continuity
+            && config.densityDiffusion > 0.0f;
         for (const auto& pair : pairs) {
-            FluidParticle& first = particles[pair.first];
-            FluidParticle& second = particles[pair.second];
+            const FluidParticle& first = particles[pair.first];
+            const FluidParticle& second = particles[pair.second];
             const Vector2 displacement = first.position - second.position;
             const float smoothingLength = static_cast<float>(0.5 * (
                 static_cast<double>(first.smoothingLength) + second.smoothingLength
@@ -511,9 +558,9 @@ void WcsphSolver::accumulateDensityRates(
             const float compressionRate = (
                 first.velocity - second.velocity
             ).dot(gradient);
-            first.densityRate += second.mass * compressionRate;
-            second.densityRate += first.mass * compressionRate;
-            if (config.densityDiffusion > 0.0f) {
+            rates[pair.first] += second.mass * compressionRate;
+            rates[pair.second] += first.mass * compressionRate;
+            if (diffuse && includeDiffusion) {
                 const float distanceSquared = displacement.magnitudeSquared();
                 const float regularization = 0.01f
                     * smoothingLength * smoothingLength;
@@ -529,8 +576,8 @@ void WcsphSolver::accumulateDensityRates(
                     * dynamicDensityDifference
                     * displacement.dot(gradient)
                     / (distanceSquared + regularization);
-                first.densityRate += second.mass / second.density * diffusion;
-                second.densityRate -= first.mass / first.density * diffusion;
+                rates[pair.first] += second.mass / second.density * diffusion;
+                rates[pair.second] -= first.mass / first.density * diffusion;
             }
         }
     }
@@ -538,7 +585,7 @@ void WcsphSolver::accumulateDensityRates(
         return;
     }
     for (const BoundaryPair& pair : boundaryPairs) {
-        FluidParticle& particle = particles[pair.fluid];
+        const FluidParticle& particle = particles[pair.fluid];
         const FluidBoundaryParticle& boundaryParticle =
             (*preparedBoundary)[pair.boundary];
         const Vector2 displacement = particle.position
@@ -560,8 +607,7 @@ void WcsphSolver::accumulateDensityRates(
         const float wallRate = particle.density * boundaryParticle.volume * 2.0f
             * normalRelativeVelocity.dot(pressureGradient);
         if (wallDensityRates) (*wallDensityRates)[pair.fluid] += wallRate;
-        if (config.densityMode == WcsphDensityMode::Continuity)
-            particle.densityRate += wallRate;
+        rates[pair.fluid] += wallRate;
 }
 }
 
@@ -597,6 +643,11 @@ float WcsphSolver::getStableTimeStep(
         / (config.speedOfSound + maximumSpeed);
     double stableTimeStep = std::min(static_cast<double>(config.maximumTimeStep), acousticLimit);
     stableTimeStep = std::min(stableTimeStep, viscosityLimit);
+    if (config.acousticDamping > 0.0f) {
+        // Explicit diffusion bound 0.125 h^2 / zeta for zeta = beta h c.
+        stableTimeStep = std::min(stableTimeStep, 0.125 * minimumSmoothingLength
+            / (static_cast<double>(config.acousticDamping) * config.speedOfSound));
+    }
     if (maximumAcceleration > 0.0) {
         const double forceLimit = config.cflFactor * std::sqrt(minimumSmoothingLength / maximumAcceleration);
         stableTimeStep = std::min(stableTimeStep, forceLimit);

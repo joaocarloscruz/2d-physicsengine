@@ -122,6 +122,7 @@ TEST_CASE("Density derivative and pressure adjoint are independently distinguish
         config.externalAcceleration = {};
         config.speedOfSound = 15;
         config.kernelFamily = family;
+        config.acousticDamping = 0;
         WcsphSolver solver(.2f, config);
         solver.prepare(p);
         D2 forceSum;

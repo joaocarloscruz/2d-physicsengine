@@ -92,7 +92,7 @@ FluidParticle Particle(Vector2 x,Vector2 v,float mass,float h,float rest=1) {
 }
 WcsphConfig Config() {
     WcsphConfig c;c.externalAcceleration={};c.kernelFamily=SphKernelFamily::CubicSpline;
-    c.speedOfSound=2;c.equationOfStateExponent=3;return c;
+    c.speedOfSound=2;c.equationOfStateExponent=3;c.acousticDamping=0;return c;
 }
 std::vector<FluidParticle> Triangle() {
     return {Particle({-.1875f,-.125f},{.25f,-.125f},.75f,.5f),

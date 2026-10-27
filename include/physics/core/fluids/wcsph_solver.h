@@ -43,6 +43,8 @@ struct WcsphConfig {
     bool clampNegativePressure = true;
     WcsphDensityMode densityMode = WcsphDensityMode::Continuity;
     float densityDiffusion = 0.1f;
+    // Dimensionless bulk-viscosity coefficient beta; zeta = beta * h * c.
+    float acousticDamping = 0.5f;
 
     // Wendland C2 keeps the pressurized square lattice stable at h = 2 dx: the
     // symmetric pressure term's uniform-pressure stiffness sum_j H(r_ij)(1 - cos k.r_ij)
@@ -128,6 +130,16 @@ private:
     void integrate(std::vector<FluidParticle>& particles, float deltaTime);
     void accumulateDensityRates(
         std::vector<FluidParticle>& particles,
+        std::vector<float>* wallDensityRates
+    ) const;
+    // Continuity-rate terms at the prepared neighbors: compression from fluid
+    // pairs (when includePairs), delta-SPH diffusion (when includeDiffusion)
+    // and the wall normal-velocity rate, accumulated into rates.
+    void densityRateTerms(
+        const std::vector<FluidParticle>& particles,
+        bool includePairs,
+        bool includeDiffusion,
+        std::vector<float>& rates,
         std::vector<float>* wallDensityRates
     ) const;
 

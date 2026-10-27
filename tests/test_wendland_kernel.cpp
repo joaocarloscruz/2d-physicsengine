@@ -113,7 +113,7 @@ TEST_CASE("Wendland sampled walls use matched density pressure and mirror rates"
     WcsphConfig config;config.externalAcceleration={};config.kernelFamily=Wendland;config.densityMode=WcsphDensityMode::Summation;
     WcsphSolver summation(1,config);summation.prepare(p,wall);
     REQUIRE(p[0].density==Catch::Approx(10*c+1000*.2*weight));
-    config.densityMode=WcsphDensityMode::Continuity;config.densityDiffusion=0;p[0].density=1100;
+    config.densityMode=WcsphDensityMode::Continuity;config.densityDiffusion=0;config.acousticDamping=0;p[0].density=1100;
     WcsphSolver continuity(1,config);continuity.prepare(p,wall);
     const double rate=1100*.2*2*(-.1)*gradient;
     REQUIRE(p[0].densityRate==Catch::Approx(rate));
@@ -142,7 +142,7 @@ TEST_CASE("Wendland retains the checkerboard linear null mode and independent pr
     const double e2=std::abs(EnergyDifference(s,.0005)-op.trueEnergyRate);
     const double e3=std::abs(EnergyDifference(s,.00025)-op.trueEnergyRate);
     REQUIRE(e1/e2>3.8);REQUIRE(e1/e2<4.2);REQUIRE(e2/e3>3.8);REQUIRE(e2/e3<4.2);
-    WcsphConfig c;c.externalAcceleration={};c.kernelFamily=Wendland;c.speedOfSound=15;c.densityMode=WcsphDensityMode::Summation;
+    WcsphConfig c;c.externalAcceleration={};c.kernelFamily=Wendland;c.speedOfSound=15;c.densityMode=WcsphDensityMode::Summation;c.acousticDamping=0;
     WcsphSolver solver(.2f,c);solver.prepare(p);
     double scale=0,error=0;
     for(std::size_t i=0;i<p.size();++i) {

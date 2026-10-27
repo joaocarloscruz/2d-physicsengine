@@ -1233,6 +1233,7 @@ TEST_CASE("Hydrostatic instability is measured under timestep refinement", "[flu
     WcsphConfig legacy;
     legacy.kernelFamily = SphKernelFamily::Poly6Spiky;
     legacy.timeIntegration = WcsphTimeIntegration::ExplicitDensity;
+    legacy.acousticDamping = 0.0f;
     const HydrostaticTrace coarse = TraceHydrostaticColumn(0.001f, 0.2f, true, 0.0f, legacy);
     const HydrostaticTrace fine = TraceHydrostaticColumn(0.00025f, 0.2f, true, 0.0f, legacy);
     INFO("coarse max speed: " << coarse.maximumSpeed);
@@ -1250,11 +1251,15 @@ TEST_CASE("Hydrostatic instability is measured under timestep refinement", "[flu
 }
 
 TEST_CASE("Gravity-aware dummy wall pressure suppresses hydrostatic impact", "[fluid][validation][boundary][pressure]") {
+    // Isolate the wall-pressure model: the fluid's own acoustic damping also
+    // cushions the density-only impact.
+    WcsphConfig undamped;
+    undamped.acousticDamping = 0.0f;
     const HydrostaticTrace densityOnly = TraceHydrostaticColumn(
-        0.001f, 0.2f, false
+        0.001f, 0.2f, false, 0.0f, undamped
     );
     const HydrostaticTrace pressureWall = TraceHydrostaticColumn(
-        0.001f, 0.2f, true
+        0.001f, 0.2f, true, 0.0f, undamped
     );
     INFO("density-only max speed: " << densityOnly.maximumSpeed);
     INFO("pressure-wall max speed: " << pressureWall.maximumSpeed);

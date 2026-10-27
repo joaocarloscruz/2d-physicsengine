@@ -49,7 +49,7 @@ TEST_CASE("Cubic WCSPH wall density pressure and mirror divergence share the sam
     WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic; w.densityMode=WcsphDensityMode::Summation;
     WcsphSolver summation(1,w); summation.prepare(p,wall);
     REQUIRE(p[0].density == Catch::Approx(10*c+1000*0.2*weight));
-    w.densityMode=WcsphDensityMode::Continuity; w.densityDiffusion=0;
+    w.densityMode=WcsphDensityMode::Continuity; w.densityDiffusion=0; w.acousticDamping=0;
     p[0].density=1100;
     WcsphSolver continuity(1,w); continuity.prepare(p,wall);
     const double expectedRate=1100*0.2*2*(-0.1)*gx;

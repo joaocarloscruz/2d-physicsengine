@@ -14,6 +14,7 @@ std::vector<FluidParticle> One(Vector2 position,Vector2 velocity={}) {
 WcsphConfig Config(SphKernelFamily family) {
     WcsphConfig config; config.kernelFamily=family; config.externalAcceleration={};
     config.densityMode=WcsphDensityMode::Continuity; config.densityDiffusion=0;
+    config.acousticDamping=0;
     return config;
 }
 }
