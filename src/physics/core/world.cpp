@@ -197,6 +197,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         explicit StepGuard(bool& flag) : flag(flag) { flag = true; }
         ~StepGuard() { flag = false; }
     } guard(stepping);
+    if (deltaTime > 0) validateCcdSupport();
     SimulationStatistics statistics;
     potentialCollisions.clear();
     std::unordered_set<ContactKey, ContactKeyHash> activeContacts;
@@ -525,6 +526,30 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
     return integratedPlan;
 }
 
+// Capsule CCD covers only translating circles against static capsules; any
+// other requested capsule pair is rejected before a step advances state.
+bool World::SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b) {
+    const auto circleOnStaticCapsule = [](const RigidBody& mover, const RigidBody& target) {
+        return mover.shape->type == ShapeType::CIRCLE && target.shape->type == ShapeType::CAPSULE
+            && target.IsStatic();
+    };
+    return circleOnStaticCapsule(a, b) || circleOnStaticCapsule(b, a);
+}
+
+void World::validateCcdSupport() const {
+    for (std::size_t i=0; i<bodies.size(); ++i) {
+        for (std::size_t j=i+1; j<bodies.size(); ++j) {
+            const auto& a = *bodies[i]; const auto& b = *bodies[j];
+            if ((!a.IsCcdEnabled() && !b.IsCcdEnabled()) || (a.IsStatic() && b.IsStatic())
+                || !a.CanCollideWith(b)) continue;
+            if ((a.shape->type == ShapeType::CAPSULE || b.shape->type == ShapeType::CAPSULE)
+                && !SupportsCapsuleCcd(a, b))
+                throw std::invalid_argument(
+                    "Capsule continuous collision supports only circles against static capsules.");
+        }
+    }
+}
+
 std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& starts,
     float deltaTime, SimulationStatistics& statistics) {
     std::vector<Vector2> motion;
@@ -543,7 +568,22 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
                     (a->IsStatic() && b->IsStatic()) || !a->CanCollideWith(*b)) continue;
                 SweepHit hit;
-                if (a->shape->type == ShapeType::CIRCLE && b->shape->type == ShapeType::CIRCLE) {
+                const auto typeA = a->shape->type, typeB = b->shape->type;
+                if (typeA == ShapeType::CAPSULE || typeB == ShapeType::CAPSULE) {
+                    const bool firstCircle = typeA == ShapeType::CIRCLE;
+                    const auto& circle = firstCircle ? a : b;
+                    const auto& capsuleBody = firstCircle ? b : a;
+                    const auto* capsule = dynamic_cast<const Capsule*>(capsuleBody->shape.get());
+                    if (!SupportsCapsuleCcd(*a, *b) || !capsule)
+                        throw std::logic_error("Unsupported capsule continuous collision reached the sweep.");
+                    const Vector2 axis = Matrix2x2::rotation(capsuleBody->orientation) * Vector2{1, 0};
+                    hit = SweepCircleCapsule(circle->position,
+                        motion[firstCircle ? i : j]*remaining, circle->shape->GetRadius(),
+                        capsuleBody->position - axis*capsule->GetHalfLength(),
+                        capsuleBody->position + axis*capsule->GetHalfLength(), capsule->GetRadius(),
+                        motion[firstCircle ? j : i]*remaining);
+                    if (!firstCircle) hit.normal = hit.normal*-1.0f;
+                } else if (typeA == ShapeType::CIRCLE && typeB == ShapeType::CIRCLE) {
                     hit = SweepCircleCircle(a->position, motion[i]*remaining, a->shape->GetRadius(),
                         b->position, motion[j]*remaining, b->shape->GetRadius());
                 } else if (a->shape->type == ShapeType::CIRCLE || b->shape->type == ShapeType::CIRCLE) {

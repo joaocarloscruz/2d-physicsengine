@@ -66,6 +66,18 @@ const Polygon& AsPolygon(const Shape& shape) {
         throw std::invalid_argument("Spatial queries require a valid Circle or convex Polygon.");
     return *polygon;
 }
+const Capsule& AsCapsule(const Shape& shape) {
+    const auto* capsule = dynamic_cast<const Capsule*>(&shape);
+    if (!capsule || !std::isfinite(capsule->GetHalfLength()) || capsule->GetHalfLength() < 0
+        || !std::isfinite(capsule->GetRadius()) || capsule->GetRadius() <= 0)
+        throw std::invalid_argument("Spatial queries require a valid Capsule.");
+    return *capsule;
+}
+// Distance from a local point to the spine from (-h, 0) to (h, 0).
+double SpineDistance(const Capsule& capsule, DVector local) {
+    const double h = capsule.GetHalfLength();
+    return std::hypot(local.x - std::clamp(local.x, -h, h), local.y);
+}
 // Polygon's constructor guarantees strict convexity in either winding.
 double Winding(const Polygon& polygon) {
     const auto& v = polygon.getVertices();
@@ -232,6 +244,26 @@ std::optional<SweepCandidate> DiskEntry(const SweepLine& line, DVector center,
     const DVector normal = offset * (1 / expandedRadius);
     return SweepCandidate{entry, center + offset, center + normal * targetRadius, normal};
 }
+// Earliest entry into a capsule's spine expanded by expandedRadius, in its
+// local frame. Side faces precede the end disks for exact feature ties.
+std::optional<SweepCandidate> CapsuleEntry(const SweepLine& line, double halfLength,
+                                           double expandedRadius, double targetRadius) {
+    std::optional<SweepCandidate> best;
+    const auto consider = [&](const SweepCandidate& candidate) {
+        if (line.Includes(candidate.projection) && (!best || candidate.projection < best->projection))
+            best = candidate;
+    };
+    for (const double side : {1.0, -1.0}) {
+        if (side * line.direction.y >= 0) continue;
+        const double projection = (side * expandedRadius - line.reference.y) / line.direction.y;
+        const double x = line.reference.x + line.direction.x * projection;
+        if (x < -halfLength || x > halfLength) continue;
+        consider({projection, {x, side * expandedRadius}, {x, side * targetRadius}, {0, side}});
+    }
+    for (const double end : {-halfLength, halfLength})
+        if (const auto disk = DiskEntry(line, {end, 0}, expandedRadius, targetRadius)) consider(*disk);
+    return best;
+}
 std::optional<SweptCircleHit> PolygonSweep(const Polygon& polygon, const Transform& transform,
     Vector2 start, Vector2 end, double radius) {
     const SweepLine line(start, end, transform);
@@ -289,7 +321,11 @@ bool ContainsPoint(const Shape& shape, Vector2 point, Vector2 position, float or
     }
     if (shape.type == ShapeType::POLYGON)
         return PolygonContains(AsPolygon(shape), transform.Local(point));
-    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+    if (shape.type == ShapeType::CAPSULE) {
+        const Capsule& capsule = AsCapsule(shape);
+        return SpineDistance(capsule, transform.Local(point)) <= capsule.GetRadius();
+    }
+    throw std::invalid_argument("Spatial queries require a Circle, convex Polygon or Capsule.");
 }
 bool ContainsPoint(const RigidBody& body, Vector2 point) {
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
@@ -306,7 +342,11 @@ bool OverlapsCircle(const Shape& shape, Vector2 center, float radius, Vector2 po
     }
     if (shape.type == ShapeType::POLYGON)
         return PolygonCircle(AsPolygon(shape), transform.Local(center), radius);
-    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+    if (shape.type == ShapeType::CAPSULE) {
+        const Capsule& capsule = AsCapsule(shape);
+        return SpineDistance(capsule, transform.Local(center)) <= static_cast<double>(capsule.GetRadius()) + radius;
+    }
+    throw std::invalid_argument("Spatial queries require a Circle, convex Polygon or Capsule.");
 }
 bool OverlapsCircle(const RigidBody& body, Vector2 center, float radius) {
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
@@ -320,7 +360,18 @@ std::optional<RayHit> RayCast(const Shape& shape, Vector2 start, Vector2 end,
         return CircleRay(AsCircle(shape), transform.position, start, end);
     if (shape.type == ShapeType::POLYGON)
         return PolygonRay(AsPolygon(shape), transform, start, end);
-    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+    if (shape.type == ShapeType::CAPSULE) {
+        const Capsule& capsule = AsCapsule(shape);
+        if (SpineDistance(capsule, transform.Local(start)) <= capsule.GetRadius())
+            return RayHit{0, start, {}};
+        if (start.x == end.x && start.y == end.y) return std::nullopt;
+        const SweepLine line(start, end, transform);
+        const auto hit = CapsuleEntry(line, capsule.GetHalfLength(), capsule.GetRadius(), capsule.GetRadius());
+        if (!hit) return std::nullopt;
+        return RayHit{line.Fraction(hit->projection), transform.World(hit->contact),
+            ToFloat(transform.Rotate(hit->normal))};
+    }
+    throw std::invalid_argument("Spatial queries require a Circle, convex Polygon or Capsule.");
 }
 std::optional<RayHit> RayCast(const RigidBody& body, Vector2 start, Vector2 end) {
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");
@@ -348,7 +399,16 @@ std::optional<SweptCircleHit> SweepCircle(const Shape& shape, Vector2 start, Vec
     }
     if (shape.type == ShapeType::POLYGON)
         return PolygonSweep(AsPolygon(shape), transform, start, end, radius);
-    throw std::invalid_argument("Spatial queries require a Circle or convex Polygon.");
+    if (shape.type == ShapeType::CAPSULE) {
+        const Capsule& capsule = AsCapsule(shape);
+        const SweepLine line(start, end, transform);
+        const auto hit = CapsuleEntry(line, capsule.GetHalfLength(),
+            static_cast<double>(capsule.GetRadius()) + radius, capsule.GetRadius());
+        if (!hit) return std::nullopt;
+        return SweptCircleHit{line.Fraction(hit->projection), transform.World(hit->center),
+            transform.World(hit->contact), ToFloat(transform.Rotate(hit->normal))};
+    }
+    throw std::invalid_argument("Spatial queries require a Circle, convex Polygon or Capsule.");
 }
 std::optional<SweptCircleHit> SweepCircle(const RigidBody& body, Vector2 start, Vector2 end, float radius) {
     if (!body.shape) throw std::invalid_argument("Spatial queries require a body shape.");

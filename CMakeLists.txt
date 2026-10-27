@@ -76,6 +76,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_polygon.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_capsule.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_resolver.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/sweep_and_prune.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/broad_phase/uniform_grid.cpp
@@ -119,6 +120,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(replay_experiment PRIVATE PhysicsEngine::Engine)
         add_executable(softbody_rope examples/softbody_rope.cpp)
         target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
+        add_executable(capsule_pile examples/capsule_pile.cpp)
+        target_link_libraries(capsule_pile PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
         target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_radiation_demo examples/thermal_radiation_demo.cpp)
@@ -163,6 +166,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME maxwell_ohmic_smoke COMMAND maxwell_ohmic_demo)
             add_test(NAME elastic_wave_smoke COMMAND elastic_wave_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
+            add_test(NAME capsule_pile_smoke COMMAND capsule_pile)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
                 -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
@@ -307,6 +311,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_collision_properties.cpp
         ${TESTS_SRC_DIR}/test_collision_filter.cpp
         ${TESTS_SRC_DIR}/test_spatial_queries.cpp
+        ${TESTS_SRC_DIR}/test_capsule.cpp
         ${TESTS_SRC_DIR}/test_circle_queries.cpp
         ${TESTS_SRC_DIR}/test_simulation_config.cpp
         ${TESTS_SRC_DIR}/test_fixed_step.cpp

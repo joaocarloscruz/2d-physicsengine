@@ -24,12 +24,13 @@ TEST_CASE("Collision dispatch ignores unsupported signed shape tags", "[collisio
     };
     RigidBody circle(Circle(1), Material{});
     RigidBody polygon(Polygon::MakeBox(2, 2), Material{});
+    RigidBody capsule(Capsule(1, 0.5f), Material{});
     for (int tag : {-1, std::numeric_limits<int>::min(), static_cast<int>(ShapeType::COUNT),
                     std::numeric_limits<int>::max()}) {
         RigidBody unsupported(TaggedShape(static_cast<ShapeType>(tag)), Material{});
         unsupported.ApplyForce({2, -3});
         unsupported.SetVelocity({4, 5});
-        for (auto* peer : {&circle, &polygon}) {
+        for (auto* peer : {&circle, &polygon, &capsule}) {
             for (bool reverse : {false, true}) {
                 const auto result = reverse ? CheckCollision(peer, &unsupported)
                                             : CheckCollision(&unsupported, peer);
@@ -47,6 +48,8 @@ TEST_CASE("Collision dispatch ignores unsupported signed shape tags", "[collisio
     // The neighboring valid dispatch entries still resolve their overlaps.
     REQUIRE(CheckCollision(&circle, &polygon).hasCollision);
     REQUIRE(CheckCollision(&polygon, &circle).hasCollision);
+    REQUIRE(CheckCollision(&capsule, &circle).hasCollision);
+    REQUIRE(CheckCollision(&polygon, &capsule).hasCollision);
 }
 
 TEST_CASE("Concentric circles report their full overlap", "[collision][property]") {

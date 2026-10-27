@@ -209,7 +209,7 @@ TEST_CASE("AABB construction rejects invalid consumed state and unrepresentable 
         float GetInertia(float) const override { return 1; }
         std::unique_ptr<Shape> Clone() const override { return std::make_unique<TaggedShape>(*this); }
     };
-    for (auto tag : {ShapeType::CIRCLE, ShapeType::POLYGON, ShapeType::COUNT}) {
+    for (auto tag : {ShapeType::CIRCLE, ShapeType::POLYGON, ShapeType::CAPSULE, ShapeType::COUNT}) {
         RigidBody malformed(TaggedShape(tag), Material{});
         REQUIRE_THROWS_AS(malformed.GetAABB(), std::invalid_argument);
     }

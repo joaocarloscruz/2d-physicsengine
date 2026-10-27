@@ -2,6 +2,7 @@
 #include "physics/core/collisions/narrow_phase/collision_circle_circle.h"
 #include "physics/core/collisions/narrow_phase/collision_circle_polygon.h"
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
+#include "physics/core/collisions/narrow_phase/collision_capsule.h"
 #include "physics/core/shape.h"
 #include "physics/core/rigidbody.h"
 #include <vector>
@@ -17,12 +18,20 @@ namespace PhysicsEngine {
         // CIRCLE
         {
             CollisionCircleCircle,    // Circle vs Circle
-            CollisionCirclePolygon    // Circle vs Polygon
+            CollisionCirclePolygon,   // Circle vs Polygon
+            CollisionCircleCapsule    // Circle vs Capsule
         },
         // POLYGON
         {
             nullptr,                  // Polygon vs Circle (Handled by swap)
-            CollisionPolygonPolygon   // Polygon vs Polygon
+            CollisionPolygonPolygon,  // Polygon vs Polygon
+            CollisionPolygonCapsule   // Polygon vs Capsule
+        },
+        // CAPSULE
+        {
+            nullptr,                  // Capsule vs Circle (Handled by swap)
+            nullptr,                  // Capsule vs Polygon (Handled by swap)
+            CollisionCapsuleCapsule   // Capsule vs Capsule
         }
     };
 

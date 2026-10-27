@@ -14,6 +14,7 @@ namespace PhysicsEngine {
     enum class ShapeType {
         CIRCLE,
         POLYGON,
+        CAPSULE,
         COUNT
     };
 
@@ -177,6 +178,52 @@ namespace PhysicsEngine {
                 shifted.emplace_back(static_cast<float>(x), static_cast<float>(y));
             }
             return Polygon(shifted);
+        }
+    };
+
+    // Solid capsule: every point within radius of a centered local spine from
+    // (-halfLength, 0) to (halfLength, 0). halfLength is half the spine length,
+    // not of the tip-to-tip extent, which is 2 * (halfLength + radius). The
+    // uniform-area centroid is the local origin; body orientation rotates it.
+    // halfLength == 0 is a circle of the same radius.
+    class Capsule : public Shape {
+    protected:
+        float halfLength;
+        float radius;
+
+    public:
+        Capsule(float halfLength, float radius)
+            : Shape(ShapeType::CAPSULE), halfLength(halfLength), radius(radius) {
+            if (!std::isfinite(halfLength) || halfLength < 0.0f)
+                throw std::invalid_argument("Capsule half-length must be finite and nonnegative.");
+            if (!std::isfinite(radius) || radius <= 0.0f)
+                throw std::invalid_argument("Capsule radius must be positive and finite.");
+            const double maximum = std::numeric_limits<float>::max();
+            const double extent = static_cast<double>(halfLength) + radius;
+            if (extent > maximum || AreaDouble() > maximum)
+                throw std::invalid_argument("Capsule extent and area must be finite floats.");
+        }
+
+        std::unique_ptr<Shape> Clone() const override { return std::make_unique<Capsule>(*this); }
+        float GetHalfLength() const { return halfLength; }
+        float GetRadius() const override { return radius; }
+        float GetArea() const override { return static_cast<float>(AreaDouble()); }
+
+        // Rectangle 2h x 2r plus two semicircular caps whose flat sides sit at
+        // x = +/-h. Each cap contributes its own polar moment pi r^4 / 4, the
+        // parallel-axis term (pi r^2 / 2) h^2 and the cross term from its first
+        // moment 2 h (2 r^3 / 3) about the flat side.
+        float GetInertia(float mass) const override {
+            const double h = halfLength, r = radius;
+            const double secondMoment = 4.0 * h * h * h * r / 3.0 + 4.0 * h * r * r * r
+                + 3.14159265358979323846 * r * r * (h * h + 0.5 * r * r);
+            return static_cast<float>(mass * (secondMoment / AreaDouble()));
+        }
+
+    private:
+        double AreaDouble() const {
+            const double h = halfLength, r = radius;
+            return 4.0 * h * r + 3.14159265358979323846 * r * r;
         }
     };
 }

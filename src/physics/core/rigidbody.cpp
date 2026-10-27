@@ -291,6 +291,24 @@ namespace PhysicsEngine {
             }
             return {{StoreBound(minX, false), StoreBound(minY, false)},
                     {StoreBound(maxX, true), StoreBound(maxY, true)}};
+        } else if (shape->type == ShapeType::CAPSULE) {
+            const auto* capsule = dynamic_cast<const Capsule*>(shape.get());
+            if (!capsule) throw std::invalid_argument("RigidBody bounds require a valid capsule.");
+            const double halfLength = capsule->GetHalfLength(), radius = capsule->GetRadius();
+            if (!std::isfinite(halfLength) || halfLength < 0 || !std::isfinite(radius) || radius <= 0)
+                throw std::invalid_argument("RigidBody bounds require a valid capsule.");
+            ValidateFinite(orientation);
+            // Spine endpoints +/-h(cos, sin), each rounded outward, then the
+            // radius added with directed sums.
+            const double cosine = std::cos(double(orientation)), sine = std::sin(double(orientation));
+            const auto extentX = ProductBounds(std::abs(cosine), halfLength);
+            const auto extentY = ProductBounds(std::abs(sine), halfLength);
+            const double reachX = DirectedSum(extentX.upper, radius, true);
+            const double reachY = DirectedSum(extentY.upper, radius, true);
+            return {{StoreBound(DirectedSum(position.x, -reachX, false), false),
+                     StoreBound(DirectedSum(position.y, -reachY, false), false)},
+                    {StoreBound(DirectedSum(position.x, reachX, true), true),
+                     StoreBound(DirectedSum(position.y, reachY, true), true)}};
         }
         throw std::invalid_argument("RigidBody bounds require a supported shape.");
     }

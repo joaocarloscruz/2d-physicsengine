@@ -26,6 +26,7 @@ private:
     void renderBody(const RigidBody* body);
     void renderCircle(const RigidBody* body);
     void renderPolygon(const RigidBody* body);
+    void renderCapsule(const RigidBody* body);
     
     Vector2 screenToWorld(const sf::Vector2i& screenPos) const;
     sf::Vector2f worldToScreen(const Vector2& worldPos) const;

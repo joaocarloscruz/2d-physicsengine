@@ -22,4 +22,10 @@ SweepHit SweepCircleCircle(Vector2 a, Vector2 displacementA, float radiusA,
     Vector2 b, Vector2 displacementB, float radiusB);
 SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
     const std::vector<Vector2>& vertices, Vector2 polygonDisplacement = {});
+// Capsule spine endpoints are in world coordinates at its start; the capsule
+// translates without rotating. Initial overlap returns the closest capsule
+// surface point, with the normal from the circle center toward the spine
+// (center on the spine: fallback +X).
+SweepHit SweepCircleCapsule(Vector2 center, Vector2 displacement, float radius,
+    Vector2 spineStart, Vector2 spineEnd, float capsuleRadius, Vector2 capsuleDisplacement = {});
 }

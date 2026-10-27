@@ -40,9 +40,10 @@ struct WorldSweptCircleHit {
     SweptCircleHit hit;
 };
 
-// Circle and convex Polygon queries. Polygon vertices remain in their original
-// local frame, including an offset from the origin; position/orientation supply
-// the body's world transform. Boundary points are contained.
+// Circle, convex Polygon and Capsule queries. Polygon vertices remain in their
+// original local frame, including an offset from the origin; position/orientation
+// supply the body's world transform. Boundary points are contained. Capsule
+// ray and sweep ties prefer its +y then -y local side, then its -x then +x cap.
 bool ContainsPoint(const Shape& shape, Vector2 point,
     Vector2 position = {}, float orientation = 0);
 bool ContainsPoint(const RigidBody& body, Vector2 point);

@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "physics/core/forces/gravity.h"
 #include "physics/math/matrix2x2.h"
+#include "physics/core/spatial_queries.h"
 #include <iostream>
 #include <cmath>
 #include <optional>
@@ -217,6 +218,8 @@ void Renderer::renderBody(const RigidBody* body) {
         renderCircle(body);
     } else if (body->shape->type == ShapeType::POLYGON) {
         renderPolygon(body);
+    } else if (body->shape->type == ShapeType::CAPSULE) {
+        renderCapsule(body);
     }
 }
 
@@ -290,6 +293,47 @@ void Renderer::renderPolygon(const RigidBody* body) {
     window.draw(shape);
 }
 
+void Renderer::renderCapsule(const RigidBody* body) {
+    const Capsule* capsule = static_cast<const Capsule*>(body->shape.get());
+    const float halfLength = capsule->GetHalfLength();
+    const float radius = capsule->GetRadius();
+    const float orientation = body->GetOrientation();
+    const Vector2 axis(std::cos(orientation), std::sin(orientation));
+    const Vector2 side(-axis.y, axis.x);
+    const Vector2 pos = body->GetPosition();
+
+    // Each cap is a semicircle around its spine end, traced counterclockwise.
+    constexpr std::size_t capSegments = 16;
+    sf::ConvexShape shape;
+    shape.setPointCount(2 * (capSegments + 1));
+    std::size_t point = 0;
+    for (int end = 0; end < 2; ++end) {
+        const float sign = end == 0 ? 1.0f : -1.0f;
+        const Vector2 center = pos + axis * (sign * halfLength);
+        for (std::size_t i = 0; i <= capSegments; ++i) {
+            const float angle = -1.5707963f + 3.14159265f * static_cast<float>(i) / capSegments;
+            const Vector2 offset = (axis * std::cos(angle) + side * std::sin(angle)) * (sign * radius);
+            shape.setPoint(point++, worldToScreen(center + offset));
+        }
+    }
+
+    if (body == draggedBody) {
+        shape.setFillColor(sf::Color(255, 255, 100));  // Yellow when dragged
+        shape.setOutlineThickness(3);
+        shape.setOutlineColor(sf::Color(255, 255, 0));
+    } else if (body->IsStatic()) {
+        shape.setFillColor(sf::Color(80, 80, 80));
+        shape.setOutlineThickness(2);
+        shape.setOutlineColor(sf::Color(200, 200, 200));
+    } else {
+        shape.setFillColor(sf::Color(120, 210, 140));
+        shape.setOutlineThickness(2);
+        shape.setOutlineColor(sf::Color(200, 200, 200));
+    }
+
+    window.draw(shape);
+}
+
 Vector2 Renderer::screenToWorld(const sf::Vector2i& screenPos) const {
     float worldX = (screenPos.x - static_cast<int>(window.getSize().x) / 2.0f) / zoom + cameraCenter.x;
     float worldY = -(screenPos.y - static_cast<int>(window.getSize().y) / 2.0f) / zoom + cameraCenter.y;
@@ -340,6 +384,8 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
                 
                 hit = (localPoint.x >= minX && localPoint.x <= maxX && 
                        localPoint.y >= minY && localPoint.y <= maxY);
+            } else if (body->shape->type == ShapeType::CAPSULE) {
+                hit = ContainsPoint(*body, worldPos);
             }
             
             if (hit) {

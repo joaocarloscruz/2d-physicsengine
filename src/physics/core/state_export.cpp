@@ -67,13 +67,21 @@ std::string ExportWorldJson(const World& world, double time) {
             << ",\"ccd\":" << b.IsCcdEnabled() << ",\"shape\":{";
         if (b.shape->type == ShapeType::CIRCLE) {
             out << "\"type\":\"circle\",\"radius\":" << b.shape->GetRadius();
-        } else {
+        } else if (const auto* capsule = dynamic_cast<const Capsule*>(b.shape.get());
+                   capsule && b.shape->type == ShapeType::CAPSULE) {
+            // halfLength is half the spine, excluding the rounded caps.
+            out << "\"type\":\"capsule\",\"halfLength\":" << capsule->GetHalfLength()
+                << ",\"radius\":" << capsule->GetRadius();
+        } else if (const auto* polygon = dynamic_cast<const Polygon*>(b.shape.get());
+                   polygon && b.shape->type == ShapeType::POLYGON) {
             out << "\"type\":\"polygon\",\"vertices\":[";
             bool vertexComma = false;
-            for (const auto& v : static_cast<const Polygon*>(b.shape.get())->getVertices()) {
+            for (const auto& v : polygon->getVertices()) {
                 if (vertexComma) out << ","; vertexComma = true; Vector(out, v);
             }
             out << "]";
+        } else {
+            throw std::invalid_argument("State export supports Circle, Polygon and Capsule bodies.");
         }
         out << "}}";
     }

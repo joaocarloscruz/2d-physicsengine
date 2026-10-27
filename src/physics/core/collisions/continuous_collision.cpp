@@ -171,4 +171,55 @@ SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
     return {true,static_cast<float>(line.fraction(best->projection)),Store(best->normal),
         Store(line.translated(best->point,best->offset,best->baseProjection,best->localProjection))};
 }
+
+SweepHit SweepCircleCapsule(Vector2 center, Vector2 displacement, float radius,
+    Vector2 spineStart, Vector2 spineEnd, float capsuleRadius, Vector2 capsuleDisplacement) {
+    Validate(center); Validate(displacement); Validate(capsuleDisplacement);
+    Validate(spineStart); Validate(spineEnd);
+    ValidateRadius(radius); ValidateRadius(capsuleRadius);
+    const DVector p0=Double(spineStart),spine=Double(spineEnd)-p0;
+    const double length=std::hypot(spine.x,spine.y);
+    const DVector tangent=length>0?spine*(1/length):DVector{1,0};
+    const double expanded=static_cast<double>(radius)+capsuleRadius;
+    const DVector closest=p0+tangent*std::clamp(Dot(Double(center)-p0,tangent),0.0,length);
+    const DVector toSpine=closest-Double(center);
+    const double distance=std::hypot(toSpine.x,toSpine.y);
+    if (distance<=expanded) {
+        const DVector normal=distance>0?toSpine*(1/distance):DVector{1,0};
+        return {true,0,Store(normal),Store(closest-normal*capsuleRadius)};
+    }
+    const DVector motion=Double(displacement)-Double(capsuleDisplacement);
+    if (motion.x==0&&motion.y==0) return {};
+    const Line line(center,displacement,capsuleDisplacement);
+    struct Candidate { double projection,baseProjection,localProjection; DVector point,offset,normal; };
+    std::optional<Candidate> best;
+    const auto accept=[&](const Candidate& candidate) {
+        if (!best||candidate.projection<best->projection) best=candidate;
+    };
+    // Two finite side faces, then the end disks, mirror the polygon traversal.
+    if (length>0) {
+        for (const double side : {1.0,-1.0}) {
+            const DVector outward=DVector{-tangent.y,tangent.x}*side;
+            if (Dot(outward,line.direction)<0
+                && Dot(Double(center)-p0,outward)>=expanded
+                && Dot(line.endpointRelativeTo(p0),outward)<=expanded) {
+                const DVector offset=p0+outward*expanded;
+                const double along=Cross(offset-line.reference,line.direction)/Cross(line.direction,tangent);
+                if (along>=0&&along<=length) {
+                    const double baseProjection=Dot(p0-line.reference,line.direction);
+                    const double localProjection=Dot(tangent*along+outward*expanded,line.direction);
+                    accept({baseProjection+localProjection,baseProjection,localProjection,p0,
+                            tangent*along+outward*capsuleRadius,outward*(-1)});
+                }
+            }
+        }
+    }
+    for (const DVector end : {p0,Double(spineEnd)})
+        if (const auto disk=DiskEntry(line,end,expanded))
+            accept({disk->projection,disk->centerProjection,disk->localProjection,end,
+                    disk->outward*capsuleRadius,disk->outward*(-1)});
+    if (!best) return {};
+    return {true,static_cast<float>(line.fraction(best->projection)),Store(best->normal),
+        Store(line.translated(best->point,best->offset,best->baseProjection,best->localProjection))};
+}
 }

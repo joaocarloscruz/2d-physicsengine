@@ -99,6 +99,8 @@ private:
         RigidBodyPtr bodyB;
     };
     void dispatchEvents();
+    static bool SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b);
+    void validateCcdSupport() const;
     std::vector<CollisionManifold> advanceCcd(const std::vector<Vector2>& starts,
         float deltaTime, SimulationStatistics& statistics);
     void endContacts(std::uint64_t bodyId);
