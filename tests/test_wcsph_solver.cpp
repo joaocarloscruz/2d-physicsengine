@@ -367,3 +367,79 @@ TEST_CASE("WCSPH zero-time preparation resets substep diagnostics", "[review][fl
     solver.step(particles, 0);
     REQUIRE(solver.getDiagnostics().substeps == 0);
 }
+
+namespace {
+
+std::vector<FluidParticle> CompressedPair(float separation, float speed) {
+    FluidParticleProperties properties;
+    properties.mass = 1.0f;
+    properties.restDensity = 1.0f;
+    properties.smoothingLength = 1.0f;
+    properties.viscosity = 0.0f;
+    std::vector<FluidParticle> particles = {
+        FluidParticle(Vector2(-0.5f * separation, 0.0f), Vector2(speed, 0.0f), properties),
+        FluidParticle(Vector2(0.5f * separation, 0.0f), Vector2(-speed, 0.0f), properties),
+    };
+    for (FluidParticle& particle : particles) {
+        particle.density = 1.05f;
+    }
+    return particles;
+}
+
+} // namespace
+
+TEST_CASE("Symplectic continuity density uses the kicked velocity", "[fluid][wcsph][integration]") {
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    config.densityDiffusion = 0.0f;
+    config.acousticDamping = 0.0f;
+    config.speedOfSound = 2.0f;
+
+    config.timeIntegration = WcsphTimeIntegration::ExplicitDensity;
+    auto legacy = CompressedPair(0.4f, 0.0f);
+    WcsphSolver legacySolver(1.0f, config);
+    legacySolver.step(legacy, 0.01f);
+    // The legacy update integrates the rate of the particles' initial rest.
+    REQUIRE(legacy[0].density == 1.05f);
+
+    config.timeIntegration = WcsphTimeIntegration::SymplecticEuler;
+    auto symplectic = CompressedPair(0.4f, 0.0f);
+    WcsphSolver symplecticSolver(1.0f, config);
+    symplecticSolver.step(symplectic, 0.01f);
+    REQUIRE(symplectic[0].velocity.x < 0.0f);
+    REQUIRE(symplectic[0].density < 1.05f);
+    REQUIRE(symplectic[0].density == symplectic[1].density);
+
+    config.timeIntegration = static_cast<WcsphTimeIntegration>(7);
+    REQUIRE_THROWS_AS(WcsphSolver(1.0f, config), std::invalid_argument);
+}
+
+TEST_CASE("Acoustic damping resists compression but not rigid motion", "[fluid][wcsph][damping]") {
+    WcsphConfig config;
+    config.externalAcceleration = Vector2();
+    config.densityDiffusion = 0.0f;
+    config.speedOfSound = 2.0f;
+    const auto forceFor = [&config](float damping, float speed, Vector2 drift) {
+        config.acousticDamping = damping;
+        auto particles = CompressedPair(0.4f, speed);
+        for (FluidParticle& particle : particles) {
+            particle.velocity = particle.velocity + drift;
+        }
+        WcsphSolver solver(1.0f, config);
+        solver.prepare(particles);
+        REQUIRE(particles[0].force.x == Catch::Approx(-particles[1].force.x));
+        return particles[0].force.x;
+    };
+
+    // Approaching particles gain repulsion from the bulk-viscous pressure,
+    // receding particles lose some, and a common drift changes nothing.
+    REQUIRE(forceFor(0.5f, 0.1f, Vector2()) < forceFor(0.0f, 0.1f, Vector2()));
+    REQUIRE(forceFor(0.5f, -0.1f, Vector2()) > forceFor(0.0f, -0.1f, Vector2()));
+    REQUIRE(forceFor(0.5f, 0.0f, Vector2(0.3f, -0.2f))
+        == forceFor(0.0f, 0.0f, Vector2(0.3f, -0.2f)));
+
+    config.acousticDamping = -0.1f;
+    REQUIRE_THROWS_AS(WcsphSolver(1.0f, config), std::invalid_argument);
+    config.acousticDamping = 1.5f;
+    REQUIRE_THROWS_AS(WcsphSolver(1.0f, config), std::invalid_argument);
+}
