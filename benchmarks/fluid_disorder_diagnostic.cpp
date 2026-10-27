@@ -39,6 +39,8 @@ void Run(std::ostream &out, const char *label, Family family, bool clamp, int st
     c.kernelFamily = family;
     c.maximumTimeStep = dt;
     c.clampNegativePressure = clamp;
+    c.particleShifting = 0;  // audits the pressure-only null mode
+    c.acousticDamping = 0;
     WcsphSolver solver(h, c);
     solver.prepare(particles);
     double rhoMin = 1e100, rhoMax = 0, pMin = 1e100, pMax = -1e100, bulkMin = 1e100, bulkMax = 0;

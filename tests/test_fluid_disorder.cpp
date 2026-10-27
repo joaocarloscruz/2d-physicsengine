@@ -46,6 +46,7 @@ TEST_CASE("Original disorder inputs are stationary for either kernel at every te
             c.externalAcceleration = {};
             c.speedOfSound = 15;
             c.kernelFamily = family;
+            c.particleShifting = 0; // characterizes the pressure-only model
             c.maximumTimeStep = .2f / steps;
             WcsphSolver solver(.2f, c);
             solver.prepare(particles);

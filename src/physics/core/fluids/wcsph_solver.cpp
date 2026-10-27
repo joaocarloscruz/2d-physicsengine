@@ -131,6 +131,12 @@ void WcsphConfig::Validate() const {
             "WCSPH acoustic damping must be finite and between zero and one."
         );
     }
+    if (!std::isfinite(particleShifting)
+        || particleShifting < 0.0f || particleShifting > 1.0f) {
+        throw std::invalid_argument(
+            "WCSPH particle shifting must be finite and between zero and one."
+        );
+    }
     if (!std::isfinite(densityDiffusion)
         || densityDiffusion < 0.0f || densityDiffusion > 1.0f) {
         throw std::invalid_argument(
@@ -513,6 +519,7 @@ void WcsphSolver::prepareState(
     }
 
     accumulateDensityRates(particles, &wallDensityRates);
+    computeShiftVelocities(particles);
 
     lastStatistics.neighbors = grid.getLastStatistics();
     diagnostics = MeasureFluidDiagnostics(particles, pairs, config.kernelFamily, wallDensityRates);
@@ -611,6 +618,85 @@ void WcsphSolver::densityRateTerms(
 }
 }
 
+void WcsphSolver::computeShiftVelocities(const std::vector<FluidParticle>& particles) {
+    shiftVelocities.clear();
+    if (config.particleShifting <= 0.0f || particles.empty()) {
+        return;
+    }
+    // grad C_i = sum_j V_j grad W_ij and B_i = -sum_j V_j (x_i - x_j) (x) grad W_ij.
+    // B is the identity for complete support; its smallest eigenvalue drops
+    // towards 1/2 where a free surface truncates the kernel, and sampled wall
+    // particles complete it at walls.
+    const std::size_t count = particles.size();
+    std::vector<double> gradientX(count, 0.0), gradientY(count, 0.0);
+    std::vector<double> bXX(count, 0.0), bXY(count, 0.0), bYY(count, 0.0);
+    const auto accumulate = [&](std::size_t index, double volume,
+                                const Vector2& displacement, const Vector2& gradient) {
+        gradientX[index] += volume * gradient.x;
+        gradientY[index] += volume * gradient.y;
+        bXX[index] -= volume * displacement.x * gradient.x;
+        bXY[index] -= volume * 0.5 * (static_cast<double>(displacement.x) * gradient.y
+            + static_cast<double>(displacement.y) * gradient.x);
+        bYY[index] -= volume * displacement.y * gradient.y;
+    };
+    for (const auto& pair : pairs) {
+        const FluidParticle& first = particles[pair.first];
+        const FluidParticle& second = particles[pair.second];
+        const Vector2 displacement = first.position - second.position;
+        const float smoothingLength = static_cast<float>(0.5 * (
+            static_cast<double>(first.smoothingLength) + second.smoothingLength
+        ));
+        const Vector2 gradient = SphKernels2D::PressureGradient(
+            displacement, smoothingLength, config.kernelFamily);
+        accumulate(pair.first, second.volume, displacement, gradient);
+        accumulate(pair.second, first.volume, displacement * -1.0f, gradient * -1.0f);
+    }
+    if (preparedBoundary) {
+        for (const BoundaryPair& pair : boundaryPairs) {
+            const FluidParticle& particle = particles[pair.fluid];
+            const FluidBoundaryParticle& boundaryParticle = (*preparedBoundary)[pair.boundary];
+            const Vector2 displacement = particle.position - boundaryParticle.position;
+            const Vector2 gradient = SphKernels2D::PressureGradient(
+                displacement, particle.smoothingLength, config.kernelFamily);
+            accumulate(pair.fluid, boundaryParticle.volume, displacement, gradient);
+        }
+    }
+    constexpr double FreeSurfaceThreshold = 0.55;
+    constexpr double CompleteSupportThreshold = 0.9;
+    shiftVelocities.assign(count, Vector2());
+    for (std::size_t index = 0; index < count; ++index) {
+        const double mean = 0.5 * (bXX[index] + bYY[index]);
+        const double radius = std::hypot(0.5 * (bXX[index] - bYY[index]), bXY[index]);
+        const double smallest = mean - radius;
+        if (!(smallest >= FreeSurfaceThreshold)) {
+            continue; // free surface or isolated: shifting would inflate it
+        }
+        const double diffusivity = static_cast<double>(config.particleShifting)
+            * particles[index].smoothingLength * config.speedOfSound;
+        double shiftX = -diffusivity * gradientX[index];
+        double shiftY = -diffusivity * gradientY[index];
+        if (smallest < CompleteSupportThreshold && radius > 0.0) {
+            // Near a surface keep only the motion along it: remove the
+            // component along the eigenvector of the truncated direction.
+            double normalX = bXY[index];
+            double normalY = smallest - bXX[index];
+            if (std::abs(normalX) + std::abs(normalY) == 0.0) {
+                normalX = smallest - bYY[index];
+                normalY = bXY[index];
+            }
+            const double length = std::hypot(normalX, normalY);
+            if (length > 0.0) {
+                normalX /= length;
+                normalY /= length;
+                const double normalShift = shiftX * normalX + shiftY * normalY;
+                shiftX -= normalShift * normalX;
+                shiftY -= normalShift * normalY;
+            }
+        }
+        shiftVelocities[index] = SphViscosity::CheckedVector(shiftX, shiftY);
+    }
+}
+
 float WcsphSolver::getStableTimeStep(
     const std::vector<FluidParticle>& particles
 ) const {
@@ -643,6 +729,13 @@ float WcsphSolver::getStableTimeStep(
         / (config.speedOfSound + maximumSpeed);
     double stableTimeStep = std::min(static_cast<double>(config.maximumTimeStep), acousticLimit);
     stableTimeStep = std::min(stableTimeStep, viscosityLimit);
+    if (config.particleShifting > 0.0f) {
+        // Shifting diffuses positions with D = s h c; the largest eigenvalue
+        // of the linearized grad(C) operator is ~17/h^2 for Wendland C2 at
+        // h = 2 dx, so D dt * 17/h^2 < 2 needs dt < 0.118 h/(s c).
+        stableTimeStep = std::min(stableTimeStep, 0.05 * minimumSmoothingLength
+            / (static_cast<double>(config.particleShifting) * config.speedOfSound));
+    }
     if (config.acousticDamping > 0.0f) {
         // Explicit diffusion bound 0.125 h^2 / zeta for zeta = beta h c.
         stableTimeStep = std::min(stableTimeStep, 0.125 * minimumSmoothingLength
@@ -672,6 +765,10 @@ void WcsphSolver::integrate(
             particle.velocity = SphViscosity::AdvanceVelocity(particle, deltaTime);
         }
         particle.position = SphViscosity::Add(particle.position, particle.velocity, deltaTime);
+        if (!shiftVelocities.empty()) {
+            particle.position = SphViscosity::Add(particle.position,
+                shiftVelocities[static_cast<std::size_t>(&particle - particles.data())], deltaTime);
+        }
         if (config.densityMode == WcsphDensityMode::Continuity) {
             particle.density += particle.densityRate * deltaTime;
         }

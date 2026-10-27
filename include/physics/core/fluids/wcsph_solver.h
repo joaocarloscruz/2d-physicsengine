@@ -45,6 +45,9 @@ struct WcsphConfig {
     float densityDiffusion = 0.1f;
     // Dimensionless bulk-viscosity coefficient beta; zeta = beta * h * c.
     float acousticDamping = 0.5f;
+    // Dimensionless particle-shifting coefficient s: fully supported particles
+    // drift by -s*h*c*dt*grad(C), C = sum_j V_j W_ij (fluid and wall volumes).
+    float particleShifting = 0.02f;
 
     // Wendland C2 keeps the pressurized square lattice stable at h = 2 dx: the
     // symmetric pressure term's uniform-pressure stiffness sum_j H(r_ij)(1 - cos k.r_ij)
@@ -143,6 +146,8 @@ private:
         std::vector<float>* wallDensityRates
     ) const;
 
+    void computeShiftVelocities(const std::vector<FluidParticle>& particles);
+
     struct BoundaryPair {
         std::size_t fluid;
         std::size_t boundary;
@@ -161,6 +166,7 @@ private:
     std::vector<FluidParticleSpatialGrid::ParticlePair> pairs;
     std::vector<BoundaryPair> boundaryPairs;
     const std::vector<FluidBoundaryParticle>* preparedBoundary = nullptr;
+    std::vector<Vector2> shiftVelocities;
     WcsphStatistics lastStatistics;
     FluidDiagnostics diagnostics;
 };
