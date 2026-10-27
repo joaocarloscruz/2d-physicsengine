@@ -286,3 +286,58 @@ a separate diagnostic adapter against these unchanged fixtures. It removes the
 isolated incline displacement term but worsens several stack and terminal-speed
 metrics and retains within-step stopping error. Its full paired evidence is
 committed; production defaults remain unchanged.
+
+## Opt-in friction displacement correction (#91)
+
+`SimulationConfig::enableFrictionDisplacementCorrection` (default `false`)
+addresses the integration-order term above in production `World` steps. After
+each island's velocity iterations, every solved tangential contact impulse is
+treated as a force acting over the whole step, like the gravity and loads that
+the integrator already applied as `x += v*dt + a*dt^2/2`. Each body therefore
+moves by half of that impulse's velocity change times `dt`. Rotation uses the
+complete contact wrench, so normal and friction torques stay balanced. The
+normal impulse's linear part is deliberately excluded: normal settling keeps
+the existing penetration-slop behavior, which preserves resting manifolds for
+sleeping, wake-up and contact events. Equal and opposite pair terms keep the
+center of mass on its momentum trajectory. Bodies in a swept CCD impact and
+experimental integration strategies are skipped; free flight is unchanged.
+
+Run `rigid_contact_benchmark --friction-displacement` for the corrected
+matrix. With the flag off, all 432 full-matrix rows match the previous
+production results exactly. Windows Release Clang 23.1.4, full matrix, selected
+rows (complete paired rows in
+[docs/data/friction-displacement-f47a4fc-clang23.json](data/friction-displacement-f47a4fc-clang23.json)):
+
+| Fixture | dt | Iterations | Warm | Max displacement off | on | Downhill off | on | Terminal speed off | on |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rest | 1/60 | 10 | .8 | .00559413 | .00559413 | 0 | 0 | 1.39e-17 | 1.39e-17 |
+| incline_stick | 1/60 | 4 | 0 | .0550859 | .0137243 | .0548022 | .0125376 | .006303 | .006303 |
+| incline_stick | 1/60 | 10 | .8 | .0428546 | .00557667 | .0424906 | .000174263 | 8.64e-05 | 8.64e-05 |
+| incline_stick | 1/240 | 20 | 1 | .0117125 | .00503595 | .0105746 | -6.27e-06 | 8.89e-05 | 8.89e-05 |
+| incline_slide | 1/60 | 10 | .8 | 4.51424 | 4.50950 | 4.51423 | 4.50949 | 4.509 | 4.509 |
+| stack3 | 1/60 | 10 | .8 | .0260304 | .0260228 | 0 | 0 | .002607 | .002606 |
+| stack6 | 1/60 | 10 | .8 | .0504847 | .0514232 | 0 | 0 | .03797 | .04674 |
+| stack12 | 1/120 | 20 | 1 | .0956028 | .0954221 | 0 | 0 | .001043 | .0004702 |
+| stack12 | 1/60 | 4 | 0 | 4.38780 | 4.93888 | 0 | 0 | 5.714 | 6.717 |
+| stack12 | 1/60 | 4 | .8 | .491898 | .571305 | 0 | 0 | 1.220 | 1.342 |
+
+Across the full matrix, sticking-incline downhill displacement improves in all
+27 configurations (ratios 9.6e-5 to .23). The remaining maximum displacement is
+normal settling into the 0.005 penetration slop. The analytic sliding distance
+`0.5*g*(sin(theta)-mu_k*cos(theta))*T^2 = 4.5095` is matched in every
+`incline_slide` row, where the default carried an O(dt) offset. Rest and impact
+fixtures are unchanged. Stack results are mixed and are reported, not hidden:
+converged rows (10-20 iterations or warm starting) differ by a few percent in
+either direction, while the unconverged 4-iteration twelve-box stacks, which
+collapse in both modes, collapse further (4.388 to 4.939 m with no warming).
+
+Unit tests check the analytic properties directly: incline creep in the second
+second below 2% of the default's `g*sin(theta)*dt/2` per second at three
+timesteps; second-second sliding kinematics within 1e-5 m of
+`v*t + a*t^2/2`, with the default's offset equal to `mu_k*g*cos(theta)*dt/2`;
+sticking just below and sliding just above the friction angle; an internal
+friction pair whose mass center follows its momentum exactly; and resting
+contacts that still sleep and wake. Because unconverged tall stacks worsen, the
+default remains off pending an owner decision; the original thresholds above
+are unchanged.
+
