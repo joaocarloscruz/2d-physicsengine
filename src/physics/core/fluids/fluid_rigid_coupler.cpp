@@ -152,9 +152,17 @@ FluidRigidCouplingStatistics FluidRigidCoupler::couple(
         );
     }
     for (const RigidBody* body : bodies) {
-        if (body == nullptr) {
+        if (body == nullptr || !body->shape) {
             throw std::invalid_argument(
                 "Fluid-rigid coupling requires valid rigid bodies."
+            );
+        }
+        // Reject unsupported geometry before any particle or body impulse
+        // is applied; sampling it mid-loop would leave a partial update.
+        if (body->shape->type != ShapeType::CIRCLE
+            && body->shape->type != ShapeType::POLYGON) {
+            throw std::invalid_argument(
+                "Fluid-rigid coupling supports only Circle and Polygon bodies."
             );
         }
     }
