@@ -121,6 +121,8 @@ inline PhaseProbe FlatPhaseProbe(PhysicsEngine::SphKernelFamily family,float dx,
     for(int y=0;y<extent;++y) for(int x=-extent;x<=extent;++x)
         walls.push_back({{(x+(staggered?0.5f:0))*dx,-y*dx},{},dx*dx,{},1});
     WcsphConfig config;config.kernelFamily=family;config.speedOfSound=20;config.equationOfStateExponent=7;config.externalAcceleration={};config.densityMode=WcsphDensityMode::Continuity;config.densityDiffusion=0;
+    // Probes the raw sample quadrature; completion would cancel the defect it measures.
+    config.wallConsistency=WcsphWallConsistency::RawSamples;
     WcsphSolver solver(h,config);solver.prepare(particles,walls);
     const auto& point=particles[static_cast<std::size_t>(extent)];
     return {point.force.y/(static_cast<double>(point.pressure)*dx),point.force.y/static_cast<double>(point.mass),point.pressure};

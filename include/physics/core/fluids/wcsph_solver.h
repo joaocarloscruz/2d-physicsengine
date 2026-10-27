@@ -33,6 +33,17 @@ enum class WcsphTimeIntegration {
     SymplecticEuler
 };
 
+// Constant-pressure consistency of the dummy wall force. RawSamples applies the
+// sampled wall terms as they are. ConstantPressureCompletion adds, for fluid
+// particles whose wall samples nearly complete their kernel stencil, the small
+// correction p_i (S_fluid + S_wall) that makes a uniform pressure exert no
+// force; it removes sub-spacing quadrature defects (sample staggering, gaps,
+// compressed fluid beside rest-spaced samples). See docs/wcsph-solver.md.
+enum class WcsphWallConsistency {
+    RawSamples,
+    ConstantPressureCompletion
+};
+
 struct WcsphConfig {
     Vector2 externalAcceleration = Vector2(0.0f, -9.81f);
     float speedOfSound = 20.0f;
@@ -56,6 +67,8 @@ struct WcsphConfig {
     SphKernelFamily kernelFamily = SphKernelFamily::WendlandC2;
     WcsphWallPressureMode wallPressureMode = WcsphWallPressureMode::LegacyPositiveIncrement;
     WcsphTimeIntegration timeIntegration = WcsphTimeIntegration::SymplecticEuler;
+    WcsphWallConsistency wallConsistency =
+        WcsphWallConsistency::ConstantPressureCompletion;
 
     void Validate() const;
 };

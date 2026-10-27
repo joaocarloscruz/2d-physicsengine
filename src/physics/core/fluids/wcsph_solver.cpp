@@ -81,6 +81,9 @@ void WcsphConfig::Validate() const {
     if (wallPressureMode != WcsphWallPressureMode::LegacyPositiveIncrement
         && wallPressureMode != WcsphWallPressureMode::SignedBodyForce)
         throw std::invalid_argument("WCSPH wall pressure mode is not recognized.");
+    if (wallConsistency != WcsphWallConsistency::RawSamples
+        && wallConsistency != WcsphWallConsistency::ConstantPressureCompletion)
+        throw std::invalid_argument("WCSPH wall consistency mode is not recognized.");
     if (!std::isfinite(externalAcceleration.x)
         || !std::isfinite(externalAcceleration.y)) {
         throw std::invalid_argument(
@@ -426,6 +429,16 @@ void WcsphSolver::prepareState(
 
     std::vector<float> wallDensityRates(particles.size(), 0.0f);
     std::vector<double> viscosityRows(particles.size(), 0.0);
+    // Uniform-pressure stencils (force = -p S) for wall completion.
+    const bool completeWalls = boundaryParticles && !boundaryPairs.empty()
+        && config.wallConsistency == WcsphWallConsistency::ConstantPressureCompletion;
+    std::vector<double> fluidStencilX, fluidStencilY, wallStencilX, wallStencilY;
+    if (completeWalls) {
+        fluidStencilX.assign(particles.size(), 0.0);
+        fluidStencilY.assign(particles.size(), 0.0);
+        wallStencilX.assign(particles.size(), 0.0);
+        wallStencilY.assign(particles.size(), 0.0);
+    }
     for (const auto& pair : pairs) {
         FluidParticle& first = particles[pair.first];
         FluidParticle& second = particles[pair.second];
@@ -457,6 +470,16 @@ void WcsphSolver::prepareState(
             pressureForce = SphViscosity::CheckedVector(
                 massProduct * (firstCoefficient * firstGradient.x + secondCoefficient * secondGradient.x),
                 massProduct * (firstCoefficient * firstGradient.y + secondCoefficient * secondGradient.y));
+            if (completeWalls) {
+                const double firstWeight = 1.0 / (static_cast<double>(first.density) * first.density);
+                const double secondWeight = 1.0 / (static_cast<double>(second.density) * second.density);
+                const double stencilX = -massProduct * (firstWeight * firstGradient.x + secondWeight * secondGradient.x);
+                const double stencilY = -massProduct * (firstWeight * firstGradient.y + secondWeight * secondGradient.y);
+                fluidStencilX[pair.first] += stencilX;
+                fluidStencilY[pair.first] += stencilY;
+                fluidStencilX[pair.second] -= stencilX;
+                fluidStencilY[pair.second] -= stencilY;
+            }
         } else {
             // Preserve common-gradient continuity, legacy and equal-h arithmetic.
             const double pressureTerm = momentumPressure[pair.first]
@@ -465,6 +488,15 @@ void WcsphSolver::prepareState(
             const double pressureScale = -static_cast<double>(first.mass) * second.mass * pressureTerm;
             pressureForce = SphViscosity::CheckedVector(
                 gradient.x * pressureScale, gradient.y * pressureScale);
+            if (completeWalls) {
+                const double stencilScale = static_cast<double>(first.mass) * second.mass * (
+                    1.0 / (static_cast<double>(first.density) * first.density)
+                    + 1.0 / (static_cast<double>(second.density) * second.density));
+                fluidStencilX[pair.first] += stencilScale * gradient.x;
+                fluidStencilY[pair.first] += stencilScale * gradient.y;
+                fluidStencilX[pair.second] -= stencilScale * gradient.x;
+                fluidStencilY[pair.second] -= stencilScale * gradient.y;
+            }
         }
 
         const float laplacian = SphKernels2D::ViscosityLaplacian(displacement, smoothingLength);
@@ -500,6 +532,12 @@ void WcsphSolver::prepareState(
                 particle.smoothingLength,
                 config.kernelFamily
             );
+            if (completeWalls && boundaryParticle.pressureScale > 0.0f) {
+                const double stencilScale = 2.0 * static_cast<double>(particle.volume)
+                    * boundaryParticle.volume * boundaryParticle.pressureScale;
+                wallStencilX[pair.fluid] += stencilScale * pressureGradient.x;
+                wallStencilY[pair.fluid] += stencilScale * pressureGradient.y;
+            }
             if (boundaryParticle.pressureScale > 0.0f) {
                 if (signedPressure) {
                     // Keep extrapolated pressure and force products in double;
@@ -515,6 +553,36 @@ void WcsphSolver::prepareState(
                     particle.force = particle.force + pressureGradient * pressureScale;
                 }
             }
+        }
+    }
+
+    if (completeWalls) {
+        // A uniform pressure p exerts -p (S_fluid + S_wall) on a particle. When
+        // the wall samples nearly complete the fluid stencil (mismatch below
+        // kCompleteBelow of the wall term), add p (S_fluid + S_wall) so that
+        // residual vanishes; the correction fades out by kRawAbove so free
+        // surfaces, splashes and isolated particles keep the raw wall response.
+        // It uses the momentum pressure that the pair and wall forces use.
+        constexpr double kCompleteBelow = 0.05;
+        constexpr double kRawAbove = 0.1;
+        for (std::size_t index = 0; index < particles.size(); ++index) {
+            const double wallMagnitude = std::hypot(wallStencilX[index], wallStencilY[index]);
+            if (!(wallMagnitude > 0.0)) {
+                continue;
+            }
+            const double defectX = fluidStencilX[index] + wallStencilX[index];
+            const double defectY = fluidStencilY[index] + wallStencilY[index];
+            const double mismatch = std::hypot(defectX, defectY) / wallMagnitude;
+            const double blend = std::clamp(
+                (kRawAbove - mismatch) / (kRawAbove - kCompleteBelow), 0.0, 1.0);
+            if (blend <= 0.0) {
+                continue;
+            }
+            FluidParticle& particle = particles[index];
+            const double scale = blend * momentumPressure[index];
+            particle.force = SphViscosity::CheckedVector(
+                double(particle.force.x) + scale * defectX,
+                double(particle.force.y) + scale * defectY);
         }
     }
 

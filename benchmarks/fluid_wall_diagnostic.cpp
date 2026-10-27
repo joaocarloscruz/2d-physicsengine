@@ -42,6 +42,7 @@ void WriteScene(std::ostream& out,const char* geometry,float dx,float h,SphKerne
         }
     }
     WcsphConfig config;config.speedOfSound=40;config.equationOfStateExponent=7;config.kernelFamily=family;config.externalAcceleration={0,-9.81f};
+    config.wallConsistency=WcsphWallConsistency::RawSamples; // Reconstructs the raw sampled wall operator.
     if(signedPressure) config.wallPressureMode=WcsphWallPressureMode::SignedBodyForce;
     config.densityMode=initialized?WcsphDensityMode::Continuity:WcsphDensityMode::Summation;config.densityDiffusion=0;
     WcsphSolver solver(h,config);solver.prepare(particles,walls);
