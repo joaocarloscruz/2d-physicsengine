@@ -44,6 +44,16 @@ enum class WcsphWallConsistency {
     ConstantPressureCompletion
 };
 
+// Continuity density is particle state, so a fresh set starts at rest density
+// and zero pressure. With RestDensityParticles, prepare(particles,
+// boundaryParticles) seeds particles still at exactly restDensity from their
+// depth below the local free surface when their column rests on a wall.
+// step() never initializes. See docs/wcsph-solver.md.
+enum class WcsphHydrostaticInitialization {
+    Disabled,
+    RestDensityParticles
+};
+
 struct WcsphConfig {
     Vector2 externalAcceleration = Vector2(0.0f, -9.81f);
     float speedOfSound = 20.0f;
@@ -69,6 +79,8 @@ struct WcsphConfig {
     WcsphTimeIntegration timeIntegration = WcsphTimeIntegration::SymplecticEuler;
     WcsphWallConsistency wallConsistency =
         WcsphWallConsistency::ConstantPressureCompletion;
+    WcsphHydrostaticInitialization hydrostaticInitialization =
+        WcsphHydrostaticInitialization::RestDensityParticles;
 
     void Validate() const;
 };
@@ -141,7 +153,8 @@ public:
 private:
     void prepareState(
         std::vector<FluidParticle>& particles,
-        const std::vector<FluidBoundaryParticle>* boundaryParticles
+        const std::vector<FluidBoundaryParticle>* boundaryParticles,
+        bool initializeHydrostaticDensity = false
     );
     void integrate(std::vector<FluidParticle>& particles, float deltaTime);
     void accumulateDensityRates(

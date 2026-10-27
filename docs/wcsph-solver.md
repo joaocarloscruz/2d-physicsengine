@@ -145,3 +145,28 @@ a complete, nonduplicated neighbor set remains the caller's responsibility.
 Unused pressure, force, viscosity, volume and cached density-rate fields are not
 validated by this observer. These checks do not change the comparison operator
 or make it a true derivative of summation density.
+
+## Hydrostatic initialization and wall completion
+
+Continuity density is particle state, so a fresh lattice starts at rest density
+with zero pressure. `prepare(particles, boundaryParticles)` (not `step`, and not
+`step(0)`) seeds particles whose density is still exactly `restDensity` when
+`hydrostaticInitialization = RestDensityParticles` (default). Each particle links
+upward through fluid within half a spacing laterally; the free surface sits half a
+spacing above the top of the chain. Only columns whose lowest particle has
+pressure-bearing wall samples straddling it below are seeded; free-falling fluid
+and explicitly set densities are left alone. Pressure follows a Tait column with
+`g / M`, where `M` is the measured first moment of the kernel-gradient stencil
+(doubled lower half, iterated with the seeded volumes); `M` is not one at finite
+`h/dx` (about 0.89 at `h = 2dx`, 0.92 at `2.5dx` for Poly6/Spiky), so this is what
+lets the discrete pressure force carry the weight. Floor-supported particles
+integrate the profile from the particle above.
+
+`wallConsistency = ConstantPressureCompletion` (default) adds `p_i (S_fluid +
+S_wall)` to fluid particles whose wall samples nearly complete their stencil
+(mismatch below 5 %, fading out by 10 %), so a uniform pressure exerts no force.
+Without it, the floor force of a compressed column beside rest-spaced, staggered
+samples has a defect that does not shrink as `dx` is refined at fixed `h/dx`.
+Measured on the refinement case (dx 0.1/0.05/0.025, `h = 2.5dx`): residual
+0.0032/0.0014/0.00085, also first order at `h/dx` 2, 3 and 3.5. `RawSamples`
+keeps the old operator (used by the wall-quadrature audit probes).

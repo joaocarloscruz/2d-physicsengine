@@ -74,6 +74,219 @@ void ValidateBoundaryParticle(const FluidBoundaryParticle& particle) {
     }
 }
 
+
+// Depth-based hydrostatic seed for continuity density. Each particle links to
+// the nearest fluid particle above it (against gravity) inside a lateral band
+// of half its nominal spacing s = sqrt(m / rho0) and at most kSurfaceGap * s
+// higher; a particle without such a link is a surface particle and the free
+// surface sits s / 2 above it. A column is supported when its lowest particle
+// has a pressure-bearing wall sample directly below it inside the kernel
+// support. Supported particles still at exactly rest density receive
+// p = rho0 |g| depth and the inverse Tait density; all others are untouched.
+// FluidBoundaryPair is any {fluid, boundary} index pair.
+template <class FluidBoundaryPair>
+void InitializeHydrostaticDensity(
+    std::vector<FluidParticle>& particles,
+    const std::vector<FluidParticleSpatialGrid::ParticlePair>& pairs,
+    const std::vector<FluidBoundaryParticle>& boundaryParticles,
+    const std::vector<FluidBoundaryPair>& boundaryPairs,
+    const WcsphConfig& config
+) {
+    constexpr double kSurfaceGap = 1.5;
+    constexpr double kLateralBand = 0.5;
+    const double gx = config.externalAcceleration.x;
+    const double gy = config.externalAcceleration.y;
+    const double gravity = std::hypot(gx, gy);
+    if (!(gravity > 0.0) || particles.empty()) {
+        return;
+    }
+    const double upX = -gx / gravity;
+    const double upY = -gy / gravity;
+    const std::size_t count = particles.size();
+    constexpr std::size_t none = std::numeric_limits<std::size_t>::max();
+    std::vector<double> height(count);
+    std::vector<double> lateral(count);
+    std::vector<double> spacing(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const FluidParticle& particle = particles[index];
+        height[index] = upX * particle.position.x + upY * particle.position.y;
+        lateral[index] = -upY * particle.position.x + upX * particle.position.y;
+        spacing[index] = std::sqrt(
+            static_cast<double>(particle.mass) / particle.restDensity
+        );
+    }
+    std::vector<std::size_t> above(count, none);
+    std::vector<std::size_t> below(count, none);
+    const auto link = [&](std::size_t from, std::size_t to) {
+        const double rise = height[to] - height[from];
+        const double band = kLateralBand * spacing[from];
+        if (std::abs(lateral[to] - lateral[from]) >= band) {
+            return;
+        }
+        if (rise > 0.0 && rise <= kSurfaceGap * spacing[from]
+            && (above[from] == none
+                || rise < height[above[from]] - height[from])) {
+            above[from] = to;
+        }
+        if (rise < 0.0 && -rise <= kSurfaceGap * spacing[from]
+            && (below[from] == none
+                || -rise < height[from] - height[below[from]])) {
+            below[from] = to;
+        }
+    };
+    for (const auto& pair : pairs) {
+        link(pair.first, pair.second);
+        link(pair.second, pair.first);
+    }
+    // A wall supports a particle when pressure-bearing samples below it, within
+    // one spacing laterally, straddle its vertical line. Edge samples may sit
+    // half a spacing off the fluid lattice; a side wall alone never straddles.
+    std::vector<char> wallOnLeft(count, 0);
+    std::vector<char> wallOnRight(count, 0);
+    for (const FluidBoundaryPair& pair : boundaryPairs) {
+        const FluidBoundaryParticle& wall = boundaryParticles[pair.boundary];
+        if (wall.pressureScale <= 0.0f) {
+            continue;
+        }
+        const std::size_t index = pair.fluid;
+        const double wallHeight = upX * wall.position.x + upY * wall.position.y;
+        const double offset = -upY * wall.position.x + upX * wall.position.y
+            - lateral[index];
+        if (height[index] > wallHeight && std::abs(offset) < spacing[index]) {
+            wallOnLeft[index] |= offset <= 0.0;
+            wallOnRight[index] |= offset >= 0.0;
+        }
+    }
+
+    // Links strictly change height, so processing in height order resolves
+    // each chain from its end without recursion.
+    std::vector<std::size_t> order(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        order[index] = index;
+    }
+    std::sort(order.begin(), order.end(), [&height](std::size_t a, std::size_t b) {
+        return height[a] < height[b];
+    });
+    std::vector<char> supported(count, 0);
+    for (std::size_t index : order) {
+        supported[index] = below[index] == none
+            ? static_cast<char>(wallOnLeft[index] && wallOnRight[index])
+            : supported[below[index]];
+    }
+    std::vector<double> surface(count, 0.0);
+    for (auto it = order.rbegin(); it != order.rend(); ++it) {
+        const std::size_t index = *it;
+        surface[index] = above[index] == none
+            ? height[index] + 0.5 * spacing[index]
+            : surface[above[index]];
+    }
+    std::vector<std::size_t> seeded;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (supported[index] && particles[index].density == particles[index].restDensity) {
+            seeded.push_back(index);
+        }
+    }
+    if (seeded.empty()) {
+        return;
+    }
+
+    // The pressure force applies the kernel gradient to p / rho with weights
+    // m / rho, so a resolved linear profile is scaled by the stencil's first
+    // moment M = sum_j V_j (h_i - h_j) (-grad W_ij . up), which is not one for a
+    // finite kernel support. M is measured from neighbors and wall samples
+    // below the particle (doubled), the half of the stencil that is complete
+    // even at the free surface, and the column is seeded with g / M so the
+    // discrete pressure force carries the weight. Volumes depend on the seeded
+    // densities, so M and the densities are iterated together.
+    std::vector<double> wallMoment(count, 0.0);
+    const auto lowerMoment = [&config, upX, upY](const Vector2& displacement,
+            double drop, double volume, float smoothingLength) {
+        const Vector2 gradient = SphKernels2D::PressureGradient(
+            displacement, smoothingLength, config.kernelFamily);
+        return volume * drop * -(upX * gradient.x + upY * gradient.y);
+    };
+    for (const FluidBoundaryPair& pair : boundaryPairs) {
+        const FluidBoundaryParticle& wall = boundaryParticles[pair.boundary];
+        const std::size_t index = pair.fluid;
+        const double drop = height[index] - (upX * wall.position.x + upY * wall.position.y);
+        if (drop > 0.0) {
+            wallMoment[index] += lowerMoment(particles[index].position - wall.position,
+                drop, static_cast<double>(wall.volume) * wall.pressureScale,
+                particles[index].smoothingLength);
+        }
+    }
+    std::vector<double> upperMoment(count, 0.0);
+    std::vector<double> density(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        density[index] = particles[index].density;
+    }
+    const double gamma = config.equationOfStateExponent;
+    const double soundSpeedSquared = static_cast<double>(config.speedOfSound)
+        * config.speedOfSound;
+    constexpr int kMomentIterations = 3;
+    std::vector<double> moment(count);
+    std::vector<double> pressure(count, 0.0);
+    std::vector<char> isSeeded(count, 0);
+    for (std::size_t index : seeded) {
+        isSeeded[index] = 1;
+    }
+    for (int iteration = 0; iteration < kMomentIterations; ++iteration) {
+        moment = wallMoment;
+        std::fill(upperMoment.begin(), upperMoment.end(), 0.0);
+        for (const auto& pair : pairs) {
+            const FluidParticle& first = particles[pair.first];
+            const FluidParticle& second = particles[pair.second];
+            const Vector2 displacement = first.position - second.position;
+            const float smoothingLength = static_cast<float>(0.5 * (
+                static_cast<double>(first.smoothingLength) + second.smoothingLength));
+            const double drop = height[pair.first] - height[pair.second];
+            const double firstTerm = lowerMoment(displacement, drop,
+                second.mass / density[pair.second], smoothingLength);
+            const double secondTerm = lowerMoment(displacement * -1.0f, -drop,
+                first.mass / density[pair.first], smoothingLength);
+            (drop > 0.0 ? moment : upperMoment)[pair.first] += firstTerm;
+            (drop < 0.0 ? moment : upperMoment)[pair.second] += secondTerm;
+        }
+        // Away from a floor, p follows the Tait column with g / M_i over the
+        // depth to the local surface. Particles resting on floor-like support
+        // (wall samples straddling them below) instead integrate
+        // dp = rho g / M dh from the particle above, so the wall-mixed stencil
+        // moment only changes their own increment.
+        for (auto it = order.rbegin(); it != order.rend(); ++it) {
+            const std::size_t index = *it;
+            const double restDensity = particles[index].restDensity;
+            if (!isSeeded[index]) {
+                pressure[index] = std::max(0.0, restDensity * soundSpeedSquared / gamma
+                    * (std::pow(density[index] / restDensity, gamma) - 1.0));
+                continue;
+            }
+            const double ownMoment = moment[index] > 0.0 ? 2.0 * moment[index] : 1.0;
+            const std::size_t next = above[index];
+            if (next == none || !(wallOnLeft[index] && wallOnRight[index])) {
+                const double ratio = std::pow(1.0 + (gamma - 1.0) * gravity / ownMoment
+                    * std::max(surface[index] - height[index], 0.0) / soundSpeedSquared,
+                    1.0 / (gamma - 1.0));
+                pressure[index] = restDensity * soundSpeedSquared / gamma
+                    * (std::pow(ratio, gamma) - 1.0);
+            } else {
+                const double nextMoment = moment[next] > 0.0 ? 2.0 * moment[next] : 1.0;
+                pressure[index] = pressure[next]
+                    + 0.5 * (density[index] + density[next]) * gravity
+                        * (height[next] - height[index])
+                        * 0.5 * (1.0 / ownMoment + 1.0 / nextMoment);
+            }
+            density[index] = restDensity * std::pow(
+                1.0 + gamma * pressure[index] / (restDensity * soundSpeedSquared),
+                1.0 / gamma);
+            RequireFinite(static_cast<float>(density[index]),
+                "WCSPH hydrostatic initialization became non-finite.");
+        }
+    }
+    for (std::size_t index : seeded) {
+        particles[index].density = static_cast<float>(density[index]);
+    }
+}
+
 } // namespace
 
 void WcsphConfig::Validate() const {
@@ -84,6 +297,9 @@ void WcsphConfig::Validate() const {
     if (wallConsistency != WcsphWallConsistency::RawSamples
         && wallConsistency != WcsphWallConsistency::ConstantPressureCompletion)
         throw std::invalid_argument("WCSPH wall consistency mode is not recognized.");
+    if (hydrostaticInitialization != WcsphHydrostaticInitialization::Disabled
+        && hydrostaticInitialization != WcsphHydrostaticInitialization::RestDensityParticles)
+        throw std::invalid_argument("WCSPH hydrostatic initialization is not recognized.");
     if (!std::isfinite(externalAcceleration.x)
         || !std::isfinite(externalAcceleration.y)) {
         throw std::invalid_argument(
@@ -170,12 +386,13 @@ void WcsphSolver::prepare(
     lastStatistics.substepCount = 0;
     lastStatistics.boundaryCorrectionCount = 0;
     lastStatistics.maximumBoundaryPenetration = 0.0f;
-    prepareState(particles, &boundaryParticles);
+    prepareState(particles, &boundaryParticles, true);
 }
 
 void WcsphSolver::prepareState(
     std::vector<FluidParticle>& particles,
-    const std::vector<FluidBoundaryParticle>* boundaryParticles
+    const std::vector<FluidBoundaryParticle>* boundaryParticles,
+    bool initializeHydrostaticDensity
 ) {
     boundaryPairs.clear();
     pairs.clear();
@@ -303,6 +520,14 @@ void WcsphSolver::prepareState(
                 config.kernelFamily
             );
         }
+    }
+
+    if (initializeHydrostaticDensity && boundaryParticles
+        && config.densityMode == WcsphDensityMode::Continuity
+        && config.hydrostaticInitialization
+            == WcsphHydrostaticInitialization::RestDensityParticles) {
+        InitializeHydrostaticDensity(
+            particles, pairs, *boundaryParticles, boundaryPairs, config);
     }
 
     const auto updateThermodynamicState = [this, &particles]() {
@@ -927,11 +1152,12 @@ void WcsphSolver::stepInternal(
         );
     }
     if (deltaTime == 0.0f) {
-        if (boundaryParticles) {
-            prepare(particles, *boundaryParticles);
-        } else {
-            prepare(particles);
-        }
+        // Refresh derived state like prepare(), but a step never seeds
+        // hydrostatic density: only an explicit prepare() call does.
+        lastStatistics.substepCount = 0;
+        lastStatistics.boundaryCorrectionCount = 0;
+        lastStatistics.maximumBoundaryPenetration = 0.0f;
+        prepareState(particles, boundaryParticles);
         return;
     }
 
