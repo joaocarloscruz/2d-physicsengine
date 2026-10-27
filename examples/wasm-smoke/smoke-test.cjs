@@ -77,6 +77,65 @@ function testQueries(physics) {
     polygonEngine.delete();
 }
 
+function testCapsules(physics) {
+    const material = {density: 2, restitution: 0, staticFriction: 0, dynamicFriction: 0};
+    const capsule = new physics.Capsule(2, 0.5);
+    assert.equal(capsule.getHalfLength(), 2); assert.equal(capsule.getRadius(), 0.5);
+    assert.ok(Math.abs(capsule.getArea() - (4 * 2 * 0.5 + Math.PI * 0.25)) < 1e-5);
+    for (const [h, r] of [[-1, 1], [1, 0], [1, -1], [NaN, 1], [1, NaN], [Infinity, 1], [3e38, 3e38]])
+        assert.throws(() => new physics.Capsule(h, r));
+    const rod = physics.createRigidBody(capsule, material, {x: 0, y: 0}, true);
+    const fixed = physics.createRigidBody(capsule, material, {x: 10, y: 0}, true);
+    capsule.delete(); // Bodies own copies.
+    assert.ok(Math.abs(fixed.getMass()) === 0);
+    const engine = new physics.Engine();
+    engine.addBody(rod); engine.addBody(fixed);
+    const ray = physics.rayCastNearest(engine, {x: 0, y: 4}, {x: 0, y: -4});
+    assert.equal(ray.size(), 1); assert.equal(ray.getBodyId(0), rod.getId());
+    const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
+    const rayHit = ray.getHit(0);
+    near(rayHit.fraction, 0.4375); near(rayHit.point.x, 0); near(rayHit.point.y, 0.5); near(rayHit.normal.y, 1);
+    ray.delete();
+    const sweep = physics.sweepCircleNearest(engine, {x: -10, y: 0}, {x: 0, y: 0}, 1);
+    assert.equal(sweep.size(), 1);
+    const sweepHit = sweep.getHit(0);
+    near(sweepHit.fraction, 0.65); near(sweepHit.center.x, -3.5); near(sweepHit.contactPoint.x, -2.5); near(sweepHit.normal.x, -1);
+    sweep.delete();
+    for (const [query, count] of [[physics.queryPoint(engine, {x: 12.4, y: 0}), 1], [physics.queryCircle(engine, {x: 5, y: 0}, 2.5), 2]]) {
+        assert.equal(query.size(), count); query.delete();
+    }
+    assert.match(engine.exportJson(0), /"type":"capsule","halfLength":2,"radius":0.5/);
+
+    // A capsule dropped onto the static rod settles on its side.
+    const dropShape = new physics.Capsule(1, 0.25);
+    const drop = physics.createRigidBody(dropShape, material, {x: 0, y: 1.5}, false);
+    dropShape.delete();
+    drop.setOrientation(0.2);
+    engine.addBody(drop);
+    for (let i = 0; i < 240; ++i) { drop.applyForce({x: 0, y: -9.81 * drop.getMass()}); engine.step(1 / 60); }
+    assert.ok(Math.abs(drop.getPosition().y - 0.75) < 0.02, `capsule rests at ${drop.getPosition().y}`);
+
+    // Capsule CCD supports only circles against static capsules; anything else
+    // is rejected before the step changes state.
+    drop.setCcdEnabled(true);
+    const before = drop.getPosition();
+    assert.throws(() => engine.step(1 / 60), /capsule/i);
+    assert.deepEqual(drop.getPosition(), before);
+    drop.setCcdEnabled(false);
+    const bulletShape = new physics.Circle(0.1);
+    const bullet = physics.createRigidBody(bulletShape, material, {x: 10, y: 3}, false);
+    bulletShape.delete();
+    bullet.setVelocity({x: 0, y: -600}); bullet.setCcdEnabled(true);
+    bullet.setCollisionCategoryBits(2); drop.setCollisionMaskBits(0xfffffffd);
+    engine.setSimulationConfig({...engine.getSimulationConfig(), enableLinearVelocityLimit: false});
+    engine.addBody(bullet);
+    engine.step(1 / 60);
+    assert.ok(engine.getLastStepStatistics().ccdImpactCount >= 1);
+    assert.ok(bullet.getPosition().y > 0, `bullet tunneled to ${bullet.getPosition().y}`);
+    for (const body of [rod, fixed, drop, bullet]) body.delete();
+    engine.delete();
+}
+
 function testScalarTransport(physics) {
     const near=(a,b,t=4e-14)=>assert.ok(Math.abs(a-b)<=t, `${a} vs ${b}, tolerance ${t}`);
     const nearArray=(a,b,t)=>{assert.equal(a.length,b.length);a.forEach((v,k)=>near(v,b[k],t));};
@@ -969,6 +1028,7 @@ async function main() {
     require("./euler-gas-tests.cjs").smoke(physics);
     require("./euler-second-order-tests.cjs").smoke(physics);
     testQueries(physics);
+    testCapsules(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
     for (const key of ["maxSubstepsPerAdvance", "solverIterations", "maximumCcdImpacts"])
@@ -1346,7 +1406,7 @@ async function main() {
     engine.delete();
     particles.delete();
     require("./handle-lifetime-tests.cjs").smoke(physics);
-    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
+    console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, capsules, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
 }
 
 main().catch((error) => {

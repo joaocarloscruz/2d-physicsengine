@@ -41,6 +41,10 @@ function batch(p) {
     assert.throws(() => p.createRigidBody(shape, material, {get x() {
         shape.delete(); return 0;
     }, y:0}, false), deleted);
+    const rod = new p.Capsule(1, 0.5);
+    assert.throws(() => p.createRigidBody(rod, material, {get x() {
+        rod.delete(); return 0;
+    }, y:0}, false), deleted);
 
     const makeBody = () => {
         const s = new p.Circle(1);

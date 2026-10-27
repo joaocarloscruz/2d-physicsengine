@@ -106,7 +106,10 @@ standalone relative-motion sweeps. No capsule rotates during a sweep.
   shape tags instead of reinterpreting them as polygons.
 - **Visualizer.** The SFML renderer draws capsules and picks them with
   `ContainsPoint`.
-- **Browser.** WebAssembly bindings do not expose capsules yet.
+- **Browser.** WebAssembly exposes `new Capsule(halfLength, radius)` with
+  `getHalfLength`, `getRadius` and `getArea`. Capsule bodies use the same
+  owned-copy, query, export and CCD-rejection behavior; the smoke test covers
+  queries, resting contact, export, CCD rejection and a filtered CCD circle.
 
 Compound shapes, segment chains, concave shapes and rotating-shape CCD remain
 separate formulations.

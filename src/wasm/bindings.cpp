@@ -160,6 +160,13 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .class_function("makeBox", &CreateBox, allow_raw_pointers())
         .function("getArea", &Polygon::GetArea);
 
+    // halfLength is half the spine; bodies copy the shape at creation.
+    class_<Capsule, base<Shape>>("Capsule")
+        .constructor<float, float>()
+        .function("getArea", &Capsule::GetArea)
+        .function("getHalfLength", &Capsule::GetHalfLength)
+        .function("getRadius", &Capsule::GetRadius);
+
     class_<RigidBody>("RigidBody")
         .smart_ptr<RigidBodyPtr>("RigidBodyPtr")
         .function("applyForce", &RigidBody::ApplyForce)
