@@ -70,6 +70,11 @@ last safe time. `ccdImpactCount` reports actual resolved impacts. Sweeps current
 scan all pairs, so reserve CCD for fast bodies. Pure polygon pairs and rotational
 polygon motion are not swept; use small timesteps for those cases. Turning CCD off
 retains the original discrete integration/collision path.
+
+Capsule CCD sweeps only circles against static capsules (`SweepCircleCapsule`).
+Any other CCD-relevant pair involving a capsule makes `World::step` throw
+`std::invalid_argument` before particles, loads or bodies advance, rather than
+silently treating the unsupported cast as a miss; see [capsules](capsules.md#continuous-collision).
 #### Mutation during stepping
 
 Collision listeners run after solving and may add or remove bodies, joints,

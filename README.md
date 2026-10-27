@@ -1,6 +1,7 @@
 # 2D Physics Engine
 
-A C++17 library for 2D rigid bodies, particles, fluids and mass-spring soft bodies.
+A C++17 library for 2D rigid bodies (circles, convex polygons and capsules), particles,
+fluids and mass-spring soft bodies.
 Standalone modules add thermal conduction/radiation, prescribed-field charged particles,
 planar Newtonian gravity, scalar membrane waves, periodic MAC projection and
 viscosity, complete periodic incompressible flow, conservative scalar transport,
@@ -131,6 +132,7 @@ finite output includes substantial stack drift in difficult configurations.
 - [Architecture, units and numerical limits](docs/architecture.md)
 - [Physics capabilities, evidence and remaining gaps](docs/physics-capabilities.md)
 - [Polygon centroids and rigid-body setup](docs/polygon-centering.md)
+- [Capsule geometry, contacts, queries and CCD support](docs/capsules.md)
 - [Supported API, ownership, errors and compatibility](docs/api.md)
 - [Collision events and continuous detection](docs/collision-lifecycle-and-ccd.md)
 - [Native and JavaScript point, ray, circle overlap and circle sweep queries](docs/spatial-queries.md)
