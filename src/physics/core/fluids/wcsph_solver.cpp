@@ -119,6 +119,12 @@ void WcsphConfig::Validate() const {
             "WCSPH density mode is not recognized."
         );
     }
+    if (timeIntegration != WcsphTimeIntegration::ExplicitDensity
+        && timeIntegration != WcsphTimeIntegration::SymplecticEuler) {
+        throw std::invalid_argument(
+            "WCSPH time integration is not recognized."
+        );
+    }
     if (!std::isfinite(densityDiffusion)
         || densityDiffusion < 0.0f || densityDiffusion > 1.0f) {
         throw std::invalid_argument(
@@ -156,11 +162,9 @@ void WcsphSolver::prepareState(
     std::vector<FluidParticle>& particles,
     const std::vector<FluidBoundaryParticle>* boundaryParticles
 ) {
-    struct FluidBoundaryPair {
-        std::size_t fluid;
-        std::size_t boundary;
-    };
-    std::vector<FluidBoundaryPair> boundaryPairs;
+    boundaryPairs.clear();
+    pairs.clear();
+    preparedBoundary = boundaryParticles;
     // Validate coordinates and work before publishing a rebuilt neighbor grid or
     // changing particle state. Boundary inputs are checked even for an empty fluid.
     const float cellSize = grid.getCellSize();
@@ -203,7 +207,7 @@ void WcsphSolver::prepareState(
         particle.inverseMass = 1.0f / particle.mass;
     }
     grid.rebuild(particles);
-    const auto pairs = grid.findNeighborPairs(particles, interactionRadius);
+    pairs = grid.findNeighborPairs(particles, interactionRadius);
 
     if (config.densityMode == WcsphDensityMode::Summation) {
         for (FluidParticle& particle : particles) {
@@ -333,13 +337,12 @@ void WcsphSolver::prepareState(
         this,
         &particles,
         boundaryParticles,
-        &boundaryPairs,
         &wallPressureNumerator,
         &wallPressureDenominator
     ]() {
         wallPressureNumerator.assign(boundaryParticles->size(), 0.0);
         wallPressureDenominator.assign(boundaryParticles->size(), 0.0);
-        for (const FluidBoundaryPair& pair : boundaryPairs) {
+        for (const BoundaryPair& pair : boundaryPairs) {
             const FluidParticle& particle = particles[pair.fluid];
             const FluidBoundaryParticle& boundaryParticle =
                 (*boundaryParticles)[pair.boundary];
@@ -380,10 +383,6 @@ void WcsphSolver::prepareState(
     updateThermodynamicState();
     if (boundaryParticles && !boundaryPairs.empty()) {
         extrapolateWallPressure();
-    }
-
-    for (FluidParticle& particle : particles) {
-        particle.densityRate = 0.0f;
     }
 
     std::vector<float> wallDensityRates(particles.size(), 0.0f);
@@ -437,36 +436,10 @@ void WcsphSolver::prepareState(
             SphViscosity::PairForce(first, second, viscosityScale));
         first.force = SphViscosity::Add(first.force, pairForce);
         second.force = SphViscosity::Add(second.force, pairForce, -1.0);
-        if (config.densityMode == WcsphDensityMode::Continuity) {
-            const float compressionRate = (
-                first.velocity - second.velocity
-            ).dot(gradient);
-            first.densityRate += second.mass * compressionRate;
-            second.densityRate += first.mass * compressionRate;
-            if (config.densityDiffusion > 0.0f) {
-                const float distanceSquared = displacement.magnitudeSquared();
-                const float regularization = 0.01f
-                    * smoothingLength * smoothingLength;
-                const float averageDensity = 0.5f
-                    * (first.density + second.density);
-                const float hydrostaticDensityDifference = averageDensity
-                    * config.externalAcceleration.dot(displacement)
-                    / (config.speedOfSound * config.speedOfSound);
-                const float dynamicDensityDifference = first.density
-                    - second.density - hydrostaticDensityDifference;
-                const float diffusion = 2.0f * config.densityDiffusion
-                    * smoothingLength * config.speedOfSound
-                    * dynamicDensityDifference
-                    * displacement.dot(gradient)
-                    / (distanceSquared + regularization);
-                first.densityRate += second.mass / second.density * diffusion;
-                second.densityRate -= first.mass / first.density * diffusion;
-            }
-        }
     }
 
     if (boundaryParticles) {
-        for (const FluidBoundaryPair& pair : boundaryPairs) {
+        for (const BoundaryPair& pair : boundaryPairs) {
             FluidParticle& particle = particles[pair.fluid];
             const FluidBoundaryParticle& boundaryParticle =
                 (*boundaryParticles)[pair.boundary];
@@ -503,26 +476,93 @@ void WcsphSolver::prepareState(
                     particle.force = particle.force + pressureGradient * pressureScale;
                 }
             }
-            if (boundaryParticle.pressureScale > 0.0f) {
-                const Vector2 direction = displacement / distance;
-                const Vector2 relativeVelocity = particle.velocity
-                    - boundaryParticle.velocity;
-                const Vector2 normalRelativeVelocity = direction
-                    * relativeVelocity.dot(direction);
-                const float wallRate = particle.density * boundaryParticle.volume * 2.0f
-                    * normalRelativeVelocity.dot(pressureGradient);
-                wallDensityRates[pair.fluid] += wallRate;
-                if (config.densityMode == WcsphDensityMode::Continuity)
-                    particle.densityRate += wallRate;
-            }
         }
     }
+
+    accumulateDensityRates(particles, &wallDensityRates);
 
     lastStatistics.neighbors = grid.getLastStatistics();
     diagnostics = MeasureFluidDiagnostics(particles, pairs, config.kernelFamily, wallDensityRates);
     lastStatistics.stableTimeStep = SphViscosity::TimeStep(std::min(
         static_cast<double>(getStableTimeStep(particles)), SphViscosity::RowLimit(viscosityRows)
     ));
+}
+
+void WcsphSolver::accumulateDensityRates(
+    std::vector<FluidParticle>& particles,
+    std::vector<float>* wallDensityRates
+) const {
+    for (FluidParticle& particle : particles) {
+        particle.densityRate = 0.0f;
+    }
+    if (config.densityMode == WcsphDensityMode::Continuity) {
+        for (const auto& pair : pairs) {
+            FluidParticle& first = particles[pair.first];
+            FluidParticle& second = particles[pair.second];
+            const Vector2 displacement = first.position - second.position;
+            const float smoothingLength = static_cast<float>(0.5 * (
+                static_cast<double>(first.smoothingLength) + second.smoothingLength
+            ));
+            const Vector2 gradient = SphKernels2D::PressureGradient(
+                displacement,
+                smoothingLength,
+                config.kernelFamily
+            );
+            const float compressionRate = (
+                first.velocity - second.velocity
+            ).dot(gradient);
+            first.densityRate += second.mass * compressionRate;
+            second.densityRate += first.mass * compressionRate;
+            if (config.densityDiffusion > 0.0f) {
+                const float distanceSquared = displacement.magnitudeSquared();
+                const float regularization = 0.01f
+                    * smoothingLength * smoothingLength;
+                const float averageDensity = 0.5f
+                    * (first.density + second.density);
+                const float hydrostaticDensityDifference = averageDensity
+                    * config.externalAcceleration.dot(displacement)
+                    / (config.speedOfSound * config.speedOfSound);
+                const float dynamicDensityDifference = first.density
+                    - second.density - hydrostaticDensityDifference;
+                const float diffusion = 2.0f * config.densityDiffusion
+                    * smoothingLength * config.speedOfSound
+                    * dynamicDensityDifference
+                    * displacement.dot(gradient)
+                    / (distanceSquared + regularization);
+                first.densityRate += second.mass / second.density * diffusion;
+                second.densityRate -= first.mass / first.density * diffusion;
+            }
+        }
+    }
+    if (!preparedBoundary) {
+        return;
+    }
+    for (const BoundaryPair& pair : boundaryPairs) {
+        FluidParticle& particle = particles[pair.fluid];
+        const FluidBoundaryParticle& boundaryParticle =
+            (*preparedBoundary)[pair.boundary];
+        const Vector2 displacement = particle.position
+            - boundaryParticle.position;
+        const float distance = displacement.magnitude();
+        if (distance <= 0.0f || boundaryParticle.pressureScale <= 0.0f) {
+            continue;
+        }
+        const Vector2 pressureGradient = SphKernels2D::PressureGradient(
+            displacement,
+            particle.smoothingLength,
+            config.kernelFamily
+        );
+        const Vector2 direction = displacement / distance;
+        const Vector2 relativeVelocity = particle.velocity
+            - boundaryParticle.velocity;
+        const Vector2 normalRelativeVelocity = direction
+            * relativeVelocity.dot(direction);
+        const float wallRate = particle.density * boundaryParticle.volume * 2.0f
+            * normalRelativeVelocity.dot(pressureGradient);
+        if (wallDensityRates) (*wallDensityRates)[pair.fluid] += wallRate;
+        if (config.densityMode == WcsphDensityMode::Continuity)
+            particle.densityRate += wallRate;
+}
 }
 
 float WcsphSolver::getStableTimeStep(
@@ -568,8 +608,18 @@ void WcsphSolver::integrate(
     std::vector<FluidParticle>& particles,
     float deltaTime
 ) {
+    const bool symplecticDensity = config.densityMode == WcsphDensityMode::Continuity
+        && config.timeIntegration == WcsphTimeIntegration::SymplecticEuler;
+    if (symplecticDensity) {
+        for (FluidParticle& particle : particles) {
+            particle.velocity = SphViscosity::AdvanceVelocity(particle, deltaTime);
+        }
+        accumulateDensityRates(particles, nullptr);
+    }
     for (FluidParticle& particle : particles) {
-        particle.velocity = SphViscosity::AdvanceVelocity(particle, deltaTime);
+        if (!symplecticDensity) {
+            particle.velocity = SphViscosity::AdvanceVelocity(particle, deltaTime);
+        }
         particle.position = SphViscosity::Add(particle.position, particle.velocity, deltaTime);
         if (config.densityMode == WcsphDensityMode::Continuity) {
             particle.density += particle.densityRate * deltaTime;

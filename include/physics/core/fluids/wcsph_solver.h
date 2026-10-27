@@ -22,6 +22,17 @@ enum class WcsphWallPressureMode {
     SignedBodyForce
 };
 
+// Order of the continuity-density update inside one semi-implicit Euler step.
+enum class WcsphTimeIntegration {
+    // Legacy: density rate is evaluated from pre-kick velocities, which makes
+    // the velocity/density acoustic pair a forward-Euler (undamped-unstable) map.
+    ExplicitDensity,
+    // Kick velocity, evaluate the continuity rate from the kicked velocity at
+    // the old positions, then drift position and density together. Density is
+    // treated like position, matching the summation-density update order.
+    SymplecticEuler
+};
+
 struct WcsphConfig {
     Vector2 externalAcceleration = Vector2(0.0f, -9.81f);
     float speedOfSound = 20.0f;
@@ -35,6 +46,7 @@ struct WcsphConfig {
 
     SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;
     WcsphWallPressureMode wallPressureMode = WcsphWallPressureMode::LegacyPositiveIncrement;
+    WcsphTimeIntegration timeIntegration = WcsphTimeIntegration::SymplecticEuler;
 
     void Validate() const;
 };
@@ -110,6 +122,15 @@ private:
         const std::vector<FluidBoundaryParticle>* boundaryParticles
     );
     void integrate(std::vector<FluidParticle>& particles, float deltaTime);
+    void accumulateDensityRates(
+        std::vector<FluidParticle>& particles,
+        std::vector<float>* wallDensityRates
+    ) const;
+
+    struct BoundaryPair {
+        std::size_t fluid;
+        std::size_t boundary;
+    };
     void stepInternal(
         std::vector<FluidParticle>& particles,
         float deltaTime,
@@ -120,6 +141,10 @@ private:
 
     WcsphConfig config;
     FluidParticleSpatialGrid grid;
+    // Neighbor lists of the most recent prepareState, reused by integrate().
+    std::vector<FluidParticleSpatialGrid::ParticlePair> pairs;
+    std::vector<BoundaryPair> boundaryPairs;
+    const std::vector<FluidBoundaryParticle>* preparedBoundary = nullptr;
     WcsphStatistics lastStatistics;
     FluidDiagnostics diagnostics;
 };
