@@ -214,6 +214,7 @@ TEST_CASE("Sampled container boundaries restore SPH density support", "[fluid][b
     };
     std::vector<FluidParticle> supported = unsupported;
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = Vector2();
     WcsphSolver solver(properties.smoothingLength, config);
 

@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
             for (int y=-extent; y<=extent; ++y) for (int x=-extent; x<=extent; ++x) {
                 const Vector2 p(x*spacing, y*spacing); particles.emplace_back(p, p*-1, properties);
             }
-            WcsphConfig weak; weak.externalAcceleration = {}; weak.speedOfSound = method == 0 ? 5 : 20;
+            WcsphConfig weak; weak.externalAcceleration = {}; weak.densityMode = WcsphDensityMode::Summation; weak.speedOfSound = method == 0 ? 5 : 20;
             DfsphConfig strong; strong.externalAcceleration = {}; strong.maximumIterations = 2000;
             strong.densityTolerance = 1e-4f;
             strong.divergenceTolerance = method == 2 ? 0.01f : 0.001f;

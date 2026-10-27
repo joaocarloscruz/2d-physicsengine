@@ -42,6 +42,7 @@ TEST_CASE("Original disorder inputs are stationary for either kernel at every te
             auto particles = Block(21, .1f, .2f);
             const auto original = particles;
             WcsphConfig c;
+            c.densityMode = WcsphDensityMode::Summation;
             c.externalAcceleration = {};
             c.speedOfSound = 15;
             c.kernelFamily = family;
@@ -81,6 +82,7 @@ TEST_CASE("Removing the clamp drives the infinite bulk checkerboard away from it
         REQUIRE(acceleration.x + acceleration.y > 0); // same direction as the imposed shift
         auto particles = Block(21, .1f, .2f);
         WcsphConfig c;
+        c.densityMode = WcsphDensityMode::Summation;
         c.externalAcceleration = {};
         c.speedOfSound = 15;
         c.kernelFamily = family;
@@ -116,6 +118,7 @@ TEST_CASE("Density derivative and pressure adjoint are independently distinguish
         const auto s = FromParticles(p, family);
         const auto op = Build(s);
         WcsphConfig config;
+        config.densityMode = WcsphDensityMode::Summation;
         config.externalAcceleration = {};
         config.speedOfSound = 15;
         config.kernelFamily = family;

@@ -98,6 +98,7 @@ TEST_CASE("WCSPH estimates density and applies its equation of state", "[fluid][
         FluidParticle(Vector2(), Vector2(), properties)
     };
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.speedOfSound = 4.0f;
     config.equationOfStateExponent = 7.0f;
     config.externalAcceleration = Vector2();

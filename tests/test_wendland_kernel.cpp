@@ -86,7 +86,7 @@ TEST_CASE("Wendland scale calibration support symmetry and checked range agree",
 TEST_CASE("Wendland selection reaches both solvers diagnostics and continuity",
           "[fluid][family][wendland]") {
     const double density=133/(16*Pi),rate=7/(4*Pi);
-    auto p=Pair();WcsphConfig wc;wc.externalAcceleration={};wc.kernelFamily=Wendland;
+    auto p=Pair();WcsphConfig wc;wc.externalAcceleration={};wc.kernelFamily=Wendland;wc.densityMode=WcsphDensityMode::Summation;
     WcsphSolver w(1,wc);w.prepare(p);
     REQUIRE(p[0].density==Catch::Approx(density));
     REQUIRE(p[1].density==Catch::Approx(density));
@@ -110,7 +110,7 @@ TEST_CASE("Wendland sampled walls use matched density pressure and mirror rates"
     std::vector<FluidParticle> p{FluidParticle({0,0},{-.1f,0},properties)};
     const std::vector<FluidBoundaryParticle> wall{{{-.5f,0},{},.2f,{},1}};
     const double c=7/Pi,weight=21/(16*Pi),gradient=-35/(4*Pi);
-    WcsphConfig config;config.externalAcceleration={};config.kernelFamily=Wendland;
+    WcsphConfig config;config.externalAcceleration={};config.kernelFamily=Wendland;config.densityMode=WcsphDensityMode::Summation;
     WcsphSolver summation(1,config);summation.prepare(p,wall);
     REQUIRE(p[0].density==Catch::Approx(10*c+1000*.2*weight));
     config.densityMode=WcsphDensityMode::Continuity;config.densityDiffusion=0;p[0].density=1100;
@@ -142,7 +142,7 @@ TEST_CASE("Wendland retains the checkerboard linear null mode and independent pr
     const double e2=std::abs(EnergyDifference(s,.0005)-op.trueEnergyRate);
     const double e3=std::abs(EnergyDifference(s,.00025)-op.trueEnergyRate);
     REQUIRE(e1/e2>3.8);REQUIRE(e1/e2<4.2);REQUIRE(e2/e3>3.8);REQUIRE(e2/e3<4.2);
-    WcsphConfig c;c.externalAcceleration={};c.kernelFamily=Wendland;c.speedOfSound=15;
+    WcsphConfig c;c.externalAcceleration={};c.kernelFamily=Wendland;c.speedOfSound=15;c.densityMode=WcsphDensityMode::Summation;
     WcsphSolver solver(.2f,c);solver.prepare(p);
     double scale=0,error=0;
     for(std::size_t i=0;i<p.size();++i) {

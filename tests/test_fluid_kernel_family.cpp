@@ -18,7 +18,7 @@ std::vector<FluidParticle> Pair() {
 TEST_CASE("Both fluid solvers and diagnostics use the selected cubic family", "[fluid][family]") {
     const double c=40/(7*Pi), weight=c*0.25, gradient=-1.5*c;
     auto p=Pair();
-    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic;
+    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic; w.densityMode=WcsphDensityMode::Summation;
     WcsphSolver wc(1,w); wc.prepare(p);
     REQUIRE(p[0].density == Catch::Approx(c+weight));
     REQUIRE(p[1].density == Catch::Approx(c+weight));
@@ -46,7 +46,7 @@ TEST_CASE("Cubic WCSPH wall density pressure and mirror divergence share the sam
     std::vector<FluidParticle> p{FluidParticle({0,0},{-0.1f,0},properties)};
     const std::vector<FluidBoundaryParticle> wall{{{-0.5f,0},{},0.2f,{},1}};
     const double c=40/(7*Pi), weight=c*0.25, gx=-1.5*c;
-    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic;
+    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic; w.densityMode=WcsphDensityMode::Summation;
     WcsphSolver summation(1,w); summation.prepare(p,wall);
     REQUIRE(p[0].density == Catch::Approx(10*c+1000*0.2*weight));
     w.densityMode=WcsphDensityMode::Continuity; w.densityDiffusion=0;
@@ -65,7 +65,7 @@ TEST_CASE("Cubic compression retains EOS response and nominal input masses", "[f
     FluidParticleProperties properties; properties.mass=10; properties.smoothingLength=0.2f; properties.viscosity=0;
     std::vector<FluidParticle> p;
     for(int y=0;y<9;++y) for(int x=0;x<9;++x) p.emplace_back(Vector2{x*0.1f,y*0.1f},Vector2{},properties);
-    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic; w.speedOfSound=15;
+    WcsphConfig w; w.externalAcceleration={}; w.kernelFamily=Cubic; w.speedOfSound=15; w.densityMode=WcsphDensityMode::Summation;
     WcsphSolver solver(0.2f,w); solver.prepare(p);
     const float density=p[40].density, pressure=p[40].pressure;
     REQUIRE(density/1000 == Catch::Approx(1.0008618328).margin(1e-6));
@@ -136,7 +136,7 @@ TEST_CASE("Cubic viscosity remains stable and dissipative under the independent 
         DfsphConfig c; c.kernelFamily=Cubic; c.externalAcceleration={};
         DfsphSolver s(1,c); s.step(p,0.001f); diagnostics=s.getDiagnostics();
     } else {
-        WcsphConfig c; c.kernelFamily=Cubic; c.externalAcceleration={}; c.speedOfSound=0.1f;
+        WcsphConfig c; c.kernelFamily=Cubic; c.externalAcceleration={}; c.speedOfSound=0.1f; c.densityMode=WcsphDensityMode::Summation;
         WcsphSolver s(1,c); s.step(p,0.001f); diagnostics=s.getDiagnostics();
     }
     REQUIRE(energy(p) < before); REQUIRE(diagnostics.substeps > 1);

@@ -73,6 +73,7 @@ void WriteDensity(std::ostream& out, float spacing, float h) {
     auto original = MakeBlock(side, spacing, h);
     auto translated = MakeBlock(side, spacing, h, 1, {0.037f, -0.061f});
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = {};
     config.kernelFamily = selectedFamily;
     WcsphSolver solver(h, config);
@@ -167,7 +168,7 @@ void WriteCharacterization(std::ostream& out, float ratio, bool perturb, bool cl
         return std::pair<double,double>{std::sqrt(rms/particles.size()),minimum/dx};
     };
     const auto initial=measure();
-    WcsphConfig config; config.kernelFamily=selectedFamily; config.externalAcceleration={};
+    WcsphConfig config; config.kernelFamily=selectedFamily; config.externalAcceleration={}; config.densityMode=WcsphDensityMode::Summation;
     config.speedOfSound=15; config.maximumTimeStep=dt; config.clampNegativePressure=clamp;
     WcsphSolver solver(h,config);
     double peakSpeed=0;
@@ -193,7 +194,7 @@ void WriteWallCharacterization(std::ostream& out) {
     std::vector<FluidParticle> particles;
     for(int y=0;y<15;++y) for(int x=0;x<19;++x)
         particles.emplace_back(Vector2{-0.9f+x*0.1f,0.1f+y*0.1f},Vector2{},properties);
-    WcsphConfig config; config.kernelFamily=selectedFamily; config.speedOfSound=40; config.maximumTimeStep=0.001f;
+    WcsphConfig config; config.kernelFamily=selectedFamily; config.speedOfSound=40; config.maximumTimeStep=0.001f; config.densityMode=WcsphDensityMode::Summation;
     WcsphSolver solver(0.2f,config); double peak=0;
     for(int step=0;step<100;++step) {
         solver.step(particles,0.001f,tank,walls,[](float){}); RequireFiniteState(particles);

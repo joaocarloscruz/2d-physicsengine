@@ -30,7 +30,7 @@ struct WcsphConfig {
     float maximumTimeStep = 1.0f / 60.0f;
     int maximumSubsteps = 1024;
     bool clampNegativePressure = true;
-    WcsphDensityMode densityMode = WcsphDensityMode::Summation;
+    WcsphDensityMode densityMode = WcsphDensityMode::Continuity;
     float densityDiffusion = 0.1f;
 
     SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;

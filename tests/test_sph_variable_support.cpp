@@ -103,7 +103,7 @@ std::vector<FluidParticle> Triangle() {
 
 TEST_CASE("Matched summation pressure acts through one sided density support",
           "[fluid][variable-support][energy]") {
-    auto c=Config();c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);
+    auto c=Config();c.densityMode=WcsphDensityMode::Summation;c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);
     const float distance=GENERATE(.875f,.9375f);
     const bool reversed=GENERATE(false,true);
     auto p=std::vector<FluidParticle>{Particle({0,0},{.25f,0},.75f,.5f),
@@ -125,7 +125,7 @@ TEST_CASE("Matched summation pressure acts through one sided density support",
 
 TEST_CASE("Heterogeneous matched pressure is the fixed support summation EOS energy gradient",
           "[fluid][variable-support][energy][conservation]") {
-    auto c=Config();c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);c.clampNegativePressure=GENERATE(false,true);
+    auto c=Config();c.densityMode=WcsphDensityMode::Summation;c.kernelFamily=GENERATE(SphKernelFamily::CubicSpline,SphKernelFamily::WendlandC2);c.clampNegativePressure=GENERATE(false,true);
     auto p=Triangle();const auto x=Positions(p);const auto expected=Evaluate(p,c);
     WcsphSolver solver(.5f,c);solver.prepare(p);
     REQUIRE((c.clampNegativePressure ? p[2].pressure==0 : p[2].pressure<0));

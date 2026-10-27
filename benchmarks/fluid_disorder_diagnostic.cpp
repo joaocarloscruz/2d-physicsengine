@@ -33,6 +33,7 @@ void Run(std::ostream &out, const char *label, Family family, bool clamp, int st
     auto particles = Block(side, dx, h, massScale);
     const auto disturbed = particles, nominal = Block(side, dx, h, massScale, .02f, false);
     WcsphConfig c;
+    c.densityMode = WcsphDensityMode::Summation;
     c.externalAcceleration = {};
     c.speedOfSound = 15;
     c.kernelFamily = family;

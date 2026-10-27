@@ -9,7 +9,8 @@
 using namespace PhysicsEngine;
 namespace {
 std::unique_ptr<IFluidSolver> MakeSolver(bool projected, float maximumTimeStep = 0.1f,
-                                       int maximumSubsteps = 1024) {
+                                       int maximumSubsteps = 1024,
+                                       WcsphDensityMode densityMode = WcsphConfig{}.densityMode) {
     if (projected) {
         DfsphConfig config;
         config.externalAcceleration = {};
@@ -22,6 +23,7 @@ std::unique_ptr<IFluidSolver> MakeSolver(bool projected, float maximumTimeStep =
     config.speedOfSound = 0.1f;
     config.maximumTimeStep = maximumTimeStep;
     config.maximumSubsteps = maximumSubsteps;
+    config.densityMode = densityMode;
     return std::make_unique<WcsphSolver>(1.0f, config);
 }
 std::vector<FluidParticle> ViscousPair(float mass = 0.001f, float viscosity = 1.0f) {
@@ -54,7 +56,7 @@ TEST_CASE("Explicit viscosity dissipates pressure free low density pair energy",
     INFO("DFSPH=" << projected);
     auto particles = ViscousPair();
     const double before = Energy(particles);
-    auto solver = MakeSolver(projected);
+    auto solver = MakeSolver(projected, 0.1f, 1024, WcsphDensityMode::Summation);
     solver->step(particles, 0.001f);
     REQUIRE(Energy(particles) < before);
     REQUIRE(solver->getDiagnostics().substeps > 1);
@@ -73,7 +75,7 @@ TEST_CASE("Viscous diffusion preserves unequal mass momentum and dissipates repe
     particles[0].velocity = Vector2(0.2f, 1.0f);
     particles[1].velocity = Vector2(0.2f, -0.25f);
     const Vector2 momentum = Momentum(particles);
-    auto solver = MakeSolver(projected);
+    auto solver = MakeSolver(projected, 0.1f, 1024, WcsphDensityMode::Summation);
     for (int step = 0; step < 20; ++step) {
         const double before = Energy(particles);
         solver->step(particles, 0.0005f);
@@ -123,6 +125,7 @@ TEST_CASE("Prepared neighbor row bound limits diffusion even at zero velocity", 
     auto particles = ViscousPair();
     for (auto& p : particles) { p.position = {}; p.velocity = {}; }
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = {};
     config.speedOfSound = 0.1f;
     WcsphSolver solver(1.0f, config);
@@ -158,7 +161,7 @@ TEST_CASE("Explicit viscous diffusion converges with timestep refinement", "[flu
     const bool projected = GENERATE(false, true);
     const auto run = [projected](float maximumTimeStep) {
         auto particles = ViscousPair();
-        auto solver = MakeSolver(projected, maximumTimeStep);
+        auto solver = MakeSolver(projected, maximumTimeStep, 1024, WcsphDensityMode::Summation);
         solver->step(particles, 0.0001f);
         return particles[0].velocity.y;
     };
@@ -189,7 +192,7 @@ TEST_CASE("Viscosity arithmetic keeps representable coefficients finite at extre
 TEST_CASE("Unrepresentable viscous force and timestep fail explicitly", "[fluid-viscosity]") {
     const bool projected = GENERATE(false, true);
     auto particles = ViscousPair(0.001f, std::numeric_limits<float>::max());
-    auto solver = MakeSolver(projected);
+    auto solver = MakeSolver(projected, 0.1f, 1024, WcsphDensityMode::Summation);
     REQUIRE_THROWS_AS(solver->step(particles, 0.001f), std::overflow_error);
     for (auto& p : particles) { p.velocity = {}; p.mass = 1e-30f; p.restDensity = 1.0f; }
     // Force is zero, but the diffusion time bound is below the float time domain.

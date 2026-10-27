@@ -153,7 +153,8 @@ HydrostaticTrace TraceHydrostaticColumn(
 RestStateMetrics SimulateRestState(
     float massScale,
     float deltaTime,
-    float duration = 0.1f
+    float duration = 0.1f,
+    WcsphDensityMode densityMode = WcsphConfig{}.densityMode
 ) {
     constexpr int size = 21;
     auto particles = MakeLattice(
@@ -164,6 +165,7 @@ RestStateMetrics SimulateRestState(
     config.externalAcceleration = Vector2();
     config.speedOfSound = 15.0f;
     config.maximumTimeStep = deltaTime;
+    config.densityMode = densityMode;
     WcsphSolver solver(0.2f, config);
     const int steps = static_cast<int>(std::round(duration / deltaTime));
     for (int step = 0; step < steps; ++step) {
@@ -278,6 +280,7 @@ TEST_CASE("Open free surface is distinguished from bulk density", "[fluid][valid
     constexpr int size = 21;
     auto particles = MakeLattice(size, size, 0.1f, 0.2f);
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = Vector2();
     WcsphSolver solver(0.2f, config);
     solver.prepare(particles);
@@ -300,6 +303,7 @@ TEST_CASE("Compressed SPH pair produces equal repulsive pressure forces", "[flui
         FluidParticle(Vector2(0.1f, 0.0f), Vector2(), properties),
     };
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = Vector2();
     config.speedOfSound = 2.0f;
     WcsphSolver solver(1.0f, config);
@@ -327,10 +331,10 @@ TEST_CASE("Nominal zero-gravity fluid block remains at rest", "[fluid][validatio
 
 TEST_CASE("Density-calibrated particle mass improves rest equilibrium", "[fluid][validation][equilibrium][calibration]") {
     constexpr float nominalBulkDensityRatio = 1.014612675f;
-    const RestStateMetrics nominal = SimulateRestState(1.0f, 1.0f / 480.0f);
+    const RestStateMetrics nominal = SimulateRestState(1.0f, 1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation);
     const RestStateMetrics calibrated = SimulateRestState(
         1.0f / nominalBulkDensityRatio,
-        1.0f / 480.0f
+        1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation
     );
     INFO("nominal maximum speed: " << nominal.maximumSpeed);
     INFO("calibrated maximum speed: " << calibrated.maximumSpeed);
@@ -399,9 +403,9 @@ TEST_CASE("Calibrated lattice heals small positional disorder", "[fluid][validat
 }
 
 TEST_CASE("Rest-state error is dominated by spatial bias, not timestep", "[fluid][validation][equilibrium][convergence]") {
-    const RestStateMetrics coarse = SimulateRestState(1.0f, 1.0f / 240.0f);
-    const RestStateMetrics medium = SimulateRestState(1.0f, 1.0f / 480.0f);
-    const RestStateMetrics fine = SimulateRestState(1.0f, 1.0f / 960.0f);
+    const RestStateMetrics coarse = SimulateRestState(1.0f, 1.0f / 240.0f, 0.1f, WcsphDensityMode::Summation);
+    const RestStateMetrics medium = SimulateRestState(1.0f, 1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation);
+    const RestStateMetrics fine = SimulateRestState(1.0f, 1.0f / 960.0f, 0.1f, WcsphDensityMode::Summation);
     const float coarseToMedium = std::abs(
         coarse.maximumDisplacement - medium.maximumDisplacement
     );

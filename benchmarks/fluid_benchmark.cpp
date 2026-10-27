@@ -92,6 +92,7 @@ void PrepareRenderBuffer(
 Measurement RunMeasurement(std::size_t count, int warmups, int samples) {
     const std::vector<FluidParticle> baseline = MakeParticles(count);
     WcsphConfig config;
+    config.densityMode = WcsphDensityMode::Summation;
     config.externalAcceleration = Vector2();
     config.speedOfSound = 20.0f;
     config.maximumTimeStep = 1.0f / 60.0f;
