@@ -79,10 +79,10 @@ TEST_CASE("Cubic compression retains EOS response and nominal input masses", "[f
 
 TEST_CASE("Kernel configs reject unknown families and legacy defaults agree exactly", "[fluid][family][validation]") {
     WcsphConfig w; DfsphConfig d;
-    REQUIRE(w.kernelFamily == SphKernelFamily::Poly6Spiky);
+    REQUIRE(w.kernelFamily == SphKernelFamily::WendlandC2);
     REQUIRE(d.kernelFamily == SphKernelFamily::Poly6Spiky);
     w.externalAcceleration={}; auto a=Pair(),b=a;
-    WcsphSolver first(1,w); w.kernelFamily=SphKernelFamily::Poly6Spiky; WcsphSolver second(1,w);
+    WcsphSolver first(1,w); w.kernelFamily=SphKernelFamily::WendlandC2; WcsphSolver second(1,w);
     first.step(a,0.001f); second.step(b,0.001f);
     for(std::size_t i=0;i<a.size();++i) {
         REQUIRE(a[i].position == b[i].position); REQUIRE(a[i].velocity == b[i].velocity);

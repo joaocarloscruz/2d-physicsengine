@@ -44,7 +44,11 @@ struct WcsphConfig {
     WcsphDensityMode densityMode = WcsphDensityMode::Continuity;
     float densityDiffusion = 0.1f;
 
-    SphKernelFamily kernelFamily = SphKernelFamily::Poly6Spiky;
+    // Wendland C2 keeps the pressurized square lattice stable at h = 2 dx: the
+    // symmetric pressure term's uniform-pressure stiffness sum_j H(r_ij)(1 - cos k.r_ij)
+    // is positive semidefinite for it, but has negative transverse eigenvalues
+    // for the spiky and cubic gradients, which then buckle under hydrostatic load.
+    SphKernelFamily kernelFamily = SphKernelFamily::WendlandC2;
     WcsphWallPressureMode wallPressureMode = WcsphWallPressureMode::LegacyPositiveIncrement;
     WcsphTimeIntegration timeIntegration = WcsphTimeIntegration::SymplecticEuler;
 

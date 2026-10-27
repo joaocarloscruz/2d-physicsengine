@@ -99,6 +99,7 @@ TEST_CASE("WCSPH estimates density and applies its equation of state", "[fluid][
     };
     WcsphConfig config;
     config.densityMode = WcsphDensityMode::Summation;
+    config.kernelFamily = SphKernelFamily::Poly6Spiky;
     config.speedOfSound = 4.0f;
     config.equationOfStateExponent = 7.0f;
     config.externalAcceleration = Vector2();

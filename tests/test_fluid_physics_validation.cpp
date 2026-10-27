@@ -61,7 +61,8 @@ HydrostaticTrace TraceHydrostaticColumn(
     float outerTimeStep,
     float duration,
     bool enableWallPressure = true,
-    float gravityRampDuration = 0.0f
+    float gravityRampDuration = 0.0f,
+    const WcsphConfig& baseConfig = WcsphConfig{}
 ) {
     constexpr int columns = 19;
     constexpr int rows = 15;
@@ -99,7 +100,7 @@ HydrostaticTrace TraceHydrostaticColumn(
         Vector2(),
         massScale
     );
-    WcsphConfig config;
+    WcsphConfig config = baseConfig;
     config.speedOfSound = 40.0f;
     config.maximumTimeStep = outerTimeStep;
     const WcsphSolver::SubstepCallback noOp = [](float) {};
@@ -154,7 +155,8 @@ RestStateMetrics SimulateRestState(
     float massScale,
     float deltaTime,
     float duration = 0.1f,
-    WcsphDensityMode densityMode = WcsphConfig{}.densityMode
+    WcsphDensityMode densityMode = WcsphConfig{}.densityMode,
+    SphKernelFamily kernelFamily = WcsphConfig{}.kernelFamily
 ) {
     constexpr int size = 21;
     auto particles = MakeLattice(
@@ -166,6 +168,7 @@ RestStateMetrics SimulateRestState(
     config.speedOfSound = 15.0f;
     config.maximumTimeStep = deltaTime;
     config.densityMode = densityMode;
+    config.kernelFamily = kernelFamily;
     WcsphSolver solver(0.2f, config);
     const int steps = static_cast<int>(std::round(duration / deltaTime));
     for (int step = 0; step < steps; ++step) {
@@ -281,6 +284,7 @@ TEST_CASE("Open free surface is distinguished from bulk density", "[fluid][valid
     auto particles = MakeLattice(size, size, 0.1f, 0.2f);
     WcsphConfig config;
     config.densityMode = WcsphDensityMode::Summation;
+    config.kernelFamily = SphKernelFamily::Poly6Spiky;
     config.externalAcceleration = Vector2();
     WcsphSolver solver(0.2f, config);
     solver.prepare(particles);
@@ -330,11 +334,13 @@ TEST_CASE("Nominal zero-gravity fluid block remains at rest", "[fluid][validatio
 }
 
 TEST_CASE("Density-calibrated particle mass improves rest equilibrium", "[fluid][validation][equilibrium][calibration]") {
+    // The calibration constant is the Poly6 lattice sum at h = 2 dx.
     constexpr float nominalBulkDensityRatio = 1.014612675f;
-    const RestStateMetrics nominal = SimulateRestState(1.0f, 1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation);
+    const RestStateMetrics nominal = SimulateRestState(1.0f, 1.0f / 480.0f, 0.1f,
+        WcsphDensityMode::Summation, SphKernelFamily::Poly6Spiky);
     const RestStateMetrics calibrated = SimulateRestState(
         1.0f / nominalBulkDensityRatio,
-        1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation
+        1.0f / 480.0f, 0.1f, WcsphDensityMode::Summation, SphKernelFamily::Poly6Spiky
     );
     INFO("nominal maximum speed: " << nominal.maximumSpeed);
     INFO("calibrated maximum speed: " << calibrated.maximumSpeed);
@@ -1222,8 +1228,13 @@ TEST_CASE("Calibrated sampled-wall hydrostatic column remains bounded", "[fluid]
 }
 
 TEST_CASE("Hydrostatic instability is measured under timestep refinement", "[fluid][validation][hydrostatic][convergence]") {
-    const HydrostaticTrace coarse = TraceHydrostaticColumn(0.001f, 0.2f);
-    const HydrostaticTrace fine = TraceHydrostaticColumn(0.00025f, 0.2f);
+    // Characterizes the pre-symplectic Poly6 model, whose startup error was
+    // timestep-dependent; the default model is converged at both steps.
+    WcsphConfig legacy;
+    legacy.kernelFamily = SphKernelFamily::Poly6Spiky;
+    legacy.timeIntegration = WcsphTimeIntegration::ExplicitDensity;
+    const HydrostaticTrace coarse = TraceHydrostaticColumn(0.001f, 0.2f, true, 0.0f, legacy);
+    const HydrostaticTrace fine = TraceHydrostaticColumn(0.00025f, 0.2f, true, 0.0f, legacy);
     INFO("coarse max speed: " << coarse.maximumSpeed);
     INFO("fine max speed: " << fine.maximumSpeed);
     INFO("coarse max density error: " << coarse.maximumDensityError);

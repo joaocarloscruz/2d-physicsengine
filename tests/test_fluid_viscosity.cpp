@@ -126,6 +126,7 @@ TEST_CASE("Prepared neighbor row bound limits diffusion even at zero velocity", 
     for (auto& p : particles) { p.position = {}; p.velocity = {}; }
     WcsphConfig config;
     config.densityMode = WcsphDensityMode::Summation;
+    config.kernelFamily = SphKernelFamily::Poly6Spiky;
     config.externalAcceleration = {};
     config.speedOfSound = 0.1f;
     WcsphSolver solver(1.0f, config);
