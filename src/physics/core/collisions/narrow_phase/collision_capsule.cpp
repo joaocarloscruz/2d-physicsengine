@@ -183,7 +183,7 @@ CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32
     const Candidate* chosen = nullptr;
     for (const auto& candidate : candidates)
         if (candidate.penetration <= minimum + allowance) { chosen = &candidate; break; }
-    const Point n = chosen->normal;
+    Point n = chosen->normal;
     builder.shift = n * (-0.5 * margin);
 
     if (chosen->reference <= 1) {
@@ -207,17 +207,28 @@ CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32
                         face | (i + 1u));
         }
         if (builder.manifold.contactCount > 0) return builder.Finish(n, chosen->penetration);
+        // The face won a near tie with the closest-point direction but every
+        // incident point lies outside the reference extent (or ahead of it),
+        // which means the spines are disjoint. The face normal has no single
+        // supporting point on the reference spine, so a sign test on
+        // axis.dot(n) would pick an end by rounding noise. Use the
+        // closest-point candidate, whose normal and points agree.
+        if (coreGap > 0) {
+            chosen = &candidates.back();
+            n = chosen->normal;
+            builder.shift = n * (-0.5 * margin);
+        }
     }
     Point supportA = closestA, supportB = closestB;
     std::uint32_t feature = kind | 1u;
-    if (chosen->reference != 2) {
+    if (chosen->reference == 2) {
+        feature |= 3u << 8;
+    } else {
         // Support points along the chosen normal.
         const double sa = Sign(a.axis.dot(n)), sb = Sign(b.axis.dot(n));
         supportA = a.center + a.axis * (a.halfLength * sa);
         supportB = b.center - b.axis * (b.halfLength * sb);
         feature |= static_cast<std::uint32_t>(sa + 1) << 4 | static_cast<std::uint32_t>(sb + 1) << 6;
-    } else {
-        feature |= 3u << 8;
     }
     builder.Add(((supportA + n * a.radius) + (supportB - n * b.radius)) * 0.5, chosen->penetration, feature);
     return builder.Finish(n, chosen->penetration);
@@ -340,8 +351,7 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
     const Candidate* chosen = nullptr;
     for (const auto& candidate : candidates)
         if (candidate.penetration <= minimum + allowance) { chosen = &candidate; break; }
-    const Point n = chosen->normal;
-    const Point normalAB = capsuleIsA ? n : n * -1;
+    Point n = chosen->normal;
     builder.shift = n * (-0.5 * margin);
 
     if (chosen->kind == 0) {
@@ -378,8 +388,16 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
             builder.Add((q + capsuleSurface) * 0.5, -separation, face | (k + 1u));
         }
     }
-    if (builder.manifold.contactCount > 0) return builder.Finish(normalAB, chosen->penetration);
+    if (builder.manifold.contactCount > 0) return builder.Finish(capsuleIsA ? n : n * -1, chosen->penetration);
 
+    // As for rounded pairs: a face that clipped every point away won a near
+    // tie against disjoint cores. Its sign and lowest-vertex supports are
+    // ties along a face normal, so use the closest-point candidate instead.
+    if (chosen->kind != 2 && coreGap > 0) {
+        chosen = &candidates.back();
+        n = chosen->normal;
+        builder.shift = n * (-0.5 * margin);
+    }
     Point spine = closestSpine, surface = closestPolygon;
     std::uint32_t feature = PolygonCapsuleKind | closestFeature | 1u;
     if (chosen->kind != 2) {
@@ -391,7 +409,7 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
             | static_cast<std::uint32_t>(support.second & 0xffffu) << 2 | 1u;
     }
     builder.Add(((spine + n * r) + surface) * 0.5, chosen->penetration, feature);
-    return builder.Finish(normalAB, chosen->penetration);
+    return builder.Finish(capsuleIsA ? n : n * -1, chosen->penetration);
 }
 } // namespace
 
