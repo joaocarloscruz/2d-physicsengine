@@ -360,7 +360,7 @@
         window.playgroundDebug = () => ({
             scene: Playground.SCENES[state.sceneIndex].name, bodies: state.scene.bodyCount,
             joints: state.scene.jointCount, paused: state.paused, stepMs: state.scene.stepMilliseconds,
-            fps: state.fps, camera: {...state.camera},
+            fps: state.fps, sceneTime: state.scene.sceneTime, camera: {...state.camera},
         });
         requestAnimationFrame(frame);
     }
