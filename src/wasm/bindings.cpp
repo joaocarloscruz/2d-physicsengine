@@ -2,6 +2,7 @@
 
 #include <memory>
 #include "checked_indices.h"
+#include "collision_events.h"
 
 #include "engine.h"
 #include "physics/core/charged_particle.h"
@@ -352,8 +353,9 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
 
     function("createParticleSystem", &CreateParticleSystem);
 
-    class_<Engine>("Engine")
-        .constructor<>()
+    class_<Engine> engineClass("Engine");
+    engineClass
+        .smart_ptr_constructor("shared_ptr<Engine>", &Wasm::CreateEngine)
         .function("step", &Engine::step)
         .function("stepFixed", &Engine::stepFixed)
         .function("advance", &Engine::advance)
@@ -373,4 +375,5 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("addParticleSystem", &Engine::addParticleSystem)
         .function("removeParticleSystem", &Engine::removeParticleSystem)
         .function("getMaterial", &Engine::getMaterial);
+    Wasm::AddCollisionEventMethods(engineClass);
 }

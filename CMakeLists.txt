@@ -213,6 +213,7 @@ if(EMSCRIPTEN)
         src/wasm/electrostatic_bindings.cpp
         src/wasm/euler_gas_bindings.cpp
         src/wasm/query_bindings.cpp
+        src/wasm/event_bindings.cpp
         src/wasm/universal_force_bindings.cpp
     )
 
