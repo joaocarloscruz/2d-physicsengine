@@ -45,6 +45,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/prismatic_joint.cpp
     ${PHYSICS_SRC_DIR}/core/mouse_joint.cpp
     ${PHYSICS_SRC_DIR}/core/weld_joint.cpp
+    ${PHYSICS_SRC_DIR}/core/wheel_joint.cpp
     ${PHYSICS_SRC_DIR}/core/softbody.cpp
     ${PHYSICS_SRC_DIR}/core/thermal_network.cpp
     ${PHYSICS_SRC_DIR}/core/wave_membrane.cpp
@@ -298,6 +299,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_prismatic_joint.cpp
         ${TESTS_SRC_DIR}/test_mouse_joint.cpp
         ${TESTS_SRC_DIR}/test_weld_joint.cpp
+        ${TESTS_SRC_DIR}/test_wheel_joint.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
         ${TESTS_SRC_DIR}/test_thermal_radiation.cpp
