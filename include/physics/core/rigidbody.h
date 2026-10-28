@@ -67,6 +67,16 @@ namespace PhysicsEngine {
         void Wake() { if (!isStatic) { awake = true; sleepTime = 0; } }
         bool IsCcdEnabled() const { return ccdEnabled; }
         void SetCcdEnabled(bool enabled) { ccdEnabled = enabled; }
+        // A sensor reports overlaps through the collision events (with
+        // CollisionEvent::sensor set) but never gets contact impulses, CCD
+        // sweeps or island links. Two sensors never report each other.
+        // See docs/sensors.md.
+        bool IsSensor() const { return sensor; }
+        void SetSensor(bool enabled);
+        // Opaque application value (an index, a handle or a pointer cast to
+        // an integer). The engine never reads it. Defaults to 0.
+        std::uintptr_t GetUserData() const { return userData; }
+        void SetUserData(std::uintptr_t data) { userData = data; }
 
         // setters
 
@@ -101,6 +111,8 @@ namespace PhysicsEngine {
         const std::uint64_t id;
         bool isStatic;
         bool ccdEnabled = false;
+        bool sensor = false;
+        std::uintptr_t userData = 0;
         bool awake = true;
         float sleepTime = 0;
         bool applyingAutomaticForces = false;

@@ -13,11 +13,15 @@ namespace PhysicsEngine {
         float penetration = 0.0f;
         std::array<ContactPoint, 2> contacts{};
         std::uint8_t contactCount = 0;
+        // True when one body of the pair is a sensor: an overlap report, not
+        // a contact. Its geometry is the overlap; no impulse was applied.
+        bool sensor = false;
     };
 
     // Interface for receiving collision events.
     // Subclass this and register with World::addCollisionListener().
     // onCollision() is called once per collision pair per step(), after resolution.
+    // Sensor overlaps (CollisionEvent::sensor) use the same callbacks.
     class ICollisionListener {
     public:
         virtual ~ICollisionListener() = default;

@@ -307,6 +307,14 @@ namespace PhysicsEngine {
         collisionCategoryBits = bits;
     }
 
+    void RigidBody::SetSensor(bool enabled) {
+        if (sensor == enabled) return;
+        // Bodies resting on this one must wake to fall through it (or to be
+        // pushed out of it); the contact wake request reaches them next step.
+        Wake(); contactWakeRequested = true;
+        sensor = enabled;
+    }
+
     void RigidBody::SetCollisionMaskBits(std::uint32_t bits) {
         Wake(); contactWakeRequested = true;
         collisionMaskBits = bits;
