@@ -1009,6 +1009,15 @@ other unless `joint.setCollideConnected(true)` is called; `getCollideConnected()
 reads the setting. CCD and waking use `body.setCcdEnabled`,
 `isCcdEnabled`, `wake` and `isAwake`. Sleeping is configured through the object
 returned by `getSimulationConfig`. Use that complete object when changing fields.
+It holds every native `SimulationConfig` field: besides the timestep, solver,
+velocity-limit, sleeping and CCD fields it carries `solverSubsteps` (integer,
+1 to 64), `contactHertz`, `contactDampingRatio`, `contactPushSpeed`,
+`enableSpeculativeContacts` and `enableFrictionDisplacementCorrection`
+(see [simulation configuration](simulation-configuration.md)). All integer
+fields, including `solverSubsteps`, reject fractional, non-finite and
+out-of-range numbers instead of truncating them, and any invalid update leaves
+the engine's configuration unchanged. Set `solverSubsteps = 1` to get the
+single-pass solve.
 `physics.addGravity(engine, {x, y})` adds a uniform acceleration to every dynamic
 body. Calls stack and cannot be removed from an engine.
 `engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.

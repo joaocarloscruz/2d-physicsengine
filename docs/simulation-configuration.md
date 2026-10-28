@@ -56,8 +56,7 @@ must not silently clamp that velocity.
 contacts at the start-of-step poses with speculative margins and integrate
 positions after the velocity solve, or (`false`) the legacy order that
 integrates first and detects at the new poses. See
-[contact solver](contact-solver.md#step-order). It is not exposed to
-JavaScript.
+[contact solver](contact-solver.md#step-order).
 
 `solverSubsteps` (1 to 64, default 4) applies to the speculative order. Each
 group of touching bodies without joints is solved in that many substeps, with
@@ -69,8 +68,7 @@ default 60) is the soft contact's stiffness; it is capped at a quarter of the
 substep rate, so 60 Hz needs a 60 Hz step with 4 substeps. `contactDampingRatio`
 (non-negative, default 2) damps it, and `contactPushSpeed` (positive, default
 3 m/s) caps the speed at which overlap is pushed out. See
-[contact solver](contact-solver.md#substepped-soft-contacts). These four are
-not exposed to JavaScript.
+[contact solver](contact-solver.md#substepped-soft-contacts).
 
 Contacts slower than the restitution velocity threshold are solved without a
 bounce, which prevents resting contacts from injecting energy. Velocity
@@ -78,4 +76,12 @@ components at or below the velocity tolerance are treated as settled. Maximum
 position correction caps the distance repaired by one position iteration.
 
 The same value object is available through WebAssembly using
-`engine.getSimulationConfig()` and `engine.setSimulationConfig(config)`.
+`engine.getSimulationConfig()` and `engine.setSimulationConfig(config)`. It
+carries every native field, including `solverSubsteps`, `contactHertz`,
+`contactDampingRatio`, `contactPushSpeed`, `enableSpeculativeContacts` and
+`enableFrictionDisplacementCorrection`. `setSimulationConfig` needs all fields,
+so start from the object `getSimulationConfig()` returns. The integer fields
+(`maxSubstepsPerAdvance`, `solverIterations`, `maximumCcdImpacts`,
+`solverSubsteps`) reject fractional, non-finite and out-of-range numbers instead
+of truncating them, and an invalid update leaves the configuration unchanged.
+See [WebAssembly](webassembly.md).
