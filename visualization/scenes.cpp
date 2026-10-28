@@ -1,6 +1,8 @@
 #include "scenes.h"
 #include <cmath>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace PhysicsEngine {
 namespace Visualization {
@@ -14,6 +16,10 @@ constexpr float kGravity = -9.81f;
 // do not fight their own contact while still colliding with everything else.
 constexpr std::uint32_t kChainCategory = 2u;
 constexpr std::uint32_t kNoChainMask = ~kChainCategory;
+// Slider stroke in the Machines scene. It lives at namespace scope because the
+// slider's controller lambda reads it, and MSVC rejects uncaptured constexpr
+// float locals inside lambdas.
+constexpr float kSliderTravel = 6.0f;
 
 const Material kStone{1.0f, 0.1f, 0.6f, 0.4f};
 
@@ -253,14 +259,13 @@ SceneRuntime buildMachines(World& world) {
 
     // Slider: a carriage on a prismatic joint, driven along a rail.
     constexpr float railY = kFloorTop + 0.95f;
-    constexpr float travel = 6.0f;
     const Vector2 start(9.0f, railY);
-    auto rail = addBox(world, travel + 1.0f, 0.1f, Vector2(start.x - 0.5f * travel, railY), kStone, true);
+    auto rail = addBox(world, kSliderTravel + 1.0f, 0.1f, Vector2(start.x - 0.5f * kSliderTravel, railY), kStone, true);
     rail->SetCollisionMaskBits(0u);
     auto railAnchor = addAnchor(world, start, 0.1f);
     auto carriage = addBox(world, 1.0f, 1.8f, start, Material{5.0f, 0.1f, 0.4f, 0.3f});
     auto slider = std::make_shared<PrismaticJoint>(railAnchor, carriage, Vector2(-1.0f, 0.0f));
-    slider->setLimits(true, 0.0f, travel);
+    slider->setLimits(true, 0.0f, kSliderTravel);
     slider->setMotor(true, 1.5f, 3000.0f);
     world.addJoint(slider);
     for (int row = 0; row < 3; ++row) {
@@ -272,7 +277,7 @@ SceneRuntime buildMachines(World& world) {
     runtime.beforeStep = [slider](World&, float) {
         const double position = slider->getTranslation();
         const float speed = slider->getMotorSpeed();
-        if (position >= travel - 0.05 && speed > 0.0f) slider->setMotor(true, -1.5f, 3000.0f);
+        if (position >= kSliderTravel - 0.05 && speed > 0.0f) slider->setMotor(true, -1.5f, 3000.0f);
         else if (position <= 0.05 && speed < 0.0f) slider->setMotor(true, 1.5f, 3000.0f);
     };
     return runtime;

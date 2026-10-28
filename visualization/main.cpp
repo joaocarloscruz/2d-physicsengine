@@ -1,6 +1,8 @@
 #include "renderer.h"
 #include "physics/core/world.h"
+#include <cstddef>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 using namespace PhysicsEngine;
