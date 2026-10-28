@@ -144,6 +144,25 @@ To stop two kinds of bodies from colliding, give each body a category bit and a
 mask of the categories it collides with. A pair collides only when each body's
 mask contains the other's category. See [collision filtering](collision-filtering.md).
 
+## Sensors and user data
+
+A sensor detects overlaps but never pushes or gets pushed. Use one for
+trigger zones, pickups and goal areas:
+
+```cpp
+auto goal = std::make_shared<RigidBody>(Polygon::MakeBox(2, 2), Material{}, Vector2{10, 1}, true);
+goal->SetSensor(true);
+goal->SetUserData(42);            // your own id, index or pointer cast to std::uintptr_t
+world.addBody(goal);
+```
+
+A sensor's overlaps arrive through the same `onCollisionBegin`, `onCollisionPersist`
+and `onCollisionEnd` callbacks, with `event.sensor == true`. Two sensors never
+report each other. Sensors do not wake sleeping bodies, and CCD does not sweep
+them. A dynamic sensor falls under gravity and passes through everything.
+`GetUserData()` returns the value you stored. The engine never reads it.
+See [sensors and user data](sensors.md).
+
 ## Joints
 
 ```cpp
