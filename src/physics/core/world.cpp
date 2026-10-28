@@ -1264,9 +1264,13 @@ void World::sweepCcdCorrections(float deltaTime) {
     if (!scratch || deltaTime <= 0) return;
     const auto& from = scratch->ccdPositions;
     if (from.size() != bodies.size()) return;
+    // A pair is swept only if one side has CCD; without a CCD static body,
+    // only CCD bodies need the scan over the statics.
+    bool staticCcd = false;
+    for (const auto& body : bodies) staticCcd = staticCcd || (body->IsStatic() && body->IsCcdEnabled());
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const auto& body = bodies[i];
-        if (body->IsStatic()) continue;
+        if (body->IsStatic() || (!staticCcd && !body->IsCcdEnabled())) continue;
         const Vector2 correction = body->position - from[i];
         if (correction.x == 0 && correction.y == 0) continue;
         const Vector2 motion = correction/deltaTime;
