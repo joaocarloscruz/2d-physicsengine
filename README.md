@@ -58,7 +58,7 @@ Each module owns its state and is documented with its limits.
 
 ### WebAssembly
 
-- The [JavaScript API](docs/webassembly.md) covers rigid bodies, particles, soft bodies, thermal networks, charged particles, gravity, membrane and elastic waves, periodic projection and viscosity, scalar transport, ideal-gas flow (first order, or second order on request), electrostatics and lossless or Ohmic Maxwell fields. Spatial queries return owned results. The complete incompressible timestep, the SPH solvers and rigid-fluid coupling need the native API.
+- The [JavaScript API](docs/webassembly.md) covers rigid bodies, particles, soft bodies, thermal networks, charged particles, gravity, membrane and elastic waves, periodic projection and viscosity, complete periodic incompressible flow, scalar transport, ideal-gas flow (first order, or second order on request), electrostatics and lossless or Ohmic Maxwell fields. Spatial queries return owned results. The SPH solvers, rigid-fluid coupling and collision listeners need the native API.
 - The [web playground](docs/web-playground.md) runs ten scenes in a browser, with dragging and spawning.
 - The build and the JavaScript API are in [WebAssembly](docs/webassembly.md). The module targets Emscripten 6.0.3 and its [exception boundary](docs/wasm-exception-boundary.md) is documented.
 

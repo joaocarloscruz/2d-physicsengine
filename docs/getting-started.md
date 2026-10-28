@@ -265,6 +265,8 @@ friction and impact accuracy against physical oracles, and the
 
 ## Seeing it
 
-The SFML visualizer in [visualization](../visualization/README.md) has eight
-interactive scenes (stacks, pyramids, joints, capsules and more). You can drag
-bodies with the mouse and spawn new ones.
+The SFML visualizer in [visualization](../visualization/README.md) has ten
+interactive scenes: stacks, pyramids, dominoes, chains, capsules, a drivable car
+with a sensor goal, and a joints gallery. You can drag bodies with the mouse and
+spawn new ones. The [web playground](web-playground.md) runs the same scenes in
+a browser on the WebAssembly build.
