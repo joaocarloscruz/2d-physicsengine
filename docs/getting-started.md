@@ -237,9 +237,11 @@ from `getSimulationConfig()` and pass it back with `setSimulationConfig()`.
 ## Performance
 
 The step is single-threaded. On an AMD Ryzen 7 5700X, a settled pile of boxes
-and circles in a walled bin takes about 0.7 ms per 60 Hz step with 250 bodies,
-2 ms with 500, 4.2 ms with 1000 and 9.2 ms with 2000 (`rigid_step_benchmark`
-reproduces these). With sleeping enabled,
+and circles in a walled bin takes about 1.1 ms per 60 Hz step with 250 bodies,
+2 ms with 500, 4.4 ms with 1000 and 10.5 ms with 2000 (`rigid_step_benchmark`
+reproduces these). `solverSubsteps = 1` skips the substepped contact solve and
+is about 10% cheaper at 2000 bodies, at the cost of the tall-tower stability
+described below. With sleeping enabled,
 settled islands skip integration and the solver, though contact detection
 still runs for them. Statistics for the last step are in
 `world.getLastStepStatistics()`; see [simulation statistics](simulation-statistics.md).
@@ -252,8 +254,8 @@ still runs for them. Statistics for the last step are in
   `contactHertz = 120` it stands but drifts about 3 cm. At 30 Hz the soft
   contacts are capped at 30 Hz and a 20-box tower falls; `solverSubsteps = 8`
   holds it.
-- A perfectly elastic ball (restitution 1) gains about 0.6% of its energy over
-  6 seconds of bouncing.
+- A perfectly elastic ball (restitution 1) dropped from 1 m rebounds to
+  0.998 m on its first bounce, then keeps that height.
 - Dynamic polygons rotate about their shape origin, so build them centered (see
   [polygon centering](polygon-centering.md)).
 - Fluids do not interact with capsules.
