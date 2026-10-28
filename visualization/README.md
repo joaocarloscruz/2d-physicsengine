@@ -39,14 +39,62 @@ the screenshot under Xvfb on Linux.
 
 | Key/Button | Action |
 |------------|--------|
-| Left Mouse + Drag | Pick up and move objects |
-| Right Mouse Click | Spawn a new box at cursor |
-| Middle Mouse / C | Spawn a new circle at cursor |
+| 1-8 (number row or keypad) | Switch to that scene (see below) |
+| R | Reset the current scene |
+| Left Mouse + Drag | Pick up and move objects with a damped spring |
+| Right Mouse Click / B | Spawn a box at the cursor |
+| Middle Mouse / C | Spawn a circle at the cursor |
+| K | Spawn a capsule at the cursor |
 | Space | Pause/unpause simulation |
-| R | Reset the scene |
-| D | Toggle debug info |
+| H | Show/hide the controls list in the HUD |
+| D | Show/hide the whole HUD |
+| Arrow keys | Move the camera |
 | Mouse Wheel | Zoom in/out |
 | ESC | Exit |
+
+The simulation always advances with a fixed 60 Hz step. Joints are drawn as thin
+yellow lines between their world anchors, with a round marker for revolute joints
+and a square marker for distance and prismatic joints.
+
+## HUD
+
+The top-left panel shows the scene name, body and joint counts, the smoothed
+duration of `World::step` in milliseconds, the frame rate and whether the
+simulation is paused; a bottom bar lists the scenes with the current one in
+brackets. Text needs a font file because SFML 3 has none built in. The
+visualizer looks for Segoe UI or Arial on Windows, DejaVu Sans or Liberation
+Sans on Linux and Arial or Helvetica on macOS. If none is found it draws no
+text and shows the scene name in the window title.
+
+## Scenes
+
+Every scene is built in `scenes.cpp` from the public engine API only.
+
+| Key | Scene | What it shows |
+|-----|-------|---------------|
+| 1 | Playground | Two boxes and a ball to spawn onto and drag around |
+| 2 | Tower | Twelve boxes stacked with small offsets |
+| 3 | Pyramid | A 36-box pyramid (eight at the base) held up by friction |
+| 4 | Dominoes | Twenty thin boxes toppled by a ball rolled into the first |
+| 5 | Chain and pendulum | A capsule chain on revolute joints hanging from a pivot, and a distance-joint pendulum swinging into a stack of boxes |
+| 6 | Capsules and ramps | Capsules and balls sliding down angled static box and capsule ramps |
+| 7 | Seesaw and mass ratio | A plank on a limited revolute hinge: a heavy ball dropped on one end throws light boxes off the other |
+| 8 | Machines | A revolute paddle and a revolute roller driven by motors, and a prismatic slider with motor and travel limits that shuttles back and forth pushing boxes |
+
+## Command-line options
+
+`PhysicsVisualization --smoke-test [capture.png]` renders five hidden frames,
+optionally saves a PNG and exits with status 0. Two hidden options help produce
+captures of a given scene; without them the program starts in scene 1 and
+behaves as before.
+
+| Option | Effect |
+|--------|--------|
+| `--scene N` | Start in scene N (1-8) |
+| `--advance STEPS` | Simulate STEPS fixed steps before the first frame |
+
+For example `PhysicsVisualization --scene 5 --advance 150 --smoke-test five.png`
+captures the chain and pendulum scene after 2.5 simulated seconds.
 
 ## Troubleshooting
 

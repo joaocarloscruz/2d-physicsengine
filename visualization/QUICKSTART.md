@@ -53,5 +53,13 @@ visualization/build/PhysicsVisualization --smoke-test capture.png
 xvfb-run -a visualization/build/PhysicsVisualization --smoke-test capture.png
 ```
 
-It renders five hidden frames, writes a PNG, and exits. See [README](README.md)
-for controls, SFML source installation and troubleshooting.
+It renders five hidden frames, writes a PNG, and exits. To capture another
+scene after it has run for a while, add `--scene 5 --advance 150` (scene number
+and fixed 60 Hz steps to simulate first).
+
+Once running, press 1-8 to pick a scene (Playground, Tower, Pyramid, Dominoes,
+Chain and pendulum, Capsules and ramps, Seesaw and mass ratio, Machines), R to
+reset it, C/B/K to spawn a circle/box/capsule at the cursor, drag bodies with
+the left mouse button, Space to pause and H to hide the controls list. See
+[README](README.md) for all controls, the scenes, SFML source installation and
+troubleshooting.
