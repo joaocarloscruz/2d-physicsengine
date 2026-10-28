@@ -247,6 +247,127 @@ void AppendPolygonSamples(
     PublishSamples(generated, particles);
 }
 
+// Point at arc length `distance` along the closed outline of the local capsule
+// with spine half-length h and radius rho, starting at the +x tip and running
+// counterclockwise: right cap upper quarter, top side, left cap, bottom side,
+// right cap lower quarter. Starting at the tip keeps the samples symmetric
+// about the spine.
+std::pair<double, double> CapsuleOutlinePoint(double h, double rho, double distance) {
+    const double quarter = 0.5 * Pi * rho;
+    const double side = 2.0 * h;
+    if (distance < quarter) {
+        const double angle = distance / rho;
+        return {h + rho * std::cos(angle), rho * std::sin(angle)};
+    }
+    distance -= quarter;
+    if (distance < side) {
+        return {h - distance, rho};
+    }
+    distance -= side;
+    if (distance < 2.0 * quarter) {
+        const double angle = 0.5 * Pi + distance / rho;
+        return {-h + rho * std::cos(angle), rho * std::sin(angle)};
+    }
+    distance -= 2.0 * quarter;
+    if (distance < side) {
+        return {-h + distance, -rho};
+    }
+    distance -= side;
+    const double angle = 1.5 * Pi + distance / rho;
+    return {h + rho * std::cos(angle), rho * std::sin(angle)};
+}
+
+// Capsule bodies are sampled like circles: layers at depth layer * spacing
+// inside the surface. Each layer is the inset capsule outline of radius
+// rho = radius - depth, with ceil(perimeter / spacing) samples evenly spaced
+// by arc length. Once rho reaches zero the layer is the spine itself, sampled
+// at segment midpoints like a polygon edge (one point for a short spine,
+// matching the circle's center point), and deeper layers stop. A zero
+// half-length capsule is the circle of its radius and uses the circle sampler.
+void AppendCapsuleSamples(
+    float halfLength,
+    float radius,
+    const Vector2& position,
+    float orientation,
+    float pressureScale,
+    const Vector2& linearVelocity,
+    float angularVelocity,
+    const FluidBoundarySamplingSettings& settings,
+    std::vector<FluidBoundaryParticle>& particles,
+    std::uint64_t& remainingSamples
+) {
+    if (!std::isfinite(halfLength) || halfLength < 0.0f) {
+        throw std::invalid_argument("Fluid boundary capsule half-length must be finite and nonnegative.");
+    }
+    if (halfLength == 0.0f) {
+        AppendCircleSamples(position, radius, true, pressureScale, linearVelocity,
+            angularVelocity, settings, particles, remainingSamples);
+        return;
+    }
+    ValidateSamplingState(position, linearVelocity, angularVelocity);
+    CheckedGrid::PositiveFinite(radius);
+    if (!std::isfinite(orientation)) {
+        throw std::invalid_argument("Fluid boundary capsule must have finite orientation.");
+    }
+    const double h = halfLength;
+    const int layerCount = CheckedGrid::Extent(settings.supportRadius, settings.spacing);
+    if (static_cast<std::uint64_t>(layerCount) > remainingSamples) {
+        throw std::length_error("Fluid boundary sampling exceeds its layer budget.");
+    }
+    // (rho, count); rho == 0 marks the spine layer.
+    std::vector<std::pair<double, int>> layers;
+    for (int layer = 0; layer < layerCount; ++layer) {
+        const double layerRadius = static_cast<double>(radius)
+            - static_cast<double>(layer) * settings.spacing;
+        if (layerRadius <= BoundaryTolerance) {
+            const int sampleCount = std::max(1, CheckedGrid::Integer(
+                std::ceil(2.0 * h / settings.spacing)
+            ));
+            CheckedGrid::Charge(static_cast<std::uint64_t>(sampleCount), remainingSamples);
+            layers.emplace_back(0.0, sampleCount);
+            break;
+        }
+        const double perimeter = 4.0 * h + 2.0 * Pi * layerRadius;
+        if (h + layerRadius > std::numeric_limits<float>::max()) {
+            throw std::overflow_error("Fluid boundary layer radius exceeds float range.");
+        }
+        const int sampleCount = std::max(1, CheckedGrid::Integer(
+            std::ceil(perimeter / settings.spacing)
+        ));
+        CheckedGrid::Charge(static_cast<std::uint64_t>(sampleCount), remainingSamples);
+        layers.emplace_back(layerRadius, sampleCount);
+    }
+    const double cosine = std::cos(static_cast<double>(orientation));
+    const double sine = std::sin(static_cast<double>(orientation));
+    std::vector<FluidBoundaryParticle> generated;
+    const auto emit = [&](double localX, double localY) {
+        const double offsetX = cosine * localX - sine * localY;
+        const double offsetY = sine * localX + cosine * localY;
+        generated.push_back({
+            CheckedGeometryVector(position.x + offsetX, position.y + offsetY),
+            CheckedGeometryVector(linearVelocity.x - angularVelocity * offsetY,
+                                  linearVelocity.y + angularVelocity * offsetX),
+            settings.spacing * settings.spacing, Vector2(), pressureScale
+        });
+    };
+    for (const auto& [layerRadius, sampleCount] : layers) {
+        if (layerRadius == 0.0) {
+            for (int index = 0; index < sampleCount; ++index) {
+                const double parameter = (static_cast<double>(index) + 0.5) / sampleCount;
+                emit(-h + 2.0 * h * parameter, 0.0);
+            }
+            break;
+        }
+        const double perimeter = 4.0 * h + 2.0 * Pi * layerRadius;
+        for (int index = 0; index < sampleCount; ++index) {
+            const auto [localX, localY] = CapsuleOutlinePoint(
+                h, layerRadius, perimeter * index / sampleCount);
+            emit(localX, localY);
+        }
+    }
+    PublishSamples(generated, particles);
+}
+
 } // namespace
 
 void FluidBoundarySamplingSettings::Validate() const {
@@ -516,6 +637,20 @@ std::vector<FluidBoundaryParticle> SampleRigidBodyBoundaries(
                 body->GetPosition(),
                 body->GetOrientation(),
                 true,
+                0.0f,
+                body->GetVelocity(),
+                body->GetAngularVelocity(),
+                settings,
+                particles,
+                remainingSamples
+            );
+        } else if (body->shape->type == ShapeType::CAPSULE) {
+            const auto* capsule = static_cast<const Capsule*>(body->shape.get());
+            AppendCapsuleSamples(
+                capsule->GetHalfLength(),
+                capsule->GetRadius(),
+                body->GetPosition(),
+                body->GetOrientation(),
                 0.0f,
                 body->GetVelocity(),
                 body->GetAngularVelocity(),

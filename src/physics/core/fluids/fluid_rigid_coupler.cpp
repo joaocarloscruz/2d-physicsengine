@@ -90,12 +90,45 @@ SurfaceSample SamplePolygon(const RigidBody& body, const Vector2& position) {
     };
 }
 
+// A capsule is the circle of its radius swept along the spine, so the surface
+// sample is the circle sample about the closest spine point. With halfLength
+// zero the clamp yields a signed zero, the spine point is the body position
+// exactly and every operation matches SampleCircle bit for bit.
+SurfaceSample SampleCapsule(const RigidBody& body, const Vector2& position) {
+    const auto* capsule = static_cast<const Capsule*>(body.shape.get());
+    const float halfLength = capsule->GetHalfLength();
+    const float radius = capsule->GetRadius();
+    const float orientation = body.GetOrientation();
+    const Vector2 axis(std::cos(orientation), std::sin(orientation));
+    const Vector2 relative = position - body.GetPosition();
+    const float along = std::clamp(relative.dot(axis), -halfLength, halfLength);
+    const Vector2 spinePoint = body.GetPosition() + axis * along;
+    const Vector2 offset = position - spinePoint;
+    const float distance = offset.magnitude();
+    Vector2 normal(1.0f, 0.0f);
+    if (distance > CouplingTolerance) {
+        normal = offset / distance;
+    } else if (halfLength > 0.0f) {
+        // On the spine itself: leave through the local +y side, the same
+        // tie-break as the capsule point queries.
+        normal = Vector2(-axis.y, axis.x);
+    }
+    return SurfaceSample{
+        spinePoint + normal * radius,
+        normal,
+        distance - radius
+    };
+}
+
 SurfaceSample SampleSurface(const RigidBody& body, const Vector2& position) {
     if (body.shape->type == ShapeType::CIRCLE) {
         return SampleCircle(body, position);
     }
     if (body.shape->type == ShapeType::POLYGON) {
         return SamplePolygon(body, position);
+    }
+    if (body.shape->type == ShapeType::CAPSULE) {
+        return SampleCapsule(body, position);
     }
     throw std::invalid_argument("Fluid-rigid coupling received an unsupported shape.");
 }
@@ -160,9 +193,10 @@ FluidRigidCouplingStatistics FluidRigidCoupler::couple(
         // Reject unsupported geometry before any particle or body impulse
         // is applied; sampling it mid-loop would leave a partial update.
         if (body->shape->type != ShapeType::CIRCLE
-            && body->shape->type != ShapeType::POLYGON) {
+            && body->shape->type != ShapeType::POLYGON
+            && body->shape->type != ShapeType::CAPSULE) {
             throw std::invalid_argument(
-                "Fluid-rigid coupling supports only Circle and Polygon bodies."
+                "Fluid-rigid coupling supports only Circle, Polygon and Capsule bodies."
             );
         }
     }

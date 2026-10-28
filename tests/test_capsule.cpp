@@ -776,16 +776,12 @@ TEST_CASE("Capsule CCD sweeps circles against static capsules only", "[capsule][
     }
 }
 
-TEST_CASE("Fluid coupling rejects capsules before any change", "[capsule][fluids]") {
+TEST_CASE("Fluid coupling and sampling accept capsules", "[capsule][fluids]") {
+    // Full coverage lives in test_fluid_capsule.cpp.
     auto capsule = Make(Capsule(1, 0.5f), {0, 0});
     auto circle = Make(Circle(0.5f), {3, 0});
     std::vector<FluidParticle> particles{FluidParticle({2.6f, 0}, {1, 0})};
-    const auto before = particles[0];
     FluidRigidCoupler coupler;
-    REQUIRE_THROWS_AS(coupler.couple(particles, {circle.get(), capsule.get()}, 0.01f), std::invalid_argument);
-    REQUIRE(particles[0].velocity == before.velocity);
-    REQUIRE(circle->velocity == Vector2{});
-    REQUIRE(circle->angularVelocity == 0);
-    REQUIRE_THROWS_AS(SampleRigidBodyBoundaries({capsule.get()}, FluidBoundarySamplingSettings{}),
-                      std::invalid_argument);
+    REQUIRE_NOTHROW(coupler.couple(particles, {circle.get(), capsule.get()}, 0.01f));
+    REQUIRE_FALSE(SampleRigidBodyBoundaries({capsule.get()}, FluidBoundarySamplingSettings{}).empty());
 }
