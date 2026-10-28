@@ -644,9 +644,9 @@ int main(int argc, char** argv) {
     Elevator();
     TallStack(20, false, true);
     TallStack(12, true, true);
-    TallStack(20, true, false, 120);
-    TallStack(15, true, false);
-    TallStack(20, true, false);
+    TallStack(20, true, true, 120);
+    TallStack(15, true, true);
+    TallStack(20, true, true);
     FastBox(50, 0); FastBox(100, 0); FastBox(50, 25);
     FastCircleStack();
     RampFriction(25, 0.6f, 0.4f); RampFriction(40, 0.6f, 0.4f);
