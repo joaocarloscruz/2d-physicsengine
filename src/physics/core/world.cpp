@@ -54,6 +54,34 @@ namespace {
             return std::tie(x.event.bodyAId, x.event.bodyBId) < std::tie(y.event.bodyAId, y.event.bodyBId);
         });
     }
+
+    bool HasSensor(const CollisionPair& pair) {
+        return pair.first->IsSensor() || pair.second->IsSensor();
+    }
+
+    // Category/mask bits, then joints that disable collision between their
+    // bodies. KeySet is World::ContactKeySet.
+    template <class KeySet>
+    bool PassesFilter(const CollisionPair& pair, const KeySet& jointedPairs) {
+        using Key = typename KeySet::key_type;
+        return pair.first && pair.second && pair.first->CanCollideWith(*pair.second)
+            && (jointedPairs.empty() || !jointedPairs.count(Key::From(pair.first.get(), pair.second.get())));
+    }
+
+    // Drops the candidates that do not collide, in place and in order. A pair
+    // with exactly one sensor that passes filtering moves to sensorPairs
+    // instead: it is tested for overlap after the step and never solved.
+    template <class KeySet>
+    void SplitCandidates(std::vector<CollisionPair>& pairs, std::vector<CollisionPair>& sensorPairs,
+                         const KeySet& jointedPairs) {
+        sensorPairs.clear();
+        pairs.erase(std::remove_if(pairs.begin(), pairs.end(), [&](const CollisionPair& pair) {
+            if (!PassesFilter(pair, jointedPairs)) return true;
+            if (!HasSensor(pair)) return false;
+            if (pair.first->IsSensor() != pair.second->IsSensor()) sensorPairs.push_back(pair);
+            return true;
+        }), pairs.end());
+    }
 }
 
 // Per-step working vectors kept between steps, so their (large) buffers are
@@ -65,6 +93,8 @@ struct World::StepScratch {
     std::vector<ContactConstraint> constraints, endConstraints;
     std::vector<ContactImpulseCache> endCaches;
     std::vector<EndContact> ended;
+    // This step's sensor candidates (see SplitCandidates).
+    std::vector<CollisionPair> sensorPairs;
 };
 
 World::World() : World(SimulationConfig{}) {}
@@ -287,6 +317,9 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
     std::vector<ContactConstraint> previousConstraints;
     for (const auto& entry : contactEvents) {
         const auto& event = entry.second;
+        // Sensor overlaps wake nobody, unless SetSensor(false) just made the
+        // pair solid.
+        if (event.event.sensor && (event.bodyA->IsSensor() || event.bodyB->IsSensor())) continue;
         if (event.bodyA->contactWakeRequested || event.bodyB->contactWakeRequested) {
             event.bodyA->Wake(); event.bodyB->Wake();
         }
@@ -451,16 +484,10 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(
             potentialCollisions.size()
         );
-        potentialCollisions.erase(
-            std::remove_if(
-                potentialCollisions.begin(),
-                potentialCollisions.end(),
-                [&](const CollisionPair& pair) { return !pairCollides(pair); }
-            ),
-            potentialCollisions.end()
-        );
+        if (!scratch) scratch = std::make_unique<StepScratch>();
+        SplitCandidates(potentialCollisions, scratch->sensorPairs, jointedPairs);
         statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(
-            potentialCollisions.size()
+            potentialCollisions.size() + scratch->sensorPairs.size()
         );
 
         std::vector<ContactConstraint> constraints;
@@ -581,6 +608,21 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         }
         publishContact(key, manifold, bodyA, bodyB, true);
     }
+    // Sensor overlaps at the end-of-step poses. Only a real overlap counts:
+    // no speculative margin, no touch tolerance. Sensor pairs never enter the
+    // contact cache, so they are not touching contacts in the statistics.
+    if (scratch) {
+        auto& sensorPairs = scratch->sensorPairs;
+        for (const auto& pair : sensorPairs) {
+            CollisionManifold manifold = CheckCollision(pair.first.get(), pair.second.get());
+            if (!manifold.hasCollision) continue;
+            CanonicalizeManifold(manifold);
+            publishContact(ContactKey::From(manifold.A, manifold.B), manifold, pair.first, pair.second, false);
+        }
+        // getPotentialCollisions() lists every pair that passed filtering.
+        potentialCollisions.insert(potentialCollisions.end(), sensorPairs.begin(), sensorPairs.end());
+        sensorPairs.clear();
+    }
     // Keep the cache entries this step detected (keptStep), then count the
     // touching ones: those whose contact was published this step.
     for (auto it = contactCache.begin(); it != contactCache.end();) {
@@ -690,11 +732,11 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     potentialCollisions = sweep ? sweep->FindSpeculativeCollisions(bodies, margins, knownBounds, knownBound)
                                 : broadPhase->FindSpeculativeCollisions(bodies, margins);
     statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
-    potentialCollisions.erase(std::remove_if(potentialCollisions.begin(), potentialCollisions.end(),
-        [&](const CollisionPair& pair) { return !pairCollides(pair); }), potentialCollisions.end());
-    statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
-
     if (!scratch) scratch = std::make_unique<StepScratch>();
+    SplitCandidates(potentialCollisions, scratch->sensorPairs, jointedPairs);
+    statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(
+        potentialCollisions.size() + scratch->sensorPairs.size());
+
     auto& entries = scratch->entries;
     auto& constraints = scratch->constraints;
     entries.clear();
@@ -1028,8 +1070,9 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
 }
 
 bool World::pairCollides(const CollisionPair& pair) const {
-    return pair.first && pair.second && pair.first->CanCollideWith(*pair.second)
-        && (jointedPairs.empty() || !jointedPairs.count(ContactKey::From(pair.first.get(), pair.second.get())));
+    // Sensor pairs never become contacts or CCD sweeps; SplitCandidates
+    // routes them to the end-of-step overlap test instead.
+    return PassesFilter(pair, jointedPairs) && !HasSensor(pair);
 }
 
 std::size_t World::findBodyIndex(const RigidBody* body) const {
@@ -1049,12 +1092,21 @@ std::size_t World::bodyIndex(const RigidBody* body) const {
 
 bool World::publishContact(const ContactKey& key, const CollisionManifold& manifold,
     const RigidBodyPtr& bodyA, const RigidBodyPtr& bodyB, bool skipIfActive) {
+    const bool sensor = bodyA && bodyB && (bodyA->IsSensor() || bodyB->IsSensor());
     auto [it, inserted] = contactEvents.try_emplace(key);
     PendingEvent& event = it->second;
     if (!inserted && skipIfActive && event.activeStep == stepStamp) return false;
-    event.phase = inserted ? EventPhase::Begin : EventPhase::Persist;
+    bool begins = inserted;
+    if (!inserted && event.event.sensor != sensor) {
+        // SetSensor changed the pair's kind: end the old lifecycle first.
+        event.phase = EventPhase::End;
+        pendingEvents.push_back(event);
+        begins = true;
+    }
+    event.phase = begins ? EventPhase::Begin : EventPhase::Persist;
     event.event = {key.first, key.second, manifold.normal, manifold.penetration,
         manifold.contacts, manifold.contactCount};
+    event.event.sensor = sensor;
     event.manifold = manifold;
     event.bodyA = bodyA;
     event.bodyB = bodyB;
@@ -1179,7 +1231,8 @@ void World::endContacts(std::uint64_t bodyId) {
     const std::size_t firstEnd = pendingEvents.size();
     for (auto it = contactEvents.begin(); it != contactEvents.end();) {
         if (it->first.contains(bodyId)) {
-            it->second.bodyA->Wake(); it->second.bodyB->Wake();
+            // A sensor overlap holds nothing up, so ending it wakes nobody.
+            if (!it->second.event.sensor) { it->second.bodyA->Wake(); it->second.bodyB->Wake(); }
             it->second.phase = EventPhase::End;
             pendingEvents.push_back(it->second);
             it = contactEvents.erase(it);
@@ -1271,8 +1324,9 @@ std::vector<World::Island> World::buildIslands(std::vector<ContactConstraint>& c
     };
     for (auto& c : constraints) if (included(c)) connect(c.bodyA, c.bodyB);
     for (const auto& joint : joints) connect(joint->getBodyA().get(), joint->getBodyB().get());
+    // Sensor overlaps never link islands.
     if (previousContacts) for (const auto& entry : contactEvents)
-        connect(entry.second.bodyA.get(), entry.second.bodyB.get());
+        if (!entry.second.event.sensor) connect(entry.second.bodyA.get(), entry.second.bodyB.get());
     std::vector<std::size_t> islandIndex(dynamicBodies.size(), none); // by root
     std::vector<Island> result;
     for (std::size_t i=0; i<dynamicBodies.size(); ++i) {

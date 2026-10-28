@@ -281,6 +281,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_simulation.cpp
         ${TESTS_SRC_DIR}/test_collision_listener.cpp
         ${TESTS_SRC_DIR}/test_collision_events.cpp
+        ${TESTS_SRC_DIR}/test_sensors.cpp
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
