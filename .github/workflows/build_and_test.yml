@@ -217,6 +217,7 @@ jobs:
           JS
           else
             node build-wasm/wasm/boundary-stress.cjs
+            node build-wasm/wasm/scenes-test.cjs
           fi
 
   sanitizers:
