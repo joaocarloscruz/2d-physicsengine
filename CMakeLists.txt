@@ -288,6 +288,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_particles.cpp
         ${TESTS_SRC_DIR}/test_sph_kernels.cpp
         ${TESTS_SRC_DIR}/test_wcsph_solver.cpp
+        ${TESTS_SRC_DIR}/test_hydrostatic_initialization.cpp
         ${TESTS_SRC_DIR}/test_fluid_boundaries.cpp
         ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
         ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
