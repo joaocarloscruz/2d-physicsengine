@@ -158,7 +158,10 @@ TEST_CASE("Motor torque includes the inertia of an off-center anchor", "[joints]
     REQUIRE(b->angularVelocity == Catch::Approx(0.5).margin(1e-5));
     REQUIRE(b->velocity.y == Catch::Approx(0.5).margin(1e-5));
     REQUIRE(joint->getMotorTorque() == Catch::Approx((b->inertia + b->mass) * 0.5 / 0.1));
-    REQUIRE(b->GetVelocityAtPoint(joint->getAnchorB()).magnitude() < 1e-5);
+    // The anchor is at rest at the pose the velocity rows were solved at, the
+    // start of the step: lever (-1, 0) from b's center.
+    REQUIRE(std::abs(b->velocity.x) < 1e-5);
+    REQUIRE(std::abs(b->velocity.y - b->angularVelocity) < 1e-5);
 }
 
 TEST_CASE("Motor impulses conserve two-body angular momentum and brake without overshoot", "[joints][motor]") {
@@ -365,5 +368,45 @@ TEST_CASE("Jointed bodies do not collide unless asked to", "[joints][contacts]")
         // Overlapping neighbors would otherwise be pushed apart against the joint.
         REQUIRE(world.getPersistentContactCount() == (collide ? 1u : 0u));
         if (!collide) REQUIRE(b->velocity.magnitude() < 1e-6f);
+    }
+}
+
+TEST_CASE("A hanging chain at rest has no residual velocity", "[joints][warm-start]") {
+    // Ten iterations cannot rebuild the load of eight links from zero every
+    // step; warm starting carries it over, so the chain is truly at rest.
+    World world;
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -9.81f}));
+    auto anchor = Body({0, 10}, true);
+    world.addBody(anchor);
+    RigidBodyPtr previous = anchor;
+    for (int i = 0; i < 8; ++i) {
+        auto link = std::make_shared<RigidBody>(Polygon::MakeBox(0.1f, 0.3f), Material{1, 0}, Vector2{0, 9.85f - 0.3f * i});
+        world.addBody(link);
+        world.addJoint(std::make_shared<RevoluteJoint>(previous, link,
+            previous == anchor ? Vector2{} : Vector2{0, -0.15f}, Vector2{0, 0.15f}));
+        previous = link;
+    }
+    for (int i = 0; i < 120; ++i) world.step(1.0f / 60);
+    for (const auto& body : world.getBodies()) REQUIRE(body->velocity.magnitude() < 1e-4f);
+    for (const auto& joint : world.getJoints())
+        REQUIRE((joint->getAnchorA() - joint->getAnchorB()).magnitude() < 1e-4f);
+}
+
+TEST_CASE("A jointed chain lying on the ground comes to rest", "[joints][contacts]") {
+    // Joint and contact rows share one velocity solve.
+    World world;
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -9.81f}));
+    world.addBody(std::make_shared<RigidBody>(Polygon::MakeBox(40, 2), Material{1, 0}, Vector2{0, -1}, true));
+    RigidBodyPtr previous;
+    for (int i = 0; i < 10; ++i) {
+        auto link = std::make_shared<RigidBody>(Capsule(0.15f, 0.05f), Material{1, 0}, Vector2{0.3f * i, 0.2f});
+        world.addBody(link);
+        if (previous) world.addJoint(std::make_shared<RevoluteJoint>(previous, link, Vector2{0.15f, 0}, Vector2{-0.15f, 0}));
+        previous = link;
+    }
+    for (int i = 0; i < 180; ++i) world.step(1.0f / 60);
+    for (const auto& body : world.getBodies()) {
+        REQUIRE(body->velocity.magnitude() < 1e-3f);
+        if (!body->IsStatic()) REQUIRE(body->position.y > 0.04f);
     }
 }

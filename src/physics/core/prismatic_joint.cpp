@@ -106,6 +106,13 @@ void Apply(RigidBody& a, RigidBody& b, const Geometry& g, Impulse j, bool positi
         else { b.velocity=fb; b.angularVelocity=bw; }
     }
 }
+// The angular impulse L on B (and -L on A) that Apply's reduced update
+// implies: wb' = wb + ib*(rb x P + L).
+double AngularImpulse(const Geometry& g, const Impulse& j) {
+    const double shared=g.ds*j.transverse+g.dx*j.axial, lever=g.sb*j.transverse+g.ab*j.axial;
+    if (g.ib>0) return j.angularRhs/g.kaa-(g.ia/g.kaa)*shared-lever;
+    return j.angularRhs/g.kaa-shared-lever;
+}
 }
 PrismaticJoint::PrismaticJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 axis, Vector2 la, Vector2 lb)
     : IJoint(std::move(a),std::move(b),la,lb) {
@@ -133,15 +140,34 @@ double PrismaticJoint::getAngle() const {
     Validate(*a); Validate(*b);
     return std::remainder(double(b->orientation)-a->orientation-referenceAngle,2*Pi);
 }
+void PrismaticJoint::warmStart(float factor) {
+    motorImpulse*=factor; lowerImpulse*=factor; upperImpulse*=factor;
+    transverseImpulse*=factor; angularImpulse*=factor;
+    const double axial=motorImpulse+lowerImpulse+upperImpulse;
+    if (axial==0 && transverseImpulse==0 && angularImpulse==0) return;
+    const Geometry g(*a,*b,localA,localB,{axisX,axisY});
+    const D2 p=g.n*transverseImpulse+g.e*axial;
+    const double leverB=g.sb*transverseImpulse+g.ab*axial;
+    const double leverA=leverB+g.ds*transverseImpulse+g.dx*axial;
+    const Vector2 va{Checked(a->velocity.x-p.x*a->inverseMass),Checked(a->velocity.y-p.y*a->inverseMass)};
+    const Vector2 vb{Checked(b->velocity.x+p.x*b->inverseMass),Checked(b->velocity.y+p.y*b->inverseMass)};
+    const float wa=Checked(a->angularVelocity-g.ia*(leverA+angularImpulse));
+    const float wb=Checked(b->angularVelocity+g.ib*(leverB+angularImpulse));
+    if (!a->IsStatic()) { a->velocity=va; a->angularVelocity=wa; }
+    if (!b->IsStatic()) { b->velocity=vb; b->angularVelocity=wb; }
+}
 void PrismaticJoint::solveVelocity() {
     const Geometry g(*a,*b,localA,localB,{axisX,axisY});
+    const auto apply=[&](const Impulse& j) {
+        Apply(*a,*b,g,j,false);
+        transverseImpulse+=j.transverse; angularImpulse+=AngularImpulse(g,j);
+    };
     auto solve=[&](double target, double& total, double lower, double upper) {
         const auto rhs=VelocityRhs(g,*a,*b,target);
         const double angle=double(a->angularVelocity)-b->angularVelocity;
         const auto candidate=SolveAxial(g,rhs,angle);
         const double next=std::clamp(total+candidate.axial,lower,upper), actual=next-total;
-        const auto j=SolveBase(g,rhs,angle,actual);
-        Apply(*a,*b,g,j,false); total=next;
+        apply(SolveBase(g,rhs,angle,actual)); total=next;
     };
     if (motorEnabled && maxMotorForce>0 && stepDuration>0) {
         const double cap=double(maxMotorForce)*stepDuration;
@@ -159,7 +185,7 @@ void PrismaticJoint::solveVelocity() {
             solve(stepDuration>0 ? std::max(double(upperLimit)-x,0.0)/stepDuration : 0,
                 upperImpulse,-infinity,0);
     }
-    Apply(*a,*b,g,SolveBase(g,VelocityRhs(g,*a,*b,0),double(a->angularVelocity)-b->angularVelocity),false);
+    apply(SolveBase(g,VelocityRhs(g,*a,*b,0),double(a->angularVelocity)-b->angularVelocity));
 }
 bool PrismaticJoint::solvePosition(float tolerance, float maxCorrection) {
     if (!std::isfinite(tolerance) || tolerance<0 || !std::isfinite(maxCorrection) || maxCorrection<0)
@@ -190,7 +216,11 @@ void PrismaticJoint::setLimits(bool enabled, float lower, float upper) {
 double PrismaticJoint::getMotorForce() const { return stepDuration>0 ? motorImpulse/stepDuration : 0; }
 void PrismaticJoint::prepareStep(float dt) {
     IJoint::prepareStep(dt);
-    stepDuration=dt; motorImpulse=lowerImpulse=upperImpulse=0;
+    stepDuration=dt;
+    // Accumulators persist for warm starting; drop the rows that are off.
+    if (dt<=0 || !motorEnabled) motorImpulse=0;
+    if (dt<=0 || !limitsEnabled) lowerImpulse=upperImpulse=0;
+    if (dt<=0) transverseImpulse=angularImpulse=0;
 }
 bool PrismaticJoint::preventsSleeping() const { return motorEnabled && maxMotorForce>0 && motorSpeed!=0; }
 }

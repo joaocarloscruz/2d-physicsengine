@@ -20,6 +20,10 @@ protected:
     IJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 localAnchorA, Vector2 localAnchorB);
     virtual void prepareStep(float deltaTime);
     virtual bool preventsSleeping() const { return false; }
+    // Reapplies the previous step's accumulated impulses, scaled by factor,
+    // before the velocity iterations. Without it every step rebuilds the
+    // load a joint carries from zero and the iterations never catch up.
+    virtual void warmStart(float factor) { (void)factor; }
     virtual void solveVelocity() = 0;
     virtual bool solvePosition(float tolerance, float maxCorrection) = 0;
     RigidBodyPtr a, b;
@@ -34,10 +38,14 @@ public:
         Vector2 localAnchorA = {}, Vector2 localAnchorB = {});
     float getLength() const { return length; }
 protected:
+    void prepareStep(float deltaTime) override;
+    void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
 private:
     float length;
+    bool warmStartable = false;
+    double impulse = 0; // along the A-to-B anchor direction
 };
 
 class RevoluteJoint final : public IJoint {
@@ -59,6 +67,7 @@ public:
 protected:
     void prepareStep(float deltaTime) override;
     bool preventsSleeping() const override;
+    void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
 private:
@@ -73,5 +82,7 @@ private:
     float upperLimit = 0;
     double lowerImpulse = 0;
     double upperImpulse = 0;
+    double lockImpulse = 0;                      // equal limits: angular row
+    double pointImpulseX = 0, pointImpulseY = 0; // on B at the anchor
 };
 }

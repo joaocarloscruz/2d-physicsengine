@@ -7,8 +7,12 @@ holds a positive anchor separation; a revolute joint holds the anchors together
 while permitting relative rotation. Getters report the current world-space anchors.
 Removing a body removes its attached joints. Removing a joint wakes both endpoints.
 
-Joint and contact velocity constraints share the iteration budget. Position
-projection corrects drift using the configured
+Joint and contact velocity constraints are solved in the same passes, before
+positions are integrated, so a chain resting on a box or a ragdoll on the
+ground gets impulses that satisfy both. Joints are warm-started with the
+previous step's accumulated impulses (scaled by `warmStartFactor`); without it a
+hanging chain rebuilt its load from zero every step and kept a residual
+velocity and stretch. Position projection corrects drift using the configured
 correction bound and tolerance.
 Distance constraints use scalar effective mass; revolute constraints solve a 2×2
 point-mass system including angular inertia. Compliance is not yet implemented.
@@ -63,7 +67,7 @@ Each step accumulates motor impulse across all solver passes, bounded by
 `maxTorque * deltaTime`; increasing the iteration count does not increase available
 torque. `getMotorTorque()` reports the signed average torque applied to B during the
 last step, including zero for a zero-duration or sleeping step. Impulses on A and B
-are equal and opposite. The drive updates velocity in the constraint phase after
+are equal and opposite. The drive updates velocity in the constraint phase before
 pose integration, so driven motion converges with smaller fixed timesteps. As with
 contact impulses, configured integration speed caps do not cap solver impulses.
 

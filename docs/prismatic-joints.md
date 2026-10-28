@@ -28,8 +28,10 @@ tracked. Double effective mass calculations include rotational lever arms and
 solve transverse and angular rows together. Joint changes to both endpoints
 are staged and reject unrepresentable float results before publishing them.
 
-These are discrete iterative constraints. World integrates positions before
-solving velocities; use sufficiently small timesteps and enough iterations,
+These are discrete iterative constraints. With the default speculative step
+order, World solves joint and contact velocities together, warm-started from
+the previous step, and integrates positions afterwards (the legacy order
+integrates first); use sufficiently small timesteps and enough iterations,
 especially with interacting contacts or multiple joints. Position correction
 is bounded by the world's maximum correction and 0.2 radians per solve.
 There is no guarantee for arbitrary timesteps, mass ratios or initial errors.

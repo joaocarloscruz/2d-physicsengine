@@ -508,6 +508,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             }
             ++statistics.solvedIslandCount;
             statistics.solvedConstraintCount += static_cast<std::uint32_t>(island.contacts.size()+island.joints.size());
+            for (const auto& joint : island.joints) joint->warmStart(simulationConfig.warmStartFactor);
             for (auto* constraint : island.contacts)
                 if (constraint != integratedConstraint) CollisionResolver::WarmStart(*constraint);
             const bool alreadySolved = integratedPlan && island.joints.empty() &&
@@ -776,10 +777,15 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
             groups[groupOf.at(root(dynamicIsland(constraints[j].bodyA, constraints[j].bodyB)))]
                 .contacts.push_back(&constraints[j]);
 
+    // Joints and contacts share one velocity solve, so a chain resting on a
+    // box or a ragdoll on the ground gets impulses that satisfy both.
     for (auto& group : groups) {
+        for (const auto& joint : group.joints) joint->warmStart(config.warmStartFactor);
         for (auto* c : group.contacts) CollisionResolver::WarmStart(*c);
-        for (int iter = 0; iter < config.solverIterations; ++iter)
+        for (int iter = 0; iter < config.solverIterations; ++iter) {
+            for (const auto& joint : group.joints) joint->solveVelocity();
             for (auto* c : group.contacts) CollisionResolver::SolveVelocity(*c);
+        }
     }
 
     // Position update. A solver velocity change no larger than the step's
@@ -836,12 +842,6 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
     }
 
     if (useCcd) impacts = advanceCcd(starts, deltaTime, statistics);
-
-    // Joints keep their established timing: velocity rows are solved at the
-    // integrated poses, so a joint-only system steps exactly as before.
-    for (auto& group : groups)
-        for (int iter = 0; !group.joints.empty() && iter < config.solverIterations; ++iter)
-            for (const auto& joint : group.joints) joint->solveVelocity();
 
     // Position correction and the contact lifecycle use the integrated poses,
     // as the legacy order did. The start-of-step manifold has done its job

@@ -18,8 +18,9 @@ in the Box2D order with speculative contacts:
    gap is below the sum of both margins. Speculative points carry negative
    penetration (minus the gap). Separated polygons whose closest features are
    two vertices get one point along the true gap.
-3. Warm-start, then iterate velocity constraints. A speculative point with
-   gap `s` enforces `v_n >= -s/dt`: the gap may close this step, no further.
+3. Warm-start joints and contacts, then iterate their velocity constraints
+   together (joints first in each pass). A speculative point with gap `s`
+   enforces `v_n >= -s/dt`: the gap may close this step, no further.
    Overlapping points keep the restitution bias and Coulomb friction.
 4. Integrate positions. A body whose solver velocity change is no larger than
    its applied load per step (support, friction) moves by half of that change,
@@ -30,8 +31,7 @@ in the Box2D order with speculative contacts:
 5. Apply restitution to speculative points whose gap closed this step and
    that carried a normal impulse, so a bounce leaves from the surface (as in
    Box2D v3).
-6. Run CCD sweeps, then joint velocity rows at the integrated poses (the
-   joints' established timing, so joint-only systems step exactly as before).
+6. Run CCD sweeps.
 7. Detect contacts again at the integrated poses and iterate position
    constraints on those manifolds. Contact events, statistics and the
    persistent contact count also come from this end-of-step detection, with

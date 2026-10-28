@@ -464,10 +464,9 @@ TEST_CASE("Capped hinge motor retains the independent center velocity in the poi
     constexpr float dt = .125f;
     for (float torque : {0.f, 1e20f}) {
         World w(JointConfig());
-        auto a = JointBody({}, true), b = JointBody({0, -dt});
+        auto a = JointBody({}, true), b = JointBody({});
         b->SetMass(1);
-        // Arrive at identical orientations/positions at the velocity phase.
-        b->SetOrientation(-dt);
+        // Joints are solved at the start-of-step pose, before integration.
         b->SetVelocity({0, 1});
         b->SetAngularVelocity(1);
         const float r = 1e20f;
@@ -594,15 +593,14 @@ TEST_CASE("Offcenter unequal hinge motor matches independent rational block and 
     const bool capped = GENERATE(false, true);
     constexpr float dt = .125f;
     World w(JointConfig());
-    auto a = JointBody({-1.5f, -.125f}), b = JointBody({1.25f, -.375f});
+    // Joints are solved at the start-of-step pose, before integration.
+    auto a = JointBody({-1, 0}), b = JointBody({1, 0});
     a->SetMass(2);
     b->SetMass(4);
     a->SetVelocity({4, 1});
     b->SetVelocity({-2, 3});
     a->SetAngularVelocity(2);
     b->SetAngularVelocity(-1);
-    a->SetOrientation(-.25f);
-    b->SetOrientation(.125f);
     auto j = std::make_shared<RevoluteJoint>(a, b, Vector2{1, .5f}, Vector2{-1, .5f});
     j->setMotor(true, .75f, capped ? 2 : 100);
     w.addBody(a);

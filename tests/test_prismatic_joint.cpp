@@ -149,7 +149,8 @@ TEST_CASE("Prismatic motor displacement converges under timestep refinement", "[
         world.addBody(a); world.addBody(b); world.addJoint(joint);
         for(int i=0;i<steps;++i) world.step(1.f/steps);
         REQUIRE(b->velocity.x==Catch::Approx(2).epsilon(0).epsilon(0).margin(2e-6));
-        const double discrete=double(steps-1)/steps;
+        // The motor row is solved before positions integrate, so step k moves by v_k*dt.
+        const double discrete=double(steps+1)/steps;
         REQUIRE(joint->getTranslation()==Catch::Approx(discrete).epsilon(0).epsilon(0).margin(2e-6));
         errors[k++]=std::abs(joint->getTranslation()-1);
     }

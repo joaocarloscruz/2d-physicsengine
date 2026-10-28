@@ -225,8 +225,9 @@ HingeImpulse FixedHingeVelocity(const RigidBody &a, const RigidBody &b, D2 ra, D
                                   determinant);
     return {linear, angular, {finalA, finalB, true}};
 }
-void SolveCoupledVelocity(RigidBody &a, RigidBody &b, const Geometry &g, double targetSpeed,
-                          double &accumulated, double minimum, double maximum) {
+// Returns the linear impulse it applied to B.
+D2 SolveCoupledVelocity(RigidBody &a, RigidBody &b, const Geometry &g, double targetSpeed,
+                        double &accumulated, double minimum, double maximum) {
     const D2 ra = g.ra, rb = g.rb;
     const auto candidate = SolveHingeVelocity(a, b, ra, rb, targetSpeed);
     const double next = std::clamp(Checked(accumulated + candidate.angular), minimum, maximum);
@@ -235,6 +236,7 @@ void SolveCoupledVelocity(RigidBody &a, RigidBody &b, const Geometry &g, double 
         angular == candidate.angular ? candidate : FixedHingeVelocity(a, b, ra, rb, angular);
     Apply(a, b, ra, rb, accepted.linear, false, angular, &accepted.change);
     accumulated = next;
+    return accepted.linear;
 }
 } // namespace
 
@@ -275,13 +277,28 @@ DistanceJoint::DistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vecto
     if (!std::isfinite(length) || length <= 0)
         throw std::invalid_argument("Distance joint length must be positive and finite.");
 }
+void DistanceJoint::prepareStep(float deltaTime) {
+    IJoint::prepareStep(deltaTime);
+    // An impulse carried over a zero-length step would be an instant kick.
+    warmStartable = deltaTime > 0;
+    if (!warmStartable) impulse = 0;
+}
+void DistanceJoint::warmStart(float factor) {
+    impulse = warmStartable ? impulse * factor : 0;
+    if (impulse == 0) return;
+    const Geometry g(*a, *b, localA, localB);
+    const double distance = std::hypot(g.delta.x, g.delta.y);
+    const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
+    Apply(*a, *b, g.ra, g.rb, n * impulse, false);
+}
 void DistanceJoint::solveVelocity() {
     const Geometry g(*a, *b, localA, localB);
     const double distance = std::hypot(g.delta.x, g.delta.y);
     const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
     const double k = InverseEffectiveMass(*a, *b, g.ra, g.rb, n);
-    Apply(*a, *b, g.ra, g.rb, n * (-(PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)).dot(n) / k),
-          false);
+    const double lambda = Checked(-(PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)).dot(n) / k);
+    Apply(*a, *b, g.ra, g.rb, n * lambda, false);
+    impulse = Checked(impulse + lambda);
 }
 bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
     ValidateCorrection(tolerance, maxCorrection);
@@ -336,37 +353,53 @@ double RevoluteJoint::getMotorTorque() const {
 void RevoluteJoint::prepareStep(float deltaTime) {
     IJoint::prepareStep(deltaTime);
     stepDuration = deltaTime;
-    motorImpulse = 0;
-    lowerImpulse = 0;
-    upperImpulse = 0;
+    // Accumulators persist for warm starting; drop the rows that are off.
+    if (deltaTime <= 0 || !motorEnabled) motorImpulse = 0;
+    if (deltaTime <= 0 || !limitsEnabled || lowerLimit == upperLimit) lowerImpulse = upperImpulse = 0;
+    if (deltaTime <= 0 || !limitsEnabled || lowerLimit != upperLimit) lockImpulse = 0;
+    if (deltaTime <= 0) pointImpulseX = pointImpulseY = 0;
+}
+void RevoluteJoint::warmStart(float factor) {
+    motorImpulse *= factor; lowerImpulse *= factor; upperImpulse *= factor; lockImpulse *= factor;
+    pointImpulseX *= factor; pointImpulseY *= factor;
+    const double angular = motorImpulse + lowerImpulse + upperImpulse + lockImpulse;
+    if (angular == 0 && pointImpulseX == 0 && pointImpulseY == 0) return;
+    const Geometry g(*a, *b, localA, localB);
+    Apply(*a, *b, g.ra, g.rb, {pointImpulseX, pointImpulseY}, false, Checked(angular));
 }
 bool RevoluteJoint::preventsSleeping() const {
     return motorEnabled && maxMotorTorque > 0 && motorSpeed != 0;
 }
 void RevoluteJoint::solveVelocity() {
     const Geometry g(*a, *b, localA, localB);
+    const auto accumulatePoint = [this](D2 impulse) {
+        pointImpulseX = Checked(pointImpulseX + impulse.x);
+        pointImpulseY = Checked(pointImpulseY + impulse.y);
+    };
     const double angularMass = static_cast<double>(a->inverseInertia) + b->inverseInertia;
     if (motorEnabled && stepDuration > 0 && angularMass > 0) {
         const double cap = static_cast<double>(maxMotorTorque) * stepDuration;
-        SolveCoupledVelocity(*a, *b, g, motorSpeed, motorImpulse, -cap, cap);
+        accumulatePoint(SolveCoupledVelocity(*a, *b, g, motorSpeed, motorImpulse, -cap, cap));
     }
     if (limitsEnabled && angularMass > 0) {
         if (lowerLimit == upperLimit) {
             const auto impulse = SolveHingeVelocity(*a, *b, g.ra, g.rb, 0);
             Apply(*a, *b, g.ra, g.rb, impulse.linear, false, impulse.angular, &impulse.change);
+            accumulatePoint(impulse.linear);
+            lockImpulse = Checked(lockImpulse + impulse.angular);
         } else {
             const double angle = getAngle();
             const double lowerGap = angle - lowerLimit;
             if (stepDuration > 0 || lowerGap <= 0) {
                 const double bias = stepDuration > 0 ? std::max(lowerGap, 0.0) / stepDuration : 0;
-                SolveCoupledVelocity(*a, *b, g, -bias, lowerImpulse, 0,
-                                     std::numeric_limits<double>::infinity());
+                accumulatePoint(SolveCoupledVelocity(*a, *b, g, -bias, lowerImpulse, 0,
+                                                     std::numeric_limits<double>::infinity()));
             }
             const double upperGap = upperLimit - angle;
             if (stepDuration > 0 || upperGap <= 0) {
                 const double bias = stepDuration > 0 ? std::max(upperGap, 0.0) / stepDuration : 0;
-                SolveCoupledVelocity(*a, *b, g, bias, upperImpulse,
-                                     -std::numeric_limits<double>::infinity(), 0);
+                accumulatePoint(SolveCoupledVelocity(*a, *b, g, bias, upperImpulse,
+                                                     -std::numeric_limits<double>::infinity(), 0));
             }
         }
         // The block solve already enforces the point constraint. With zero dt
@@ -376,7 +409,9 @@ void RevoluteJoint::solveVelocity() {
             return;
     }
     const D2 velocity = PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra);
-    Apply(*a, *b, g.ra, g.rb, SolvePointMass(*a, *b, g.ra, g.rb, velocity * -1), false);
+    const D2 impulse = SolvePointMass(*a, *b, g.ra, g.rb, velocity * -1);
+    Apply(*a, *b, g.ra, g.rb, impulse, false);
+    accumulatePoint(impulse);
 }
 bool RevoluteJoint::solvePosition(float tolerance, float maxCorrection) {
     ValidateCorrection(tolerance, maxCorrection);

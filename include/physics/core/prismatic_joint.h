@@ -28,6 +28,7 @@ public:
 protected:
     void prepareStep(float deltaTime) override;
     bool preventsSleeping() const override;
+    void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
 private:
@@ -37,5 +38,8 @@ private:
     float motorSpeed=0, maxMotorForce=0, stepDuration=0;
     float lowerLimit=0, upperLimit=0;
     double motorImpulse=0, lowerImpulse=0, upperImpulse=0;
+    // Transverse impulse along A's normal and angular impulse on B; the axial
+    // impulse is the sum of the motor and limit accumulators.
+    double transverseImpulse=0, angularImpulse=0;
 };
 }
