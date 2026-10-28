@@ -222,7 +222,7 @@ mask rule as collisions. See [spatial queries](spatial-queries.md).
 
 | Symptom | Try |
 | --- | --- |
-| Tall towers of rotated boxes lean or fall over | `fixedTimeStep = 1.0f / 120` (towers above about 12 boxes need it) |
+| Towers taller than about 20 boxes lean or fall over | `solverSubsteps = 8` and `contactHertz = 120` (stiffer soft contacts, about twice the contact cost) |
 | Small fast bodies pass through walls | `SetCcdEnabled(true)` on those bodies |
 | Bodies jitter or look floaty | Check the scale: moving bodies should be 0.1 m to 10 m across |
 | A body stops accelerating at 200 m/s, or stops spinning up at 30 rad/s | Disable or raise the velocity limits |
@@ -246,9 +246,12 @@ still runs for them. Statistics for the last step are in
 
 ## Known limits
 
-- At 60 Hz, a 15-box tower with alternating rotations drifts about 6 cm in 30
-  seconds and a 20-box tower falls after about 12 seconds. Both stand at
-  120 Hz. Aligned towers of 20 boxes stand at 60 Hz.
+- At 60 Hz, towers of up to 20 boxes with alternating offsets and rotations
+  stand (a 20-box tower moves under 1 cm in 30 seconds). A 25-box tower falls
+  after about 5 seconds, also at 120 Hz; with `solverSubsteps = 8` and
+  `contactHertz = 120` it stands but drifts about 3 cm. At 30 Hz the soft
+  contacts are capped at 30 Hz and a 20-box tower falls; `solverSubsteps = 8`
+  holds it.
 - A perfectly elastic ball (restitution 1) gains about 0.6% of its energy over
   6 seconds of bouncing.
 - Dynamic polygons rotate about their shape origin, so build them centered (see

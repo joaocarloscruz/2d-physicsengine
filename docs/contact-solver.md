@@ -42,6 +42,10 @@ in the Box2D order with speculative contacts:
    persistent contact count also come from this end-of-step detection, with
    pairs within `0.25 * penetrationSlop` counted as touching.
 
+Steps 3 and 4 run as described for groups with joints and for groups that
+take the rigid solve. Other groups of contacts take substeps instead; see
+[substepped soft contacts](#substepped-soft-contacts).
+
 Islands for sleeping and waking only follow touching contacts. A speculative
 pair joins awake islands for the solve. A speculative pair with a sleeping
 body is skipped unless the awake body will close the gap this step, in which
@@ -73,6 +77,74 @@ Low-speed contacts use `restitutionVelocityThreshold` to suppress bounce.
 `maxPositionCorrection` limits the repair performed by a single position
 iteration. These values are validated by `SimulationConfig` and are available
 through the WebAssembly configuration object.
+
+## Substepped soft contacts
+
+With `solverSubsteps > 1` (default 4) the speculative order solves each group
+of contacts without joints in substeps of `h = dt / solverSubsteps`, after
+Box2D v3's soft step. Each substep:
+
+1. Adds the applied load over `h` to the velocities (with the velocity
+   limits).
+2. Warm-starts the contacts with their accumulated impulses, at the levers
+   prepared at the start of the step.
+3. Runs `solverIterations / solverSubsteps` (at least one) iterations. Each
+   row measures its separation `s` at the current poses against the prepared
+   normal. A gap (`s > 0`) is speculative: `v_n >= -s/h`. An overlap is a soft
+   spring of `contactHertz` (capped at a quarter of the substep rate) and
+   `contactDampingRatio`, solved implicitly: target speed `biasRate * s`
+   (at most `contactPushSpeed`), with the impulse scaled by `massScale` and
+   relaxed by `impulseScale` times the accumulated impulse. A two-point
+   manifold solves both normal rows as one 2x2 LCP with each soft row's
+   compliance on the diagonal. Coulomb friction follows.
+4. Integrates positions with the same trapezoid rule as the single pass.
+5. Relaxes: one more iteration with rigid rows and no push-out, so that the
+   push-out moves positions without leaving velocity behind. The last relax
+   leaves open gaps alone, so a body is not slowed before the contact (and its
+   bounce) that the next step will see.
+
+Restitution, CCD, the end-of-step detection and position correction then run
+as in the single pass. Bounces of overlapping points are applied after the
+substeps too, and a point counts as carried if any substep carried it.
+
+### Why towers needed it
+
+The single pass solves rigid rows with 10 Gauss-Seidel iterations and repairs
+overlap in a separate position pass that only acts beyond the slop. That left
+two gaps in a tall stack: the iterations do not converge through 20 contacts
+in series (raising them to 100 still left a 20-box tower swaying by 9 cm), and
+within the slop nothing restores the relative rotation of two boxes, so the
+tower could bend inside that dead band while the position pass acted on the
+deeper corner like an undamped spring. A misaligned 20-box tower fell after
+about 12 s; with 40 iterations it swayed instead, with a 6 s period and 12 cm
+at the top. Stepping at 120 Hz or 240 Hz still left about 2.6 cm of drift.
+
+A soft row acts on any overlap, so it restores rotation, it damps, and its
+compliance regularizes the iterations. Three choices mattered, measured on the
+misaligned 20-box tower at 60 Hz: no slop dead band in the soft target (with
+the slop as dead band the tower swayed by 50 cm), 60 Hz contacts (at Box2D's
+30 Hz the tower buckled), and a damping ratio of 2 (Box2D's 10 left a 12 s
+sway of 2.6 cm; at 2 the drift is 0.9 cm). Static contacts use the same
+stiffness: Box2D's doubled static stiffness made a 50 kg box rock on a 1 kg
+box. Solving the two points of a manifold one after the other, as Box2D does,
+tilted an aligned tower by 1.7 cm.
+
+### Which groups stay rigid
+
+The soft model carries a load `lambda` per substep at an overlap of
+`lambda * impulseScale / (normalMass * massScale * biasRate)`, which grows with
+the load and not with the body size. A stack of 1 cm boxes sags 0.5 mm per
+contact, 5% of a box, and buckles; with a scaled slop the position pass then
+fights the sag. `CollisionResolver::UpdateRigidSolve` therefore estimates that
+sag from each contact's cached impulse and sends the whole group to the rigid
+single pass once it exceeds 1.25 times `min(penetrationSlop, 1% of the smaller
+body's size)`, back below 0.75 times (the choice is cached per contact).
+Groups with joints also take the single pass, so joint motors and limits keep
+their one-solve-per-step semantics. Cached impulses record the substep count
+they were solved with and are rescaled when a contact changes path.
+
+`solverSubsteps = 1` takes the single pass everywhere and reproduces the
+previous default step bit for bit.
 
 ## Coupled two-point normal impulses
 

@@ -38,6 +38,13 @@ The defaults preserve the behavior that predates this configuration API:
 | Maximum position correction | `0.2` |
 | Linear velocity limit | enabled at `200` |
 | Angular velocity limit | enabled at `30` |
+| Solver substeps | `4` |
+| Contact hertz | `60` |
+| Contact damping ratio | `2` |
+| Contact push speed | `3` m/s |
+
+The last four were added with the substepped contact solve and changed the
+default step; `solverSubsteps = 1` restores the single-pass solve exactly.
 
 The fixed timestep must be positive and finite, and the maximum substep count
 must be positive. Correction and warm-start factors must be finite values between zero and one.
@@ -51,6 +58,19 @@ positions after the velocity solve, or (`false`) the legacy order that
 integrates first and detects at the new poses. See
 [contact solver](contact-solver.md#step-order). It is not exposed to
 JavaScript.
+
+`solverSubsteps` (1 to 64, default 4) applies to the speculative order. Each
+group of touching bodies without joints is solved in that many substeps, with
+soft contacts (Box2D v3's soft step); groups with joints, groups whose soft
+contacts would sag past their tolerance, and every group when the value is 1
+take the single rigid solve. `solverIterations / solverSubsteps` iterations
+(at least one) run per substep, plus one relax pass. `contactHertz` (positive,
+default 60) is the soft contact's stiffness; it is capped at a quarter of the
+substep rate, so 60 Hz needs a 60 Hz step with 4 substeps. `contactDampingRatio`
+(non-negative, default 2) damps it, and `contactPushSpeed` (positive, default
+3 m/s) caps the speed at which overlap is pushed out. See
+[contact solver](contact-solver.md#substepped-soft-contacts). These four are
+not exposed to JavaScript.
 
 Contacts slower than the restitution velocity threshold are solved without a
 bounce, which prevents resting contacts from injecting energy. Velocity
