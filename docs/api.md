@@ -112,9 +112,10 @@ in the same contact patch, other contacts and prior World work are not rolled
 back. These internal corrections preserve pending loads and do not issue
 external wake requests.
 
-`SimulationConfig::enableFrictionDisplacementCorrection` is an opt-in that
-moves bodies by half of each solved tangential contact impulse's velocity change
-per step, removing static-friction creep; see the
+`SimulationConfig::enableFrictionDisplacementCorrection` is an opt-in for the
+legacy step order (`enableSpeculativeContacts = false`; the default order has
+no creep) that moves bodies by half of each solved tangential contact
+impulse's velocity change per step, removing static-friction creep; see the
 [measured trade-offs](rigid-contact-benchmark.md#opt-in-friction-displacement-correction-91).
 It is not exposed to JavaScript.
 

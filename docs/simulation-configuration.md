@@ -45,6 +45,13 @@ Penetration slop must be finite and non-negative. Enabled velocity limits must
 be positive and finite. Set either enable flag to `false` when the simulation
 must not silently clamp that velocity.
 
+`enableSpeculativeContacts` (default `true`) selects the step order: detect
+contacts at the start-of-step poses with speculative margins and integrate
+positions after the velocity solve, or (`false`) the legacy order that
+integrates first and detects at the new poses. See
+[contact solver](contact-solver.md#step-order). It is not exposed to
+JavaScript.
+
 Contacts slower than the restitution velocity threshold are solved without a
 bounce, which prevents resting contacts from injecting energy. Velocity
 components at or below the velocity tolerance are treated as settled. Maximum

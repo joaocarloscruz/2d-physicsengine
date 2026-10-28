@@ -1,12 +1,55 @@
 # Constraint-based contact solver
 
-Each `World::step` detects collision manifolds once and prepares a contact
-constraint for every active manifold point. Preparation converts contact
-positions to body-local anchors and precomputes the normal and tangent
-effective masses. Stable feature IDs reconnect each point to its cached normal
-and friction impulses from the previous step.
+Each `World::step` prepares a contact constraint for every manifold point.
+Preparation converts contact positions to body-local anchors and precomputes
+the normal and tangent effective masses. Stable feature IDs reconnect each
+point to its cached normal and friction impulses from the previous step.
 
-The solver then runs three ordered phases:
+## Step order
+
+By default (`SimulationConfig::enableSpeculativeContacts = true`) a step runs
+in the Box2D order with speculative contacts:
+
+1. Apply loads and integrate velocities. Positions stay at the start of the
+   step.
+2. Detect contacts at the start-of-step poses. Each body gets a margin of
+   `2 * penetrationSlop` plus the distance it can cover this step
+   (`dt * (|v| + |w| * reach) + dt^2 * |a|`); a pair is reported when its
+   gap is below the sum of both margins. Speculative points carry negative
+   penetration (minus the gap). Separated polygons whose closest features are
+   two vertices get one point along the true gap.
+3. Warm-start, then iterate velocity constraints. A speculative point with
+   gap `s` enforces `v_n >= -s/dt`: the gap may close this step, no further.
+   Overlapping points keep the restitution bias and Coulomb friction.
+4. Integrate positions. A body whose solver velocity change is no larger than
+   its applied load per step (support, friction) moves by half of that change,
+   the trapezoid rule that matches the constant-load integrator, so resting
+   and sliding bodies stay on their analytic paths without friction creep. A
+   larger change is an impact and moves the body by all of it, which is what
+   `v_n >= -s/dt` assumed; between one and two times the load the two blend.
+5. Apply restitution to speculative points whose gap closed this step and
+   that carried a normal impulse, so a bounce leaves from the surface (as in
+   Box2D v3).
+6. Run CCD sweeps, then joint velocity rows at the integrated poses (the
+   joints' established timing, so joint-only systems step exactly as before).
+7. Detect contacts again at the integrated poses and iterate position
+   constraints on those manifolds. Contact events, statistics and the
+   persistent contact count also come from this end-of-step detection, with
+   pairs within `0.25 * penetrationSlop` counted as touching.
+
+Islands for sleeping and waking only follow touching contacts. A speculative
+pair joins awake islands for the solve, and is skipped when either body
+sleeps, so it never wakes a body. Pairs that CCD sweeps (a CCD-enabled circle)
+get only the fixed margin and keep their exact time-of-impact handling.
+
+With `enableSpeculativeContacts = false` the legacy order runs: integrate
+positions, optional CCD, detect at the new poses, warm-start, velocity
+iterations, position iterations. A fast body there sinks up to `v * dt` before
+its contact is seen, and integrating the load before the friction impulse
+creeps on inclines. Experimental integration strategies that publish an
+end-of-step plan use this order for that step.
+
+In either order the solver phases are:
 
 1. Warm-start persistent contacts with their scaled cached impulses.
 2. Iterate velocity constraints to enforce non-penetration, restitution, and

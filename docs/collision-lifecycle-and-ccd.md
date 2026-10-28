@@ -17,6 +17,15 @@ current notification completes. A listener added during notification starts with
 subsequent notifications. Do not delete registered listeners. Reentrant stepping
 is rejected. The old `onCollision(manifold)` still fires for begin/persist contacts.
 
+With speculative contacts (the default step order, see
+[contact solver](contact-solver.md#step-order)) the lifecycle follows the
+end-of-step poses: a pair is in contact when it overlaps or is closer than
+`0.25 * penetrationSlop`, so a body that lands during a step begins in that
+step, and a resting body does not flicker. Pairs that were only speculative
+(near but never touching) raise no events, are not counted in statistics or
+`getPersistentContactCount()`, and never wake a sleeping body. Event
+penetration is clamped to zero for touching pairs with a residual gap.
+
 ## Sweeps
 
 `body.SetCcdEnabled(true)` enables CCD for pairs involving that body. The default is

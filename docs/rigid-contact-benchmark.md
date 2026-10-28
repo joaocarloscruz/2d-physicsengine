@@ -289,6 +289,9 @@ committed; production defaults remain unchanged.
 
 ## Opt-in friction displacement correction (#91)
 
+This option belongs to the legacy step order (`enableSpeculativeContacts =
+false`); the default speculative order below removes the same term without it.
+
 `SimulationConfig::enableFrictionDisplacementCorrection` (default `false`)
 addresses the integration-order term above in production `World` steps. After
 each island's velocity iterations, every solved tangential contact impulse is
@@ -340,4 +343,40 @@ friction pair whose mass center follows its momentum exactly; and resting
 contacts that still sleep and wake. Because unconverged tall stacks worsen, the
 default remains off pending an owner decision; the original thresholds above
 are unchanged.
+
+## Speculative contacts (default step order)
+
+`SimulationConfig::enableSpeculativeContacts` (default `true`) detects contacts
+at the start-of-step poses with speculative margins, solves velocities, then
+integrates positions; see [contact solver](contact-solver.md#step-order). With
+the flag off, the legacy order reproduces the previous results exactly.
+Windows Release Clang, full matrix, before = legacy order with warm start 1.0,
+after = speculative order:
+
+| Fixture | dt | Iterations | Warm | Peak penetration before | after | Max displacement before | after | Downhill before | after | Terminal speed before | after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rest | 1/60 | 10 | 1 | 0.005764 | 0 | 0.005594 | 0 | 0 | 0 | 1.388e-17 | 0 |
+| incline_stick | 1/60 | 4 | 1 | 0.005738 | 0.0001052 | 0.0428 | 8.101e-05 | 0.04243 | 3.725e-05 | 9.723e-05 | 9.936e-05 |
+| incline_stick | 1/60 | 10 | 1 | 0.005738 | 4.423e-06 | 0.04267 | 1.532e-05 | 0.04231 | 1.508e-05 | 9.95e-05 | 9.687e-05 |
+| incline_stick | 1/240 | 20 | 1 | 0.005046 | 1.611e-07 | 0.01171 | 4.837e-06 | 0.01057 | 4.837e-06 | 8.888e-05 | 9.848e-05 |
+| incline_slide | 1/60 | 10 | 1 | 0.005738 | 1.477e-07 | 4.514 | 4.509 | 4.514 | 4.509 | 4.509 | 4.509 |
+| incline_slide | 1/240 | 20 | 1 | 0.005046 | 3.725e-07 | 4.511 | 4.509 | 4.511 | 4.509 | 4.509 | 4.509 |
+| stack3 | 1/60 | 10 | 1 | 0.009988 | 0.0001116 | 0.02576 | 0.0001657 | 0 | 0 | 0.000164 | 5.551e-17 |
+| stack6 | 1/60 | 10 | 1 | 0.01317 | 0.00111 | 0.0515 | 0.003348 | 0 | 0 | 0.0002312 | 2.043e-10 |
+| stack12 | 1/60 | 10 | 1 | 0.01423 | 0.003712 | 0.09996 | 0.01891 | 0 | 0 | 0.001913 | 0.0001329 |
+| stack12 | 1/60 | 4 | 1 | 0.02235 | 0.00916 | 0.1035 | 0.04902 | 0 | 0 | 0.0522 | 0.0349 |
+| stack12 | 1/120 | 20 | 1 | 0.01178 | 0.0003765 | 0.0956 | 0.002168 | 0 | 0 | 0.001043 | 1.144e-08 |
+| stack12 | 1/60 | 4 | 0.8 | 0.08981 | 0.05896 | 0.4919 | 0.3098 | 0 | 0 | 1.22 | 0.5707 |
+| stack12 | 1/60 | 4 | 0 | 0.2399 | 0.3177 | 4.388 | 4.823 | 0 | 0 | 5.714 | 5.533 |
+| stack6 | 1/60 | 10 | 0 | 0.01369 | 0.01263 | 0.05135 | 0.05274 | 0 | 0 | 0.1901 | 0.2179 |
+
+All impact rows (head-on and off-center, every dt, iteration and warm-start
+setting) keep bit-identical final states, so their analytic impulse errors are
+unchanged. Every `incline_slide` row matches the analytic 4.5095 m to within
+2e-5 m. `incline_stick` creeps at most 4e-5 m at warm start 1.0 (legacy
+0.0106 to 0.0424 m); the unconverged 4-iteration rows creep at most 0.0013 m
+at warm 0.8 and 0.0070 m at warm 0 (legacy 0.045 and 0.055 m). Without warm starting the four-iteration twelve-box stack collapses in
+both orders (more in the new one, 4.82 m against 4.39 m), and a few
+unconverged no-warm or 0.8-warm stack rows move a few percent more; every
+stack row at warm start 1.0 improves.
 
