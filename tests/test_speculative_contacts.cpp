@@ -322,3 +322,16 @@ TEST_CASE("A body about to hit a sleeping body wakes it in time", "[speculative]
     REQUIRE(peak < 0.01);
     REQUIRE(sleeper->position.x > 0.05f);
 }
+
+TEST_CASE("A tall aligned tower stands", "[speculative][stacking]") {
+    // Correcting the two points of each manifold one after the other left the
+    // same small tilt every step; a 20-box tower used to topple after ~18 s.
+    World world;
+    world.addBody(Body(Polygon::MakeBox(200, 2), {0, -1}, true));
+    RigidBodyPtr top;
+    for (int i = 0; i < 20; ++i) world.addBody(top = Body(Polygon::MakeBox(1, 1), {0, 0.5f + i}));
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+    for (int i = 0; i < 25 * 60; ++i) world.step();
+    REQUIRE(std::abs(top->position.x) < 0.01f);
+    REQUIRE(std::abs(top->orientation) < 0.005f);
+}

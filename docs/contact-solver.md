@@ -78,8 +78,16 @@ through the WebAssembly configuration object.
 
 A two-point manifold solves its two **normal** constraints together before
 applying sequential tangent friction impulses. Single-point contacts and the
-single-point CCD path retain the scalar normal/friction solve. Position
-correction remains sequential and separate.
+single-point CCD path retain the scalar normal/friction solve.
+
+Position correction also treats a two-point manifold as one 2x2 block, the
+LCP `lambda >= 0, w = K lambda + C >= 0, lambda . w = 0` with
+`C_i = beta * (s_i + slop)` (positive, slack, while a point is within slop),
+solved by enumerating the active sets. Correcting the two points one after the
+other rotated the body toward the point corrected last; the position loop
+usually stops after one pass, so every step left the same small tilt and a
+20-box tower toppled after about 18 s. A degenerate block falls back to the
+sequential correction.
 
 For the common unit normal n, let c_ai=r_ai×n and c_bi=r_bi×n for the two
 world-space contact levers. With m=invMassA+invMassB and ia/ib the inverse

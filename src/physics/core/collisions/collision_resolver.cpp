@@ -375,10 +375,68 @@ void CollisionResolver::SolveVelocity(ContactConstraint &c) {
         }
     }
 }
+namespace {
+// Corrects both points of a two-point manifold at once, as the 2x2 LCP
+// lambda >= 0, w = K lambda + C >= 0, lambda.w = 0, where C_i is the
+// correction target (positive while the point is within slop). Correcting the
+// points one after the other rotates the body toward the point solved last;
+// the early exit usually stops after one pass, so every step leaves the same
+// small tilt and a tall stack amplifies it under gravity until it topples.
+// Returns false (nothing applied) only for a degenerate block.
+bool SolvePositionBlock(ContactConstraint &c, double &minimumSeparation) {
+    ValidateBody(*c.bodyA);
+    ValidateBody(*c.bodyB);
+    const DVector n = c.normal;
+    double ca[2], cb[2], correction[2];
+    for (std::uint8_t i = 0; i < 2; ++i) {
+        const auto &p = c.points[i];
+        const auto anchorA = ToWorldPoint(c.bodyA, p.localAnchorA),
+                   anchorB = ToWorldPoint(c.bodyB, p.localAnchorB);
+        const double separation = Checked((anchorB - anchorA).dot(n) - p.penetration);
+        minimumSeparation = std::min(minimumSeparation, separation);
+        correction[i] = std::max(double(c.positionCorrectionFactor) * (separation + c.penetrationSlop),
+                                 -double(c.maxPositionCorrection));
+        ca[i] = (anchorA - DVector(c.bodyA->position)).cross(n);
+        cb[i] = (anchorB - DVector(c.bodyB->position)).cross(n);
+    }
+    if (correction[0] >= 0 && correction[1] >= 0) return true;
+    const double m = double(c.bodyA->inverseMass) + c.bodyB->inverseMass,
+                 ia = c.bodyA->inverseInertia, ib = c.bodyB->inverseInertia;
+    const double k11 = Checked(m + ia * ca[0] * ca[0] + ib * cb[0] * cb[0]),
+                 k22 = Checked(m + ia * ca[1] * ca[1] + ib * cb[1] * cb[1]),
+                 k12 = Checked(m + ia * ca[0] * ca[1] + ib * cb[0] * cb[1]);
+    const double deltaA = ca[0] - ca[1], deltaB = cb[0] - cb[1], cross = ca[0] * cb[1] - ca[1] * cb[0];
+    const double determinant = Checked(m * ia * deltaA * deltaA + m * ib * deltaB * deltaB + ia * ib * cross * cross);
+    if (!(determinant > 1e-9 * k11 * k22)) return false;
+    double l1 = Checked((-k22 * correction[0] + k12 * correction[1]) / determinant);
+    double l2 = Checked((k12 * correction[0] - k11 * correction[1]) / determinant);
+    if (l1 < 0 || l2 < 0) {
+        l1 = std::max(-correction[0] / k11, 0.0); l2 = 0;
+        if (k12 * l1 + correction[1] < 0) { l1 = 0; l2 = std::max(-correction[1] / k22, 0.0); }
+    }
+    const DVector impulse = n * (l1 + l2);
+    const double turnA = ca[0] * l1 + ca[1] * l2, turnB = cb[0] * l1 + cb[1] * l2;
+    // Stage both endpoints before publishing either.
+    const Vector2 positionA = c.bodyA->IsStatic() ? c.bodyA->position
+        : CheckedVector(DVector(c.bodyA->position) - impulse * c.bodyA->inverseMass);
+    const Vector2 positionB = c.bodyB->IsStatic() ? c.bodyB->position
+        : CheckedVector(DVector(c.bodyB->position) + impulse * c.bodyB->inverseMass);
+    const float orientationA = c.bodyA->IsStatic() ? c.bodyA->orientation
+        : CheckedFloat(double(c.bodyA->orientation) - ia * turnA);
+    const float orientationB = c.bodyB->IsStatic() ? c.bodyB->orientation
+        : CheckedFloat(double(c.bodyB->orientation) + ib * turnB);
+    if (!c.bodyA->IsStatic()) { c.bodyA->position = positionA; c.bodyA->orientation = orientationA; }
+    if (!c.bodyB->IsStatic()) { c.bodyB->position = positionB; c.bodyB->orientation = orientationB; }
+    return true;
+}
+} // namespace
 bool CollisionResolver::SolvePosition(ContactConstraint &c) {
     if (!c.bodyA || !c.bodyB)
         return true;
     double minimumSeparation = 0;
+    if (c.pointCount == 2 && SolvePositionBlock(c, minimumSeparation))
+        return minimumSeparation >= -3.0 * c.penetrationSlop;
+    minimumSeparation = 0;
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         const auto &p = c.points[i];
         const auto anchorA = ToWorldPoint(c.bodyA, p.localAnchorA),
