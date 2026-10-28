@@ -2,9 +2,12 @@
 
 `ExportWorldJson(world, time)` includes `schemaVersion: 1`, caller-supplied simulation
 time, all step statistics, rigid-body IDs/poses/velocities/mass/inertia/shape geometry,
-sleep/CCD flags and particle-system positions/velocities. IDs are decimal strings to
+static/sleep/CCD/sensor flags (`"static"`, `"awake"`, `"ccd"`, `"sensor"`) and
+particle-system positions/velocities. IDs are decimal strings to
 preserve uint64 precision in JavaScript. `ExportWorldCsv` emits one row per body and
-selected work counters; an empty world emits only a header. `Engine::exportJson`
+selected work counters; an empty world emits only a header. The `sensor` column
+is the last CSV column, after `sleeping_bodies`, so existing columns keep their
+positions. Body user data is not exported. `Engine::exportJson`
 and `exportCsv` are also exposed to JavaScript (pass the time argument explicitly).
 
 `ExportFluidJson(particles, diagnostics, time)` includes fluid state and all solver

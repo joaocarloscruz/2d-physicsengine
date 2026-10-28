@@ -64,7 +64,7 @@ std::string ExportWorldJson(const World& world, double time) {
         out << ",\"orientation\":" << b.orientation << ",\"angularVelocity\":" << b.angularVelocity
             << ",\"torque\":" << b.torque << ",\"mass\":" << b.mass << ",\"inertia\":" << b.inertia
             << ",\"static\":" << b.IsStatic() << ",\"awake\":" << b.IsAwake()
-            << ",\"ccd\":" << b.IsCcdEnabled() << ",\"shape\":{";
+            << ",\"ccd\":" << b.IsCcdEnabled() << ",\"sensor\":" << b.IsSensor() << ",\"shape\":{";
         if (b.shape->type == ShapeType::CIRCLE) {
             out << "\"type\":\"circle\",\"radius\":" << b.shape->GetRadius();
         } else if (const auto* capsule = dynamic_cast<const Capsule*>(b.shape.get());
@@ -101,7 +101,7 @@ std::string ExportWorldJson(const World& world, double time) {
 }
 std::string ExportWorldCsv(const World& world, double time) {
     auto out = Stream(time);
-    out << "time,id,x,y,vx,vy,angle,angular_velocity,mass,inertia,static,awake,ccd,integrated_bodies,active_contacts,ccd_impacts,islands,solved_islands,sleeping_bodies\n";
+    out << "time,id,x,y,vx,vy,angle,angular_velocity,mass,inertia,static,awake,ccd,integrated_bodies,active_contacts,ccd_impacts,islands,solved_islands,sleeping_bodies,sensor\n";
     const auto& s = world.getLastStepStatistics();
     for (const auto& body : world.getBodies()) {
         const auto& b = *body; Validate(b);
@@ -109,7 +109,8 @@ std::string ExportWorldCsv(const World& world, double time) {
             << b.velocity.x << ',' << b.velocity.y << ',' << b.orientation << ',' << b.angularVelocity << ','
             << b.mass << ',' << b.inertia << ',' << b.IsStatic() << ',' << b.IsAwake() << ',' << b.IsCcdEnabled() << ','
             << s.integratedBodyCount << ',' << s.activeContactCount << ',' << s.ccdImpactCount << ','
-            << s.islandCount << ',' << s.solvedIslandCount << ',' << s.sleepingBodyCount << '\n';
+            << s.islandCount << ',' << s.solvedIslandCount << ',' << s.sleepingBodyCount << ','
+            << b.IsSensor() << '\n';
     }
     return out.str();
 }

@@ -15,6 +15,12 @@ TEST_CASE("World export retains IDs shapes state and statistics", "[export]") {
     REQUIRE(json.find("\"integratedBodyCount\":1") != std::string::npos);
     REQUIRE(json.find("\"type\":\"circle\"") != std::string::npos);
     REQUIRE(ExportWorldCsv(world).find("1.25,-2") != std::string::npos);
+    REQUIRE(json.find("\"ccd\":false,\"sensor\":false") != std::string::npos);
+    body->SetSensor(true);
+    REQUIRE(ExportWorldJson(world, 0.5).find("\"sensor\":true") != std::string::npos);
+    const auto csv = ExportWorldCsv(world);
+    REQUIRE(csv.find("sleeping_bodies,sensor\n") != std::string::npos);
+    REQUIRE(csv.substr(csv.size() - 6) == ",true\n");
     REQUIRE_THROWS_AS(ExportWorldJson(world, std::numeric_limits<double>::infinity()), std::invalid_argument);
     body->position.x = std::numeric_limits<float>::quiet_NaN();
     REQUIRE_THROWS_AS(ExportWorldJson(world), std::invalid_argument);
