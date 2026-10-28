@@ -116,11 +116,14 @@ std::uint8_t ClipToPlane(const std::array<Point, 2>& input, std::uint8_t count,
         output[result++] = input[0] + (input[1] - input[0]) * (first / (first - second));
     return result;
 }
-std::uint32_t MakeFeatureId(bool referenceIsB, std::size_t referenceFace,
-                            std::size_t incidentFace, std::uint8_t ordinal) {
-    return 0x80000000u | (static_cast<std::uint32_t>(referenceIsB) << 30)
-        | (static_cast<std::uint32_t>(referenceFace & 0x3fffu) << 16)
-        | (static_cast<std::uint32_t>(incidentFace & 0x3fffu) << 2)
+// Face point id from A's face, B's face and the point's order along A's
+// face. It does not record which polygon was the reference: two resting
+// parallel faces swap reference as their tilt crosses zero, and an id that
+// changed with it would drop the warm-start impulses at every swap.
+std::uint32_t MakeFeatureId(std::size_t faceA, std::size_t faceB, std::uint8_t ordinal) {
+    return 0x80000000u
+        | (static_cast<std::uint32_t>(faceA & 0x3fffu) << 16)
+        | (static_cast<std::uint32_t>(faceB & 0x3fffu) << 2)
         | static_cast<std::uint32_t>(ordinal + 1);
 }
 // Closest points of two separated convex polygons, relative to A's position.
@@ -218,14 +221,18 @@ CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b, double ma
     std::sort(second.begin(), second.begin() + count, [&](Point left, Point right) {
         return side.dot(left) < side.dot(right);
     });
+    const std::size_t faceA = referenceIsB ? incidentFace : face, faceB = referenceIsB ? face : incidentFace;
     for (std::uint8_t i = 0; i < count; ++i) {
         const double separation = normal.dot(second[i]);
         if (separation <= allowance || separation < margin) {
             const auto index = manifold.contactCount++;
+            // Points are sorted along the reference face; B's facing side runs
+            // the other way along A's.
+            const auto ordinal = static_cast<std::uint8_t>(referenceIsB ? count - 1 - i : i);
             manifold.contacts[index] = {CheckedVector(reference.position + reference.localOrigin
                 + reference.offsets[face] + second[i]),
                 CheckedFloat(margin > 0 ? -separation : std::max(-separation, 0.0)),
-                MakeFeatureId(referenceIsB, face, incidentFace, index)};
+                MakeFeatureId(faceA, faceB, ordinal)};
         }
     }
     if (manifold.contactCount == 0)

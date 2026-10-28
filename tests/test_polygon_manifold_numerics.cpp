@@ -155,20 +155,23 @@ TEST_CASE("Rotated thin polygon contacts stay within their reference-plane allow
         b.SetPosition({float(-.75*scale*std::sin(double(.37f))),float(.75*scale*std::cos(double(.37f)))});
         const auto hit=CollisionPolygonPolygon(&a,&b);
         REQUIRE(hit.hasCollision); REQUIRE(hit.contactCount==2);
-        const bool referenceB=(hit.contacts[0].featureId & 0x40000000u)!=0;
-        const auto& reference=referenceB?b:a;
-        const std::size_t face=(hit.contacts[0].featureId>>16)&0x3fffu;
-        const auto& v=static_cast<const Polygon&>(*reference.shape).getVertices();
-        const double c=std::cos(double(reference.orientation)), s=std::sin(double(reference.orientation));
-        const double ex=double(v[(face+1)%v.size()].x)-v[face].x;
-        const double ey=double(v[(face+1)%v.size()].y)-v[face].y;
-        const double length=std::hypot(ex,ey);
-        const double nx=(c*ey+s*ex)/length, ny=(s*ey-c*ex)/length;
-        const double px=reference.position.x+c*v[face].x-s*v[face].y;
-        const double py=reference.position.y+s*v[face].x+c*v[face].y;
+        // Ids name A's and B's faces, not which one was the reference (so a
+        // reference swap keeps warm starting); the points lie on one of them.
+        const auto planeDistance=[&](const RigidBody& body, std::size_t face, Vector2 p) {
+            const auto& v=static_cast<const Polygon&>(*body.shape).getVertices();
+            const double c=std::cos(double(body.orientation)), s=std::sin(double(body.orientation));
+            const double ex=double(v[(face+1)%v.size()].x)-v[face].x;
+            const double ey=double(v[(face+1)%v.size()].y)-v[face].y;
+            const double length=std::hypot(ex,ey);
+            const double nx=(c*ey+s*ex)/length, ny=(s*ey-c*ex)/length;
+            const double px=body.position.x+c*v[face].x-s*v[face].y;
+            const double py=body.position.y+s*v[face].x+c*v[face].y;
+            return nx*(double(p.x)-px)+ny*(double(p.y)-py);
+        };
+        const std::size_t faceA=(hit.contacts[0].featureId>>16)&0x3fffu, faceB=(hit.contacts[0].featureId>>2)&0x3fffu;
         for (int i=0;i<2;++i) {
             const auto p=hit.contacts[i].position;
-            const double distance=nx*(double(p.x)-px)+ny*(double(p.y)-py);
+            const double distance=std::min(planeDistance(a,faceA,p),planeDistance(b,faceB,p));
             // Final public float contact positions can round away more than
             // the intentional allowance on a high-aspect rotated outline.
             const double conversionBound=4*std::numeric_limits<float>::epsilon()*aspect*scale;

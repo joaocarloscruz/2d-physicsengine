@@ -9,7 +9,10 @@ normally produce two points; corner and edge contacts can produce one. Clipping
 supports both clockwise and counter-clockwise convex vertex winding.
 
 Feature identifiers describe the canonical body pair and selected polygon
-features. They are independent of caller body order and remain stable under
+features. A polygon face point is named by A's face, B's face and its order
+along A's face, not by which polygon supplied the reference face: resting
+parallel faces swap reference as their relative tilt crosses zero, and an id
+that changed with the swap dropped the warm-start impulses. They are independent of caller body order and remain stable under
 small motion while the same features touch. Callers may compare identifiers for
 equality across frames, but should not interpret their bit layout.
 

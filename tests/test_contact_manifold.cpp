@@ -199,3 +199,27 @@ TEST_CASE("Clipped contacts support clockwise convex polygons", "[manifold][poly
     REQUIRE(manifold.contactCount == 2);
     REQUIRE(manifold.normal.x == Catch::Approx(1.0f));
 }
+
+TEST_CASE("Polygon feature ids survive a reference face swap", "[collision][manifold]") {
+    // Resting parallel faces swap the reference polygon as their relative
+    // tilt crosses zero (here: the box at zero tilt, the slab otherwise). The
+    // ids must not change with it, or warm starting drops out at every swap.
+    std::uint32_t right[3]{}, left[3]{};
+    int k = 0;
+    for (float tilt : {0.0f, 1e-4f, -1e-4f}) {
+        RigidBody box(Polygon::MakeBox(1, 1), Material{}, Vector2{-0.75f, 0.5f});
+        RigidBody slab(Polygon::MakeBox(3, 0.5f), Material{}, Vector2{0, 1.2f});
+        slab.SetOrientation(tilt);
+        const auto manifold = CollisionPolygonPolygon(&box, &slab);
+        REQUIRE(manifold.hasCollision);
+        REQUIRE(manifold.contactCount == 2);
+        const bool firstRight = manifold.contacts[0].position.x > manifold.contacts[1].position.x;
+        right[k] = manifold.contacts[firstRight ? 0 : 1].featureId;
+        left[k] = manifold.contacts[firstRight ? 1 : 0].featureId;
+        ++k;
+    }
+    for (int i = 1; i < 3; ++i) {
+        REQUIRE(right[i] == right[0]);
+        REQUIRE(left[i] == left[0]);
+    }
+}
