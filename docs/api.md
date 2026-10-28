@@ -68,7 +68,12 @@ within the process; they are not portable identifiers across separate simulation
 Collision events contain values and IDs, so they remain valid after removal. The
 legacy manifold callback contains borrowed body pointers, valid for that callback.
 Listeners are caller-owned: unregister a listener before destruction. A World
-destructor does not invoke callbacks. Simulation objects are not thread-safe.
+destructor does not invoke callbacks. Simulation objects are not thread-safe:
+use one World from one thread at a time. Separate Worlds may step concurrently on
+separate threads; body IDs come from an atomic counter, and the narrow phase and
+solver keep their caches per thread (about 96 KB of thread-local storage per
+thread, plus about 0.6 MB of heap on threads that test polygon pairs, freed when
+the thread exits).
 
 ## Error behavior
 

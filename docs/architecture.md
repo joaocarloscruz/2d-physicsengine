@@ -159,7 +159,7 @@ step. See [transport equations, work bounds and refinement](periodic-scalar-tran
 
 ## Limits
 
-Only circles and convex nondegenerate polygons are supported. Polygon vertices
+Rigid shapes are circles, capsules and convex nondegenerate polygons. Polygon vertices
 are local to the body origin; use centered shapes for the intended inertia model.
 `Polygon::GetCentroid()` and `Recentered()` support this explicit setup; see
 [polygon centering](polygon-centering.md) for preserving the world pose and anchors.
