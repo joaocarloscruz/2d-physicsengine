@@ -1,7 +1,7 @@
 # Web playground
 
 `examples/web-playground/` is a static page that runs the WebAssembly build in a
-browser: eight scenes, mouse dragging, spawning, pause and single-step. It has no
+browser: ten scenes, mouse dragging, spawning, pause and single-step. It has no
 bundler, framework or npm dependency. See [WebAssembly](webassembly.md) for the
 module itself.
 
@@ -32,34 +32,52 @@ module cannot be loaded the page shows a message instead of a blank canvas.
 node build-wasm/wasm/scenes-test.cjs
 ```
 
-For each of the eight scenes it builds the scene, runs 600 fixed steps and asserts
+For each of the ten scenes it builds the scene, runs 600 fixed steps and asserts
 that nothing throws, every pose and joint anchor is finite, no dynamic body leaves
 the arena, and the Tower and Pyramid top bodies end within 5 cm of where they
-started. It also drives spawning, picking, the drag spring, the `advance()` frame
-loop and culling, and checks that every Embind handle it created is deleted and
-that the native heap, the live test-probe objects and the retained JavaScript
-values (`count_emval_handles`) are unchanged after repeating all scenes.
+started. It also drives spawning, picking, dragging with a `MouseJoint` (the joint
+and its ground body are deleted when the drag ends), the `advance()` frame loop and
+culling, and checks that every Embind handle it created is deleted and that the
+native heap, the live test-probe objects and the retained JavaScript values
+(`count_emval_handles`) are unchanged after repeating all scenes. Body and joint
+counts must be the same on every repeat.
+
+Two scene tests go further:
+
+- **Car and sensors:** with no throttle the car does not roll (the idle brake holds
+  it), with full throttle the rear motor drives it forward over the bumps into the
+  goal, the goal registers the overlap and counts one entry, staying inside does not
+  count again, reversing out and driving back in counts a second entry, the
+  suspension stays inside its stroke, and dragging the chassis leaves the body and
+  joint counts alone.
+- **Joints gallery:** the weld segments stay together (separation under 10 cm
+  during the impact, under 0.05 rad bend once settled), the soft weld swings, the
+  rope never stretches past 4 m and goes slack, the spring changes length, and the
+  suspension rig travels inside its stops.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Left drag on a body | Drag it with a critically damped spring |
+| Left drag on a body | Drag it with a `MouseJoint` (5 Hz spring, force cap 1000 times the body mass) |
 | Left drag on empty space, middle or right drag | Pan the camera |
 | Mouse wheel | Zoom at the cursor (10 to 200 pixels per metre) |
-| Arrow keys | Pan |
-| `1` to `8` | Load a scene and reset the camera |
+| Arrow keys | Pan (in the car scene Left/Right drive instead; `Shift` + arrows pan) |
+| `Left`/`Right` or `A`/`D` | Car scene: drive left or right with the rear-wheel motor |
+| `1` to `9`, `0` | Load scene 1 to 9, or scene 10 with `0`, and reset the camera |
 | `R` | Rebuild the current scene |
 | `Space`, `N` | Pause or resume; single-step (pauses first) |
 | `C`, `B`, `K` | Drop a circle, box or capsule at the cursor |
-| `D`, `H` | Toggle the HUD; toggle the help panel |
+| `Tab`, `D`, `H` | Toggle the HUD (`D` does not in the car scene, where it drives); toggle the help panel |
 
 The toolbar and scene buttons do the same. The scenes are the ones in the native
 visualizer (`visualization/scenes.cpp`): Playground, Tower, Pyramid, Dominoes,
-Chain and pendulum, Capsules and ramps, Seesaw and mass ratio, Machines.
+Chain and pendulum, Capsules and ramps, Seesaw and mass ratio, Machines, Car and
+sensors, Joints gallery.
 
 The HUD shows the scene, body and joint counts, a smoothed wall-clock cost of one
-fixed step in milliseconds, and the frame rate. The body count includes static
+fixed step in milliseconds, and the frame rate. The car scene adds a line with the
+goal entry count (and `[CAR IN GOAL]` while overlapping) and the car speed. The body count includes static
 bodies and the invisible static anchors that scenes use as joint pivots.
 
 ## How it steps
@@ -81,9 +99,47 @@ dynamic body's pose just before every step, and the renderer blends that copy wi
 the current pose using `alpha`. Joint lines are drawn from the same blended poses
 and the joints' local anchors.
 
-The drag spring follows `applyDragSpring` in `visualization/renderer.cpp`: 5 Hz,
-critically damped, acting at the local point that was grabbed, with the force
-capped at 1000 times the body mass.
+Dragging creates a `MouseJoint` (`createMouseJoint`) from a ground body to the
+grabbed body at the local point that was grabbed: 5 Hz, damping ratio 0.9 (the
+engine's implicit solve adds damping, so this settles like a critically damped
+spring), with the force capped at 1000 times the body mass, as in
+`visualization/renderer.cpp`. The joint needs a static body that is already in the
+engine, so `beginDrag` creates a tiny static circle that collides with nothing and
+`endDrag` removes both. Neither appears in the scene's body or joint lists, so the
+counts and drawing do not change while dragging. The pointer only calls
+`setTarget`; the engine applies the pull on every step. Dragging a body that is
+asleep wakes it.
+
+## Car and sensors, and the joints gallery
+
+Scene 9 and scene 10 use the joints and sensors added after the original eight
+scenes. Their layout mirrors the native scenes.
+
+JavaScript has no collision listeners, so the browser version finds sensor overlaps
+by querying. The goal is a static body with `setSensor(true)` (and a user data tag).
+Before every fixed step the scene runs `queryCircle(engine, center, radius)` for the
+car and checks whether the goal's body ID is in the result: one disc of the wheel
+radius for each wheel, and five discs of radius 0.3 spaced 0.5 m along the chassis,
+which together cover the chassis box except its corners. If any query reports the
+goal, the car is inside; the scene counts a change from outside to inside as one
+entry. This is an approximation of the engine's sensor events (the native demo uses
+a real `ICollisionListener`), and it tests the overlap once per step before the step
+runs, so it lags the engine's own event by one step. Each query result is an owned
+collection and is deleted straight away.
+
+The car's chassis and wheels are joined by `createWheelJoint` with a spring
+(3 Hz, damping ratio 0.7) and a 0.3 m stroke limit. The rear wheel's motor runs at
+up to 16 rad/s with 16 N m, and holds with a small torque when no key is pressed.
+The page sets `scene.input.throttle` from the keys, and the scene's pre-step
+controller applies it, so it works the same under `advance()`, single-step and the
+Node test.
+
+The gallery uses `createWeldJoint` (rigid, and one with `setAngularSpring`),
+`createDistanceJoint` with `setLengthRange(0, 4)` (rope) and `setSpring` (spring)
+and `createWheelJoint` with a spring and limits. Joints are drawn like in the native
+visualizer: welds pink with hexagon markers, wheel joints cyan with a bar for the
+stroke, springs as a green zig-zag, ropes tan. Sensors are translucent green and
+turn amber while the car is in the goal.
 
 ## Handle lifetimes
 
@@ -99,6 +155,8 @@ their handle is deleted.
 
 - Rendering, mouse and keyboard handling have only been run against a stubbed DOM
   in Node, not checked visually in a browser.
+- The car's sensor goal is found by `queryCircle` once per step, not by engine
+  sensor events, so it is an approximation (see above).
 - There is no pinch zoom; on touch screens one finger drags a body or pans.
 - At most 500 bodies exist at once; further spawns are ignored.
 - Dragging works only while the simulation runs; a paused scene does not move.
