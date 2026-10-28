@@ -8,6 +8,12 @@ conduction networks, standalone `WaveMembrane` scalar waves, fluid solvers/conta
 functions. Solver caches, constraint preparation, and broad/narrow-phase
 implementation headers are internal interfaces without compatibility guarantees.
 
+The supported joints are `DistanceJoint` (with optional spring and length
+range), `RevoluteJoint` and `PrismaticJoint` ([joints and sleeping](joints-and-sleeping.md),
+[prismatic joints](prismatic-joints.md)), and `MouseJoint`, `WeldJoint` and
+`WheelJoint` ([mouse, weld and wheel joints](joints-mouse-weld-wheel.md)). Bodies
+can be [sensors](sensors.md) and carry opaque user data.
+
 The native `ChargedParticle`, `UniformElectromagneticField` and `Vector2d` types
 support [prescribed-field electromagnetic particle motion](electromagnetic-particles.md).
 
