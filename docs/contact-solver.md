@@ -30,7 +30,10 @@ in the Box2D order with speculative contacts:
    `v_n >= -s/dt` assumed; between one and two times the load the two blend.
 5. Apply restitution to speculative points whose gap closed this step and
    that carried a normal impulse, so a bounce leaves from the surface (as in
-   Box2D v3).
+   Box2D v3). The bounce targets `e` times the approach speed at the moment of
+   contact, `sqrt(v0^2 - 2 a s)` from the start-of-step relative velocity and
+   load, not the end-of-step prediction, which includes the load for the part
+   of the step after contact and made `e = 1` gain energy.
 6. Run CCD sweeps.
 7. Detect contacts again at the integrated poses and iterate position
    constraints on those manifolds. Contact events, statistics and the

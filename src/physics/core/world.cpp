@@ -712,7 +712,25 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
             const DPoint rB{double(point.x) - c.bodyB->position.x, double(point.y) - c.bodyB->position.y};
             const DPoint vA = pointVelocity(c.bodyA, rA), vB = pointVelocity(c.bodyB, rB);
             const double normalVelocity = (vB.x - vA.x) * c.normal.x + (vB.y - vA.y) * c.normal.y;
-            if (normalVelocity < speculative) bounce[i] = p.velocityBias;
+            if (normalVelocity < speculative) {
+                // Bounce off the speed at the moment of contact, not the
+                // end-of-step prediction: that one includes the load for the
+                // part of the step after contact, and e = 1 would gain energy.
+                const auto startMotion = [&](const RigidBody* body, DPoint r) {
+                    const auto& s = start[indexOf.at(body)];
+                    const double w = s.angularVelocity;
+                    return std::array<double, 2>{
+                        (double(s.velocity.x) - w * r.y) * c.normal.x + (double(s.velocity.y) + w * r.x) * c.normal.y,
+                        (s.ax - s.alpha * r.y) * c.normal.x + (s.ay + s.alpha * r.x) * c.normal.y};
+                };
+                const auto motionA = startMotion(c.bodyA, rA), motionB = startMotion(c.bodyB, rB);
+                const double startVelocity = motionB[0] - motionA[0], acceleration = motionB[1] - motionA[1];
+                const double gap = -double(p.penetration);
+                const double hit = std::max(-std::sqrt(std::max(
+                    startVelocity * startVelocity - 2 * acceleration * gap, 0.0)), normalVelocity);
+                const double restitution = std::max(c.bodyA->material.restitution, c.bodyB->material.restitution);
+                if (hit < -config.restitutionVelocityThreshold) bounce[i] = -restitution * hit;
+            }
             p.velocityBias = speculative;
         }
         bounces.push_back(bounce);

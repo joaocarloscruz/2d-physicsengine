@@ -279,3 +279,22 @@ TEST_CASE("Restitution reflects a speculative impact at the surface", "[speculat
     REQUIRE(reboundSpeed == Approx(10));
     REQUIRE(lowest >= 0.25f - 1e-4f);
 }
+
+TEST_CASE("Restitution bounces off the speed at contact, not the end-of-step prediction", "[speculative][restitution]") {
+    for (float e : {0.5f, 1.0f}) {
+        World world;
+        world.addBody(Body(Polygon::MakeBox(20, 2), {0, -1}, true, {1, e}));
+        auto ball = Body(Circle(0.25f), {0, 1.25f}, false, {1, e});
+        world.addBody(ball);
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        double apex = 0; bool bounced = false;
+        for (int i = 0; i < 120; ++i) {
+            world.step(1.0f / 60);
+            if (ball->velocity.y > 0.1f) bounced = true;
+            if (bounced) apex = std::max(apex, double(ball->position.y) - 0.25);
+        }
+        // Dropped from 1 m the ball rises to e^2 m; the old target added up to
+        // (1 + e) g dt of speed at every bounce.
+        REQUIRE(apex == Approx(double(e) * e).epsilon(0.02));
+    }
+}
