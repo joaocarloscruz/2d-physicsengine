@@ -9,6 +9,8 @@
 #include <iostream>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace PhysicsEngine {
 namespace Visualization {
@@ -46,7 +48,9 @@ Renderer::Renderer(int width, int height, const std::string& title, bool visible
     }
 }
 
-Renderer::~Renderer() {}
+Renderer::~Renderer() {
+    if (world && sceneRuntime.onUnload) sceneRuntime.onUnload(*world);
+}
 
 void Renderer::setWorld(World* world) {
     this->world = world;
@@ -90,7 +94,11 @@ void Renderer::run(std::size_t frameLimit, const std::string& capturePath) {
 
 void Renderer::loadScene(std::size_t index, bool resetCamera) {
     const SceneInfo& scene = sceneList().at(index);
+    if (sceneRuntime.onUnload) sceneRuntime.onUnload(*world);
+    sceneRuntime = SceneRuntime{};
     draggedBody = nullptr;
+    dragJoint.reset(); // clearBodies below removes the joint and its ground body
+    dragGround.reset();
     world->clearBodies();
     world->setSimulationConfig(scene.config);
     sceneRuntime = scene.build(*world);
@@ -106,14 +114,20 @@ void Renderer::loadScene(std::size_t index, bool resetCamera) {
 }
 
 namespace {
-// 1-9 from the number row or the keypad, else 0.
+// Scene number for the number row or keypad: 1-9, and 0 selects scene 10.
+// Returns -1 for any other key.
 int sceneNumber(sf::Keyboard::Key key) {
     const int code = static_cast<int>(key);
     const int row = code - static_cast<int>(sf::Keyboard::Key::Num0);
     const int pad = code - static_cast<int>(sf::Keyboard::Key::Numpad0);
-    if (row >= 1 && row <= 9) return row;
-    if (pad >= 1 && pad <= 9) return pad;
-    return 0;
+    if (row >= 0 && row <= 9) return row == 0 ? 10 : row;
+    if (pad >= 0 && pad <= 9) return pad == 0 ? 10 : pad;
+    return -1;
+}
+
+// Tab label key for scene `index`: 1-9, then 0.
+std::string sceneKeyLabel(std::size_t index) {
+    return index == 9 ? "0" : std::to_string(index + 1);
 }
 }
 
@@ -130,7 +144,8 @@ void Renderer::processEvents() {
                 isPaused = !isPaused;
             } else if (keyPressed->code == sf::Keyboard::Key::R) {
                 loadScene(sceneIndex, false);
-            } else if (keyPressed->code == sf::Keyboard::Key::D) {
+            } else if (keyPressed->code == sf::Keyboard::Key::Tab
+                       || (keyPressed->code == sf::Keyboard::Key::D && !sceneDrives())) {
                 showDebugInfo = !showDebugInfo;
             } else if (keyPressed->code == sf::Keyboard::Key::H) {
                 showHelp = !showHelp;
@@ -142,9 +157,9 @@ void Renderer::processEvents() {
                 addBox(screenToWorld(sf::Mouse::getPosition(window)));
             } else if (keyPressed->code == sf::Keyboard::Key::K) {
                 addCapsule(screenToWorld(sf::Mouse::getPosition(window)));
-            } else if (keyPressed->code == sf::Keyboard::Key::Left) {
+            } else if (keyPressed->code == sf::Keyboard::Key::Left && (keyPressed->shift || !sceneDrives())) {
                 cameraCenter.x -= 1.0f / zoom;
-            } else if (keyPressed->code == sf::Keyboard::Key::Right) {
+            } else if (keyPressed->code == sf::Keyboard::Key::Right && (keyPressed->shift || !sceneDrives())) {
                 cameraCenter.x += 1.0f / zoom;
             } else if (keyPressed->code == sf::Keyboard::Key::Up) {
                 cameraCenter.y += 1.0f / zoom;
@@ -187,7 +202,8 @@ void Renderer::update(float deltaTime) {
 
 void Renderer::stepOnce() {
     if (sceneRuntime.beforeStep) sceneRuntime.beforeStep(*world, sceneTime);
-    if (draggedBody) applyDragSpring();
+    if (sceneRuntime.drive) sceneRuntime.drive(currentThrottle());
+    if (dragJoint) dragJoint->setTarget(screenToWorld(sf::Mouse::getPosition(window)));
     const auto start = std::chrono::steady_clock::now();
     world->step(fixedTimeStep);
     const float elapsed =
@@ -197,30 +213,55 @@ void Renderer::stepOnce() {
     sceneTime += fixedTimeStep;
 }
 
-// Pull the grab point toward the mouse with a critically damped spring so the
-// dragged body still collides, swings about the grab point and keeps its
-// velocity when released, instead of being teleported through its neighbours.
-void Renderer::applyDragSpring() {
-    constexpr float frequency = 5.0f; // Hz
-    const float omega = 2.0f * 3.14159265f * frequency;
-    const float mass = draggedBody->GetMass();
-    const Vector2 target = screenToWorld(sf::Mouse::getPosition(window));
-    const Vector2 arm = Matrix2x2::rotation(draggedBody->GetOrientation()) * dragLocalAnchor;
-    const Vector2 anchor = draggedBody->GetPosition() + arm;
-    const Vector2 anchorVelocity = draggedBody->GetVelocityAtPoint(anchor);
-    Vector2 force = ((target - anchor) * (omega * omega) - anchorVelocity * (2.0f * omega)) * mass;
-    const float limit = 1000.0f * mass;
-    if (force.magnitude() > limit) force = force.normalized() * limit;
-    draggedBody->ApplyForce(force);
-    draggedBody->ApplyTorque(arm.cross(force));
+// Throttle in [-1, 1] for the scene's vehicle: Left/A is -1, Right/D is +1.
+float Renderer::currentThrottle() const {
+    if (hasForcedThrottle) return forcedThrottle;
+    if (!window.hasFocus()) return 0.0f;
+    float throttle = 0.0f;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D))
+        throttle += 1.0f;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A))
+        throttle -= 1.0f;
+    return throttle;
+}
+
+// Pull the grab point toward the mouse with a MouseJoint so the dragged body
+// still collides, swings about the grab point and keeps its velocity when
+// released, instead of being teleported through its neighbours. The joint is
+// a 5 Hz spring with the force capped at 1000 times the body mass. The engine
+// solves the spring implicitly, which adds numerical damping at 60 Hz, so a
+// requested ratio of 0.9 settles like the old hand-written critically damped
+// spring (a grabbed box 5 m away is within 2 cm of the old path at 0.2 s).
+void Renderer::beginDrag(const RigidBodyPtr& body, Vector2 worldPoint) {
+    constexpr float frequency = 5.0f;
+    constexpr float dampingRatio = 0.9f;
+    dragGround = std::make_shared<RigidBody>(Circle(0.05f), Material{1.0f, 0.1f, 0.5f, 0.4f}, Vector2(0.0f, 0.0f), true);
+    dragGround->SetCollisionMaskBits(0u);
+    world->addBody(dragGround);
+    const Vector2 localAnchor = Matrix2x2::rotation(-body->GetOrientation()) * (worldPoint - body->GetPosition());
+    dragJoint = std::make_shared<MouseJoint>(dragGround, body, localAnchor, worldPoint,
+                                             frequency, dampingRatio, 1000.0f * body->GetMass());
+    world->addJoint(dragJoint);
+    draggedBody = body.get();
+}
+
+void Renderer::endDrag() {
+    if (dragJoint) world->removeJoint(dragJoint);
+    if (dragGround) world->removeBody(dragGround);
+    dragJoint.reset();
+    dragGround.reset();
+    draggedBody = nullptr;
 }
 
 void Renderer::render() {
     window.clear(sf::Color(30, 30, 40));
 
-    // Render all bodies
+    // Sensors first, so zones sit behind the bodies that overlap them.
     for (const auto& body : world->getBodies()) {
-        renderBody(body.get());
+        if (body->IsSensor()) renderBody(body.get());
+    }
+    for (const auto& body : world->getBodies()) {
+        if (!body->IsSensor()) renderBody(body.get());
     }
     renderJoints();
     renderHud();
@@ -228,21 +269,94 @@ void Renderer::render() {
     window.display();
 }
 
-void Renderer::renderJoints() {
-    const sf::Color color(255, 225, 110);
-    for (const auto& joint : world->getJoints()) {
-        const sf::Vector2f a = worldToScreen(joint->getAnchorA());
-        const sf::Vector2f b = worldToScreen(joint->getAnchorB());
-        const sf::Vertex line[] = {{a, color}, {b, color}};
+// A zig-zag line between two screen points, drawn for spring-like joints.
+void Renderer::drawZigzag(sf::Vector2f from, sf::Vector2f to, sf::Color color) {
+    constexpr int teeth = 8;
+    constexpr float amplitude = 5.0f;
+    const sf::Vector2f delta = to - from;
+    const float length = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+    if (length < 2.0f * amplitude) {
+        const sf::Vertex line[] = {{from, color}, {to, color}};
         window.draw(line, 2, sf::PrimitiveType::Lines);
+        return;
+    }
+    const sf::Vector2f along = delta / length;
+    const sf::Vector2f side(-along.y, along.x);
+    std::vector<sf::Vertex> points;
+    points.push_back({from, color});
+    for (int i = 0; i < 2 * teeth; ++i) {
+        const float t = (static_cast<float>(i) + 0.5f) / (2.0f * teeth);
+        const float offset = i % 2 == 0 ? amplitude : -amplitude;
+        points.push_back({from + delta * t + side * offset, color});
+    }
+    points.push_back({to, color});
+    window.draw(points.data(), points.size(), sf::PrimitiveType::LineStrip);
+}
 
-        // Anchor markers: round for revolute joints, square for the others.
-        const bool revolute = dynamic_cast<const RevoluteJoint*>(joint.get()) != nullptr;
+void Renderer::renderJoints() {
+    const sf::Color yellow(255, 225, 110);
+    const sf::Color pink(240, 130, 220);
+    const sf::Color cyan(90, 215, 235);
+    const sf::Color green(130, 230, 140);
+    const sf::Color tan(215, 175, 120);
+    const sf::Color background(30, 30, 40);
+    for (const auto& joint : world->getJoints()) {
+        const IJoint* raw = joint.get();
+
+        // The drag joint is drawn as a line from the grab point to the cursor.
+        if (const auto* mouse = dynamic_cast<const MouseJoint*>(raw)) {
+            const sf::Vector2f from = worldToScreen(mouse->getAnchorB());
+            const sf::Vector2f to = worldToScreen(mouse->getTarget());
+            const sf::Vertex line[] = {{from, yellow}, {to, yellow}};
+            window.draw(line, 2, sf::PrimitiveType::Lines);
+            continue;
+        }
+
+        const sf::Vector2f a = worldToScreen(raw->getAnchorA());
+        const sf::Vector2f b = worldToScreen(raw->getAnchorB());
+        sf::Color color = yellow;
+        std::size_t sides = 4; // square marker unless a branch below changes it
+
+        if (dynamic_cast<const RevoluteJoint*>(raw)) {
+            sides = 16;
+        } else if (dynamic_cast<const WeldJoint*>(raw)) {
+            color = pink;
+            sides = 6;
+        } else if (const auto* wheel = dynamic_cast<const WheelJoint*>(raw)) {
+            // The suspension stroke along the axis, with the spring at its rest point.
+            color = cyan;
+            sides = 16;
+            const Vector2 axis = wheel->getAxis();
+            const Vector2 base = raw->getAnchorA();
+            const float lower = wheel->areLimitsEnabled() ? wheel->getLowerLimit() : -0.3f;
+            const float upper = wheel->areLimitsEnabled() ? wheel->getUpperLimit() : 0.3f;
+            const sf::Vector2f low = worldToScreen(base + axis * lower);
+            const sf::Vector2f high = worldToScreen(base + axis * upper);
+            sf::RectangleShape rail(sf::Vector2f(std::hypot(high.x - low.x, high.y - low.y), 5.0f));
+            rail.setOrigin(sf::Vector2f(0.0f, 2.5f));
+            rail.setPosition(low);
+            rail.setRotation(sf::radians(std::atan2(high.y - low.y, high.x - low.x)));
+            rail.setFillColor(sf::Color(90, 215, 235, 70));
+            window.draw(rail);
+        } else if (const auto* distance = dynamic_cast<const DistanceJoint*>(raw)) {
+            if (distance->getSpringFrequency() > 0.0f) color = green;
+            else if (distance->getMinLength() < distance->getMaxLength()) color = tan;
+        }
+
+        if (dynamic_cast<const DistanceJoint*>(raw) && color == green) {
+            drawZigzag(a, b, color);
+        } else {
+            const sf::Vertex line[] = {{a, color}, {b, color}};
+            window.draw(line, 2, sf::PrimitiveType::Lines);
+        }
+
+        // Anchor markers: round for revolute and wheel joints, hexagons for
+        // welds, squares for the others.
         for (const sf::Vector2f& point : {a, b}) {
-            sf::CircleShape marker(3.5f, revolute ? 16 : 4);
+            sf::CircleShape marker(3.5f, sides);
             marker.setOrigin(sf::Vector2f(3.5f, 3.5f));
             marker.setPosition(point);
-            marker.setFillColor(sf::Color(30, 30, 40));
+            marker.setFillColor(background);
             marker.setOutlineThickness(1.5f);
             marker.setOutlineColor(color);
             window.draw(marker);
@@ -275,32 +389,59 @@ void Renderer::renderHud() {
     std::snprintf(timing, sizeof(timing), "Step: %.2f ms", stepMilliseconds);
     std::string info = "Scene " + std::to_string(sceneIndex + 1) + ": " + scene.name + "\n";
     info += scene.description;
-    info += "\nBodies: " + std::to_string(world->getBodies().size());
-    info += "   Joints: " + std::to_string(world->getJoints().size());
+    // The drag joint and its ground body exist only while dragging; leave them out.
+    const std::size_t dragBodies = dragGround ? 1 : 0;
+    const std::size_t dragJoints = dragJoint ? 1 : 0;
+    info += "\nBodies: " + std::to_string(world->getBodies().size() - dragBodies);
+    info += "   Joints: " + std::to_string(world->getJoints().size() - dragJoints);
+    if (sceneRuntime.status) info += "\n" + sceneRuntime.status();
     info += "\n" + std::string(timing);
     info += "   FPS: " + std::to_string(static_cast<int>(1.0f / std::max(lastFrameTime, 1e-6f)));
     info += isPaused ? "\n[PAUSED]" : "\n[RUNNING]";
     if (showHelp) {
-        info += "\n\n1-8: Select scene   R: Reset scene\n";
+        info += "\n\n1-9, 0: Select scene   R: Reset scene\n";
         info += "Left drag: Grab body   Right click: Box\n";
         info += "Middle click / C: Circle   B: Box   K: Capsule\n";
         info += "Space: Pause   Arrows: Camera   Wheel: Zoom\n";
-        info += "H: Hide help   D: Hide HUD   Esc: Quit";
+        if (scene.controls) info += std::string(scene.controls) + "\n";
+        info += "H: Hide help   Tab: Hide HUD   Esc: Quit";
     } else {
         info += "\nH: Show help";
     }
     drawLabel(info, sf::Vector2f(10.0f, 8.0f), 14);
 
+    // Two rows of scene tabs, so ten names fit in the window width.
+    const std::size_t perRow = (sceneList().size() + 1) / 2;
     std::string tabs;
     for (std::size_t i = 0; i < sceneList().size(); ++i) {
-        const std::string label = std::to_string(i + 1) + " " + sceneList()[i].name;
+        const std::string label = sceneKeyLabel(i) + " " + sceneList()[i].name;
         tabs += i == sceneIndex ? "[" + label + "]  " : label + "  ";
+        if (i + 1 == perRow) tabs += "\n";
     }
     drawLabel(tabs, sf::Vector2f(10.0f, static_cast<float>(window.getSize().y) - 6.0f), 13, true);
 }
 
+// Fill and outline by role: dragged (yellow), sensor (translucent zone, brighter
+// while the scene reports it active), static or dynamic.
+void Renderer::styleShape(sf::Shape& shape, const RigidBody* body, sf::Color dynamicFill, sf::Color staticFill) const {
+    if (body->IsSensor()) {
+        const bool active = sceneRuntime.highlighted && sceneRuntime.highlighted(*body);
+        shape.setFillColor(active ? sf::Color(255, 210, 70, 120) : sf::Color(70, 220, 140, 50));
+        shape.setOutlineThickness(2);
+        shape.setOutlineColor(active ? sf::Color(255, 225, 110) : sf::Color(70, 220, 140, 170));
+    } else if (body == draggedBody) {
+        shape.setFillColor(sf::Color(255, 255, 100));  // Yellow when dragged
+        shape.setOutlineThickness(3);
+        shape.setOutlineColor(sf::Color(255, 255, 0));
+    } else {
+        shape.setFillColor(body->IsStatic() ? staticFill : dynamicFill);
+        shape.setOutlineThickness(2);
+        shape.setOutlineColor(sf::Color(200, 200, 200));
+    }
+}
+
 void Renderer::renderBody(const RigidBody* body) {
-    if (!body) return;
+    if (!body || body == dragGround.get()) return;
 
     if (body->shape->type == ShapeType::CIRCLE) {
         renderCircle(body);
@@ -321,22 +462,10 @@ void Renderer::renderCircle(const RigidBody* body) {
     sf::Vector2f screenPos = worldToScreen(body->GetPosition());
     shape.setPosition(screenPos);
 
-    // Color based on static/dynamic and dragged state
-    if (body == draggedBody) {
-        shape.setFillColor(sf::Color(255, 255, 100));  // Yellow when dragged
-        shape.setOutlineThickness(3);
-        shape.setOutlineColor(sf::Color(255, 255, 0));
-    } else if (body->IsStatic()) {
-        shape.setFillColor(sf::Color(100, 100, 100));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    } else {
-        shape.setFillColor(sf::Color(100, 150, 255));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    }
+    styleShape(shape, body, sf::Color(100, 150, 255), sf::Color(100, 100, 100));
 
     window.draw(shape);
+    if (body->IsSensor()) return;
 
     // Draw a line to show rotation
     sf::Vertex line[] = {
@@ -363,20 +492,7 @@ void Renderer::renderPolygon(const RigidBody* body) {
         shape.setPoint(i, worldToScreen(worldVertex));
     }
 
-    // Color based on static/dynamic and dragged state
-    if (body == draggedBody) {
-        shape.setFillColor(sf::Color(255, 255, 100));  // Yellow when dragged
-        shape.setOutlineThickness(3);
-        shape.setOutlineColor(sf::Color(255, 255, 0));
-    } else if (body->IsStatic()) {
-        shape.setFillColor(sf::Color(80, 80, 80));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    } else {
-        shape.setFillColor(sf::Color(255, 150, 100));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    }
+    styleShape(shape, body, sf::Color(255, 150, 100), sf::Color(80, 80, 80));
 
     window.draw(shape);
 }
@@ -405,19 +521,7 @@ void Renderer::renderCapsule(const RigidBody* body) {
         }
     }
 
-    if (body == draggedBody) {
-        shape.setFillColor(sf::Color(255, 255, 100));  // Yellow when dragged
-        shape.setOutlineThickness(3);
-        shape.setOutlineColor(sf::Color(255, 255, 0));
-    } else if (body->IsStatic()) {
-        shape.setFillColor(sf::Color(80, 80, 80));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    } else {
-        shape.setFillColor(sf::Color(120, 210, 140));
-        shape.setOutlineThickness(2);
-        shape.setOutlineColor(sf::Color(200, 200, 200));
-    }
+    styleShape(shape, body, sf::Color(120, 210, 140), sf::Color(80, 80, 80));
 
     window.draw(shape);
 }
@@ -439,10 +543,12 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
 
     if (button == sf::Mouse::Button::Left) {
         // Try to grab a body (iterate in reverse so we grab top-most)
+        // Grab after the loop: beginDrag adds a body to the list being walked.
+        RigidBodyPtr grabbed;
         auto& bodies = world->getBodies();
         for (auto it = bodies.rbegin(); it != bodies.rend(); ++it) {
             const auto& body = *it;
-            if (body->IsStatic()) continue;
+            if (body->IsStatic() || body->IsSensor()) continue;
 
             bool hit = false;
 
@@ -477,12 +583,11 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
             }
 
             if (hit) {
-                draggedBody = body.get();
-                dragLocalAnchor = Matrix2x2::rotation(-body->GetOrientation())
-                    * (worldPos - body->GetPosition());
+                grabbed = body;
                 break;
             }
         }
+        if (grabbed && !dragJoint) beginDrag(grabbed, worldPos);
     } else if (button == sf::Mouse::Button::Right) {
         addBox(worldPos);
     } else if (button == sf::Mouse::Button::Middle) {
@@ -491,9 +596,7 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
 }
 
 void Renderer::handleMouseReleased(sf::Mouse::Button button) {
-    if (button == sf::Mouse::Button::Left && draggedBody) {
-        draggedBody = nullptr;
-    }
+    if (button == sf::Mouse::Button::Left && dragJoint) endDrag();
 }
 
 void Renderer::handleMouseMoved(const sf::Vector2i&) {

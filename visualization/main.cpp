@@ -9,15 +9,18 @@ using namespace PhysicsEngine;
 using namespace PhysicsEngine::Visualization;
 
 // Usage: PhysicsVisualization [--scene N] [--smoke-test [capture.png]]
-//        [--advance STEPS]
-// --scene starts in scene N (1-8) and --advance simulates that many fixed steps
-// before the first frame; both are meant for headless captures.
+//        [--advance STEPS] [--throttle T]
+// --scene starts in scene N (1-10) and --advance simulates that many fixed steps
+// before the first frame. --throttle holds a vehicle's throttle at T in [-1, 1]
+// instead of reading the keyboard. All three are meant for headless captures.
 int main(int argc, char** argv) {
     try {
         bool smoke = false;
         std::string capturePath;
         std::size_t scene = 0;
         std::size_t advance = 0;
+        bool hasThrottle = false;
+        float throttle = 0.0f;
         for (int i = 1; i < argc; ++i) {
             const std::string argument = argv[i];
             if (argument == "--smoke-test") {
@@ -29,6 +32,9 @@ int main(int argc, char** argv) {
                 --scene;
             } else if (argument == "--advance" && i + 1 < argc) {
                 advance = static_cast<std::size_t>(std::stoul(argv[++i]));
+            } else if (argument == "--throttle" && i + 1 < argc) {
+                throttle = std::stof(argv[++i]);
+                hasThrottle = true;
             }
         }
 
@@ -44,6 +50,7 @@ int main(int argc, char** argv) {
         renderer.setWorld(&world);
         renderer.setInitialScene(scene);
         renderer.setWarmupSteps(advance);
+        if (hasThrottle) renderer.setForcedThrottle(throttle);
         renderer.run(smoke ? 5 : 0, capturePath);
 
         std::cout << "Shutting down..." << std::endl;

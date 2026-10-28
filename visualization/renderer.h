@@ -24,6 +24,9 @@ public:
     // before the first frame; both exist for headless captures.
     void setInitialScene(std::size_t index) { sceneIndex = index; }
     void setWarmupSteps(std::size_t steps) { warmupSteps = steps; }
+    // Holds the vehicle throttle at a fixed value instead of reading the
+    // keyboard, for headless captures.
+    void setForcedThrottle(float throttle) { forcedThrottle = throttle; hasForcedThrottle = true; }
 
 private:
     void processEvents();
@@ -37,7 +40,12 @@ private:
     void renderJoints();
     void renderHud();
     void drawLabel(const std::string& content, sf::Vector2f position, unsigned size, bool anchorBottom = false);
-    void applyDragSpring();
+    void styleShape(sf::Shape& shape, const RigidBody* body, sf::Color dynamicFill, sf::Color staticFill) const;
+    void drawZigzag(sf::Vector2f from, sf::Vector2f to, sf::Color color);
+    void beginDrag(const RigidBodyPtr& body, Vector2 worldPoint);
+    void endDrag();
+    float currentThrottle() const;
+    bool sceneDrives() const { return static_cast<bool>(sceneRuntime.drive); }
     void stepOnce();
     void loadScene(std::size_t index, bool resetCamera);
     
@@ -61,7 +69,10 @@ private:
     
     // Interaction
     RigidBody* draggedBody;
-    Vector2 dragLocalAnchor; // grab point in the dragged body's frame
+    // Dragging uses a MouseJoint, which needs a static body in the World to
+    // anchor to. The body and joint exist only while a drag is in progress.
+    RigidBodyPtr dragGround;
+    std::shared_ptr<MouseJoint> dragJoint;
     bool isPaused;
     
     // Simulation
@@ -75,6 +86,8 @@ private:
     SceneRuntime sceneRuntime;
     float sceneTime = 0.0f;
     std::size_t warmupSteps = 0;
+    float forcedThrottle = 0.0f;
+    bool hasForcedThrottle = false;
     float stepMilliseconds = 0.0f; // smoothed duration of World::step
 
     // Visual settings
