@@ -3,6 +3,8 @@
 
 #include <SFML/Graphics.hpp>
 #include <memory>
+#include <string>
+#include "scenes.h"
 #include "physics/core/world.h"
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
@@ -18,6 +20,11 @@ public:
     void setWorld(World* world);
     void run(std::size_t frameLimit = 0, const std::string& capturePath = {});
 
+    // Scene shown first (0-based) and the number of fixed steps to simulate
+    // before the first frame; both exist for headless captures.
+    void setInitialScene(std::size_t index) { sceneIndex = index; }
+    void setWarmupSteps(std::size_t steps) { warmupSteps = steps; }
+
 private:
     void processEvents();
     void update(float deltaTime);
@@ -27,7 +34,12 @@ private:
     void renderCircle(const RigidBody* body);
     void renderPolygon(const RigidBody* body);
     void renderCapsule(const RigidBody* body);
+    void renderJoints();
+    void renderHud();
+    void drawLabel(const std::string& content, sf::Vector2f position, unsigned size, bool anchorBottom = false);
     void applyDragSpring();
+    void stepOnce();
+    void loadScene(std::size_t index, bool resetCamera);
     
     Vector2 screenToWorld(const sf::Vector2i& screenPos) const;
     sf::Vector2f worldToScreen(const Vector2& worldPos) const;
@@ -38,7 +50,7 @@ private:
     
     void addCircle(const Vector2& position);
     void addBox(const Vector2& position);
-    void setupInitialScene();
+    void addCapsule(const Vector2& position);
 
     sf::RenderWindow window;
     World* world;
@@ -58,13 +70,18 @@ private:
     float lastFrameTime = 1.0f / 60.0f;
     const float fixedTimeStep = 1.0f / 60.0f;
     
-    // Shapes (owned by renderer to keep them alive)
-    std::vector<std::unique_ptr<Shape>> shapes;
-    
+    // Scene state
+    std::size_t sceneIndex = 0;
+    SceneRuntime sceneRuntime;
+    float sceneTime = 0.0f;
+    std::size_t warmupSteps = 0;
+    float stepMilliseconds = 0.0f; // smoothed duration of World::step
+
     // Visual settings
     sf::Font font;
     bool fontAvailable = false;
     bool showDebugInfo;
+    bool showHelp = true;
 };
 
 } // namespace Visualization

@@ -3,7 +3,7 @@ project(PhysicsVisualization LANGUAGES CXX)
 set(SFML_STATIC_LIBRARIES TRUE)
 find_package(SFML 3 CONFIG REQUIRED COMPONENTS Graphics Window System)
 find_package(PhysicsEngine 0.2 CONFIG REQUIRED)
-add_executable(PhysicsVisualization main.cpp renderer.cpp renderer.h)
+add_executable(PhysicsVisualization main.cpp renderer.cpp renderer.h scenes.cpp scenes.h)
 target_link_libraries(PhysicsVisualization PRIVATE
     SFML::Graphics SFML::Window SFML::System PhysicsEngine::Engine)
 if(WIN32)
