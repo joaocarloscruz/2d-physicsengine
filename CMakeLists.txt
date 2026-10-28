@@ -374,6 +374,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_validation.cpp
         ${TESTS_SRC_DIR}/test_narrow_phase_regressions.cpp
         ${TESTS_SRC_DIR}/test_fuzz_narrow_phase.cpp
+        ${TESTS_SRC_DIR}/test_fuzz_world.cpp
         ${TESTS_SRC_DIR}/catch_amalgamated.cpp
     )
 
