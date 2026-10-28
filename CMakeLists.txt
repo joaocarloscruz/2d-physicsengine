@@ -355,6 +355,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_broad_phase_differential.cpp
         ${TESTS_SRC_DIR}/test_stress.cpp
         ${TESTS_SRC_DIR}/test_validation.cpp
+        ${TESTS_SRC_DIR}/test_narrow_phase_regressions.cpp
         ${TESTS_SRC_DIR}/catch_amalgamated.cpp
     )
 

@@ -114,12 +114,16 @@ struct Builder {
         manifold.contacts[manifold.contactCount++] = {CheckedVector(origin + local + shift),
             CheckedFloat(margin > 0 ? penetration - margin : std::max(penetration, 0.0)), feature};
     }
-    CollisionManifold Finish(Point normal) {
+    // depth is the projected overlap along the chosen normal (with the margin
+    // still included). It is the manifold penetration: clipping to the
+    // reference extent can drop the deepest incident point, so the deepest
+    // remaining contact may be shallower than the minimum translation.
+    CollisionManifold Finish(Point normal, double depth) {
         if (manifold.contactCount == 0) return manifold;
         manifold.hasCollision = true;
         manifold.normal = CheckedVector(normal);
-        manifold.penetration = manifold.contacts[0].penetration;
-        for (std::uint8_t i = 1; i < manifold.contactCount; ++i)
+        manifold.penetration = CheckedFloat(margin > 0 ? depth - margin : std::max(depth, 0.0));
+        for (std::uint8_t i = 0; i < manifold.contactCount; ++i)
             manifold.penetration = std::max(manifold.penetration, manifold.contacts[i].penetration);
         manifold.contactPoint = manifold.contacts[0].position;
         return manifold;
@@ -202,7 +206,7 @@ CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32
             builder.Add(reference.center + (referenceSurface + incidentSurface) * 0.5, -separation,
                         face | (i + 1u));
         }
-        if (builder.manifold.contactCount > 0) return builder.Finish(n);
+        if (builder.manifold.contactCount > 0) return builder.Finish(n, chosen->penetration);
     }
     Point supportA = closestA, supportB = closestB;
     std::uint32_t feature = kind | 1u;
@@ -216,7 +220,7 @@ CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32
         feature |= 3u << 8;
     }
     builder.Add(((supportA + n * a.radius) + (supportB - n * b.radius)) * 0.5, chosen->penetration, feature);
-    return builder.Finish(n);
+    return builder.Finish(n, chosen->penetration);
 }
 
 struct PolygonGeometry {
@@ -374,7 +378,7 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
             builder.Add((q + capsuleSurface) * 0.5, -separation, face | (k + 1u));
         }
     }
-    if (builder.manifold.contactCount > 0) return builder.Finish(normalAB);
+    if (builder.manifold.contactCount > 0) return builder.Finish(normalAB, chosen->penetration);
 
     Point spine = closestSpine, surface = closestPolygon;
     std::uint32_t feature = PolygonCapsuleKind | closestFeature | 1u;
@@ -387,7 +391,7 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
             | static_cast<std::uint32_t>(support.second & 0xffffu) << 2 | 1u;
     }
     builder.Add(((spine + n * r) + surface) * 0.5, chosen->penetration, feature);
-    return builder.Finish(normalAB);
+    return builder.Finish(normalAB, chosen->penetration);
 }
 } // namespace
 
