@@ -22,6 +22,18 @@ namespace PhysicsEngine {
 
     std::vector<CollisionPair> SweepAndPrune::FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
                                                                         const std::vector<float>& margins) {
+        return Find(bodies, margins, nullptr, nullptr);
+    }
+
+    std::vector<CollisionPair> SweepAndPrune::FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
+        const std::vector<float>& margins, const std::vector<AABB>& knownBounds, const std::vector<char>& known) {
+        if (knownBounds.size() != bodies.size() || known.size() != bodies.size())
+            throw std::invalid_argument("Sweep and prune needs one known bound per body.");
+        return Find(bodies, margins, &knownBounds, &known);
+    }
+
+    std::vector<CollisionPair> SweepAndPrune::Find(const std::vector<RigidBodyPtr>& bodies, const std::vector<float>& margins,
+                                                   const std::vector<AABB>* knownBounds, const std::vector<char>* known) {
         if (!margins.empty() && margins.size() != bodies.size())
             throw std::invalid_argument("Sweep and prune needs one margin per body.");
         std::vector<CollisionPair> potentialCollisions;
@@ -36,7 +48,7 @@ namespace PhysicsEngine {
         for (std::size_t i = 0; i < bodies.size(); ++i) {
             if (!bodies[i])
                 throw std::invalid_argument("Sweep and prune requires valid rigid bodies.");
-            bounds.push_back(bodies[i]->GetAABB());
+            bounds.push_back(known && (*known)[i] ? (*knownBounds)[i] : bodies[i]->GetAABB());
             if (!margins.empty()) {
                 const Vector2 grow{margins[i], margins[i]};
                 bounds.back().min = bounds.back().min - grow;

@@ -155,6 +155,8 @@ private:
     std::uint64_t touchingStamp = ~std::uint64_t{0};
     std::size_t touchingCount = 0;
     ContactKeySet jointedPairs;
+    struct StepScratch;
+    std::unique_ptr<StepScratch> scratch;
 };
 
 }

@@ -14,6 +14,7 @@
 #include <limits>
 #include <tuple>
 #include <array>
+#include <typeinfo>
 
 namespace PhysicsEngine {
 
@@ -45,6 +46,17 @@ namespace {
         }
     }
 }
+
+// Per-step working vectors kept between steps, so their (large) buffers are
+// reused instead of being reallocated and faulted in every step.
+struct World::StepScratch {
+    struct Entry { ContactKey key; CollisionManifold manifold; };
+    struct EndContact { ContactKey key; CollisionManifold manifold; const CollisionPair* pair; };
+    std::vector<Entry> entries;
+    std::vector<ContactConstraint> constraints, endConstraints;
+    std::vector<ContactImpulseCache> endCaches;
+    std::vector<EndContact> ended;
+};
 
 World::World() : World(SimulationConfig{}) {}
 
@@ -632,6 +644,10 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     // Each body may close margin of distance this step: a fixed allowance
     // (4 * slop per pair, as in Box2D) plus its own reach over dt.
     std::vector<float> margins(bodies.size(), 0.0f);
+    // Bounds computed here are handed to the built-in broad phase, which
+    // would otherwise compute the same boxes again.
+    std::vector<AABB> knownBounds(bodies.size());
+    std::vector<char> knownBound(bodies.size(), 0);
     if (deltaTime > 0) {
         for (std::size_t i = 0; i < bodies.size(); ++i) {
             double margin = 2.0 * config.penetrationSlop;
@@ -639,6 +655,8 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
                 const auto& body = *bodies[i];
                 const auto& s = start[i];
                 const AABB box = body.GetAABB();
+                knownBounds[i] = box;
+                knownBound[i] = 1;
                 double reach = 0;
                 for (const double x : {double(box.min.x), double(box.max.x)})
                     for (const double y : {double(box.min.y), double(box.max.y)})
@@ -653,15 +671,21 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         }
     }
 
-    potentialCollisions = broadPhase->FindSpeculativeCollisions(bodies, margins);
+    // An exact SweepAndPrune (not a subclass, which may override the virtual)
+    // can take the precomputed bounds.
+    auto* sweep = typeid(*broadPhase) == typeid(SweepAndPrune) ? static_cast<SweepAndPrune*>(broadPhase.get()) : nullptr;
+    potentialCollisions = sweep ? sweep->FindSpeculativeCollisions(bodies, margins, knownBounds, knownBound)
+                                : broadPhase->FindSpeculativeCollisions(bodies, margins);
     statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
     potentialCollisions.erase(std::remove_if(potentialCollisions.begin(), potentialCollisions.end(),
         [&](const CollisionPair& pair) { return !pairCollides(pair); }), potentialCollisions.end());
     statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
 
-    struct Entry { ContactKey key; CollisionManifold manifold; };
-    std::vector<Entry> entries;
-    std::vector<ContactConstraint> constraints;
+    if (!scratch) scratch = std::make_unique<StepScratch>();
+    auto& entries = scratch->entries;
+    auto& constraints = scratch->constraints;
+    entries.clear();
+    constraints.clear();
     std::vector<char> touchingStart, closing;
     std::vector<std::array<double, 2>> bounces; // target separating speed per point
     constraints.reserve(potentialCollisions.size());
@@ -908,11 +932,13 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     // it, so it is built on first use.
     std::unordered_map<ContactKey, std::size_t, ContactKeyHash> entryOf;
     bool entryOfBuilt = false;
-    struct EndContact { ContactKey key; CollisionManifold manifold; const CollisionPair* pair; };
-    std::vector<EndContact> ended;
+    auto& ended = scratch->ended;
+    auto& endCaches = scratch->endCaches;
+    auto& endConstraints = scratch->endConstraints;
+    ended.clear();
+    endCaches.clear();
+    endConstraints.clear();
     ended.reserve(potentialCollisions.size());
-    std::vector<ContactImpulseCache> endCaches;
-    std::vector<ContactConstraint> endConstraints;
     endCaches.reserve(potentialCollisions.size());
     endConstraints.reserve(potentialCollisions.size());
     std::vector<std::vector<ContactConstraint*>> positionContacts(groups.size());
