@@ -98,3 +98,83 @@ about `0.85` to `1.07`; the difference is small and noisy.
 Precision should be reconsidered, or made configurable, if a normal CI profile
 exceeds these budgets, if supported world scales grow materially, or before an
 application requires million-step trajectories without rebasing.
+
+## Seeded property tests
+
+`tests/test_fuzz_narrow_phase.cpp` and `tests/test_fuzz_world.cpp` generate
+random inputs from a fixed seed with SplitMix64, so a run is identical on every
+platform and standard library. A failure prints the seed, the case index and
+every shape, pose and margin as hex floats; pasting those values into a test
+reproduces it exactly. The default `[fuzz]` cases run in CI. `[.fuzz-long]`
+repeats them over more seeds and steps and is run by hand:
+`run_tests "[.fuzz-long]"`.
+
+### Oracle
+
+`tests/fuzz_support.h` treats every shape as a convex core (a point, a segment
+or a polygon) rounded by a radius, and evaluates it in double from the exact
+float inputs. It shares no code with the engine. Separated pairs use the
+brute-force distance between all core edges. Overlapping pairs use the minimum
+projected overlap over every core edge normal, which is exact because the
+Minkowski difference of the cores is a polygon containing the origin. A
+self-check compares this against 20,000 sampled directions.
+
+### Narrow phase, queries and sweeps
+
+Shapes are circles, convex polygons with 3 to 8 vertices in either winding
+(including 1/1000 slivers, outlines offset from the local origin and a vertex
+within 1e-4 rad of its neighbour) and capsules (a fifth with half-length 0).
+Pairs are placed at a common offset of 0, up to 10, 1000 or 1e4, on a 2^-10
+grid so integer shifts are exact. Each case checks `CheckCollision` in both
+orders, shifted by up to 1e4, and with a random speculative margin.
+
+| Property | Tolerance and reason |
+| --- | --- |
+| Overlap agrees with the oracle | outside a band of the depth tolerance around exact touch |
+| Penetration equals the minimum translation; translating along the normal by it separates | `3e-5` times the larger shape extent: the intentional face allowances are `1e-5` of the polygon width and `2e-5` of the radius ([polygon manifolds](polygon-manifold-numerics.md), [capsules](capsules.md)); everything else is double on exact float inputs |
+| Unit normal | `1e-6` |
+| Swap: normal negated, same depth and count, same contacts | depth `1e-6` relative; contacts within the position tolerance; circle pairs move their surface-of-A contact by the depth, and coincident circles keep the `+x` fallback ([contact manifolds](contact-manifolds.md)) |
+| Translation invariance | depth `1e-6` relative, normal `1e-6`, contacts within the position tolerance |
+| Margin: a gap below the margin reports minus the gap, a larger gap no contact | the depth tolerance |
+| Contact points | inside both shapes or no farther than their own gap, no deeper than the penetration (plus twice the capsule half-length, since capsule midpoints are measured along the normal); circle pairs on the circle surface, polygon pairs on the incident edge or at the midpoint of a vertex-to-vertex gap, capsule pairs at the midpoint of two surface points the contact depth apart |
+| `ContainsPoint`, `OverlapsCircle` (and `CheckCollision` with that circle), `RayCast`, `SweepCircle` | `1e-6` of the extent plus four float ulps of the coordinates; ray and sweep fractions are checked through the clearance at the reported fraction, which stays meaningful for grazing hits |
+| `SweepCircleCircle`, `SweepCirclePolygon`, `SweepCircleCapsule` against 2048-step time stepping refined by bisection | as above, plus the float rounding of `SweepHit::fraction` along the travel |
+
+The position tolerance is the depth tolerance plus two float ulps of the
+largest world coordinate, because contact points are stored as float world
+coordinates.
+
+### World
+
+Each scene seals 50 to 200 random bodies (all three shapes, random density,
+restitution and friction) in a static box with 2 m walls, adds revolute,
+distance and prismatic joints, applies random impulses and teleports into free
+space every 40 steps, toggles sleeping halfway and fires CCD circles at 150 m/s.
+Each seed runs in both step orders for 600 steps (1200 in the long run), twice.
+The checks are: no exception, finite state, mechanical energy at most 10% (plus
+0.5 J) above the initial energy plus everything the test injected, no CCD
+budget exhaustion on 5 consecutive steps, bit-identical step-by-step hashes on
+the repeat run, and no body escaping the box. Escape is only counted for CCD
+bodies and for bodies that never exceeded 60 m/s, half a wall per step, the
+range [getting started](getting-started.md#fast-bodies) covers without CCD.
+
+The default scenes avoid three World bugs that the `[.known-bug]` cases
+reproduce: World CCD rejects a valid polygon whose float-rounded world outline
+is not strictly convex, CCD bullets wedged among bodies exhaust the impact
+budget every step and freeze all positions while velocities keep growing, and
+one such scene ends with a body at 1289 m/s. The default bullets therefore
+hit only walls and each other, are light, and polygons are well-conditioned.
+Even so, the long World run still fails: some CCD bullets and one jointed body
+leave the box, and some scenes exhaust the CCD budget on consecutive steps.
+These are World and solver issues; the narrow-phase manifolds at the start of
+the 1289 m/s step all match the oracle.
+
+The default `[fuzz]` cases take about 6 s in a Release build.
+
+### Documented limits, not bugs
+
+- Circle-polygon and circle-circle contacts stay on a circle surface, so a deep
+  or sharp-corner contact can lie outside the other shape by up to the depth.
+- Polygon clip points lie on the incident edge between the reference face's
+  side planes and can lie outside the reference polygon near a sharp corner.
+- `SweepHit::fraction` is a float and loses impact-time detail on long travel.
