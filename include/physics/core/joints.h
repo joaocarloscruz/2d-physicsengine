@@ -37,15 +37,36 @@ public:
     DistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length,
         Vector2 localAnchorA = {}, Vector2 localAnchorB = {});
     float getLength() const { return length; }
+    // Optional spring toward `length`: frequency in Hz (0, the default, keeps
+    // the joint rigid) and damping ratio >= 0, on the axial effective mass.
+    void setSpring(float frequency, float dampingRatio);
+    float getSpringFrequency() const { return springFrequency; }
+    float getSpringDampingRatio() const { return springDamping; }
+    // Optional hard stops: 0 <= minLength <= length <= maxLength, finite.
+    // With minLength < maxLength the distance is free between the stops (a
+    // rope when minLength is 0) unless a spring is set. The default range
+    // [length, length] keeps the rigid joint.
+    void setLengthRange(float minLength, float maxLength);
+    float getMinLength() const { return minLength; }
+    float getMaxLength() const { return maxLength; }
+    // Current anchor separation.
+    double getCurrentLength() const;
 protected:
     void prepareStep(float deltaTime) override;
     void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
 private:
+    bool rigid() const { return springFrequency == 0 && minLength == maxLength; }
     float length;
     bool warmStartable = false;
     double impulse = 0; // along the A-to-B anchor direction
+    float springFrequency = 0, springDamping = 0;
+    float minLength, maxLength;
+    float stepDuration = 0;
+    // Spring and stop accumulators along the A-to-B direction (lower pushes
+    // apart, upper pulls together); used only when the joint is not rigid.
+    double springImpulse = 0, lowerImpulse = 0, upperImpulse = 0;
 };
 
 class RevoluteJoint final : public IJoint {

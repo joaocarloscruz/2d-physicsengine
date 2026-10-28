@@ -1,4 +1,5 @@
 #include "physics/core/joints.h"
+#include "joint_solver_math.h"
 #include "trig_cache.h"
 #include <algorithm>
 #include <cmath>
@@ -275,17 +276,60 @@ void IJoint::prepareStep(float deltaTime) {
 }
 
 DistanceJoint::DistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 la, Vector2 lb)
-    : IJoint(std::move(a), std::move(b), la, lb), length(length) {
+    : IJoint(std::move(a), std::move(b), la, lb), length(length), minLength(length),
+      maxLength(length) {
     if (!std::isfinite(length) || length <= 0)
         throw std::invalid_argument("Distance joint length must be positive and finite.");
+}
+void DistanceJoint::setSpring(float frequency, float dampingRatio) {
+    Detail::JointMath::ValidateSpring(frequency, dampingRatio, true,
+        "Distance spring frequency and damping ratio must be finite and non-negative.");
+    if (frequency == springFrequency && dampingRatio == springDamping) return;
+    springFrequency = frequency;
+    springDamping = dampingRatio;
+    a->Wake();
+    b->Wake();
+}
+void DistanceJoint::setLengthRange(float minimum, float maximum) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || minimum < 0 || minimum > length ||
+        maximum < length)
+        throw std::invalid_argument(
+            "Distance length range must be finite with 0 <= minLength <= length <= maxLength.");
+    if (minimum == minLength && maximum == maxLength) return;
+    minLength = minimum;
+    maxLength = maximum;
+    a->Wake();
+    b->Wake();
+}
+double DistanceJoint::getCurrentLength() const {
+    const Geometry g(*a, *b, localA, localB);
+    return std::hypot(g.delta.x, g.delta.y);
 }
 void DistanceJoint::prepareStep(float deltaTime) {
     IJoint::prepareStep(deltaTime);
     // An impulse carried over a zero-length step would be an instant kick.
     warmStartable = deltaTime > 0;
     if (!warmStartable) impulse = 0;
+    stepDuration = deltaTime;
+    // Each mode warm starts only its own rows; switching mode drops the rest.
+    if (rigid() || !warmStartable) springImpulse = lowerImpulse = upperImpulse = 0;
+    if (!rigid()) impulse = 0;
+    if (springFrequency == 0) springImpulse = 0;
+    if (minLength == maxLength) lowerImpulse = upperImpulse = 0;
 }
 void DistanceJoint::warmStart(float factor) {
+    if (!rigid()) {
+        springImpulse *= factor;
+        lowerImpulse *= factor;
+        upperImpulse *= factor;
+        const double total = springImpulse + lowerImpulse - upperImpulse;
+        if (total == 0) return;
+        const Geometry g(*a, *b, localA, localB);
+        const double distance = std::hypot(g.delta.x, g.delta.y);
+        const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
+        Apply(*a, *b, g.ra, g.rb, n * Checked(total), false);
+        return;
+    }
     impulse = warmStartable ? impulse * factor : 0;
     if (impulse == 0) return;
     const Geometry g(*a, *b, localA, localB);
@@ -298,12 +342,50 @@ void DistanceJoint::solveVelocity() {
     const double distance = std::hypot(g.delta.x, g.delta.y);
     const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
     const double k = InverseEffectiveMass(*a, *b, g.ra, g.rb, n);
+    if (!rigid()) {
+        const double h = stepDuration;
+        const auto speed = [&] { return (PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)).dot(n); };
+        // Spring: Box2D v3 soft row toward the rest length.
+        if (springFrequency > 0 && h > 0) {
+            const auto s = Detail::JointMath::MakeSoft(springFrequency, springDamping, h);
+            const double lambda = Checked(-s.massScale * (speed() + s.biasRate * (distance - length)) / k -
+                                          s.impulseScale * springImpulse);
+            Apply(*a, *b, g.ra, g.rb, n * lambda, false);
+            springImpulse = Checked(springImpulse + lambda);
+        }
+        if (minLength < maxLength) {
+            // One-sided stops: speculative toward an open stop, rigid at it.
+            const auto stop = [&](double gap, double sign, double &total) {
+                if (h <= 0 && gap > 0) return;
+                const double bias = h > 0 ? std::max(gap, 0.0) / h : 0;
+                const double next = std::max(Checked(total - (sign * speed() + bias) / k), 0.0);
+                Apply(*a, *b, g.ra, g.rb, n * (sign * (next - total)), false);
+                total = next;
+            };
+            stop(distance - minLength, 1, lowerImpulse);
+            stop(double(maxLength) - distance, -1, upperImpulse);
+        }
+        return;
+    }
     const double lambda = Checked(-(PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)).dot(n) / k);
     Apply(*a, *b, g.ra, g.rb, n * lambda, false);
     impulse = Checked(impulse + lambda);
 }
 bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
     ValidateCorrection(tolerance, maxCorrection);
+    if (!rigid()) {
+        // The spring corrects itself; only a violated stop is projected.
+        if (minLength == maxLength) return true;
+        const Geometry g(*a, *b, localA, localB);
+        const double distance = std::hypot(g.delta.x, g.delta.y);
+        const double error = distance - std::clamp(distance, double(minLength), double(maxLength));
+        if (error == 0) return true;
+        const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
+        const double k = InverseEffectiveMass(*a, *b, g.ra, g.rb, n);
+        Apply(*a, *b, g.ra, g.rb,
+              n * (-std::clamp(error, -double(maxCorrection), double(maxCorrection)) / k), true);
+        return std::abs(error) <= tolerance;
+    }
     const Geometry g(*a, *b, localA, localB);
     const double distance = std::hypot(g.delta.x, g.delta.y), error = distance - length;
     const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};

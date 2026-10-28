@@ -300,6 +300,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_mouse_joint.cpp
         ${TESTS_SRC_DIR}/test_weld_joint.cpp
         ${TESTS_SRC_DIR}/test_wheel_joint.cpp
+        ${TESTS_SRC_DIR}/test_distance_spring.cpp
         ${TESTS_SRC_DIR}/test_softbody.cpp
         ${TESTS_SRC_DIR}/test_thermal_network.cpp
         ${TESTS_SRC_DIR}/test_thermal_radiation.cpp
