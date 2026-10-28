@@ -5,7 +5,8 @@
 
 // The getting-started tour (docs/getting-started.md) as one runnable program:
 // a static ground, a stack of boxes, a ball that reports when it lands, a
-// pendulum on a revolute joint, sleeping, and a ray cast. It exits nonzero if
+// sensor zone the ball falls through, a pendulum on a revolute joint,
+// sleeping, and a ray cast. It exits nonzero if
 // the scene does not behave as the guide describes.
 using namespace PhysicsEngine;
 
@@ -15,9 +16,13 @@ class LandingCounter : public ICollisionListener {
 public:
     explicit LandingCounter(std::uint64_t ballId) : ballId(ballId) {}
     void onCollisionBegin(const CollisionEvent& event) override {
-        if (event.bodyAId == ballId || event.bodyBId == ballId) ++landings;
+        if (event.bodyAId != ballId && event.bodyBId != ballId) return;
+        if (event.sensor) ++zoneEntries; else ++landings;
     }
-    int landings = 0;
+    void onCollisionEnd(const CollisionEvent& event) override {
+        if (event.sensor && (event.bodyAId == ballId || event.bodyBId == ballId)) ++zoneExits;
+    }
+    int landings = 0, zoneEntries = 0, zoneExits = 0;
 private:
     std::uint64_t ballId;
 };
@@ -44,6 +49,12 @@ int main() {
     LandingCounter counter(ball->GetId());
     world.addCollisionListener(&counter);
 
+    // A sensor zone on the ball's path: it reports the overlap but never pushes.
+    auto zone = std::make_shared<RigidBody>(Polygon::MakeBox(2, 1), Material{}, Vector2{2, 3}, true);
+    zone->SetSensor(true);
+    zone->SetUserData(42);
+    world.addBody(zone);
+
     // A pendulum: a capsule hung from a static anchor by a revolute joint.
     auto pivot = std::make_shared<RigidBody>(Circle(0.1f), Material{}, Vector2{6, 5}, true);
     auto bob = std::make_shared<RigidBody>(Capsule(0.5f, 0.15f), wood, Vector2{7, 5});
@@ -61,13 +72,16 @@ int main() {
     const auto ray = RayCastNearest(world, Vector2{-3, 10}, Vector2{-3, -10});
     const auto& top = world.getBodies()[5];
     std::printf("stack top y=%.4f (expected 4.5), awake=%d\n", top->position.y, int(top->IsAwake()));
-    std::printf("ball y=%.4f, landings=%d\n", ball->position.y, counter.landings);
+    std::printf("ball y=%.4f, landings=%d, zone entries=%d exits=%d, zone user data=%llu\n",
+        ball->position.y, counter.landings, counter.zoneEntries, counter.zoneExits,
+        static_cast<unsigned long long>(zone->GetUserData()));
     std::printf("pendulum lowest y=%.4f (pivot at 5, arm 1)\n", lowestBob);
     if (ray) std::printf("ray from above hits body %llu at y=%.4f\n",
         static_cast<unsigned long long>(ray->body->GetId()), ray->hit.point.y);
 
     const bool ok = std::fabs(top->position.y - 4.5f) < 0.02f && !top->IsAwake()
         && std::fabs(ball->position.y - 0.25f) < 0.02f && counter.landings >= 1
+        && counter.zoneEntries == 1 && counter.zoneExits == 1 && zone->GetUserData() == 42
         && std::fabs(lowestBob - 4.0f) < 0.05f
         && ray && ray->body == top && std::fabs(ray->hit.point.y - 5.0f) < 0.02f;
     std::printf("%s\n", ok ? "getting started: ok" : "getting started: FAIL");

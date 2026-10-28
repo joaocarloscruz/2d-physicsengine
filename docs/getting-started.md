@@ -4,7 +4,7 @@ This guide covers the rigid-body part of the engine: building a world, choosing
 units, stepping it from a game loop, and tuning it when a scene misbehaves.
 [`examples/getting_started.cpp`](../examples/getting_started.cpp) builds the
 guide's scene as one program: a box stack, a bouncing ball with a collision
-listener, a pendulum, sleeping and a ray cast. CTest runs it as
+listener, a sensor zone, a pendulum, sleeping and a ray cast. CTest runs it as
 `getting_started_smoke` and fails if the scene stops behaving as described.
 
 See the [README](../README.md) for building and linking the library.
