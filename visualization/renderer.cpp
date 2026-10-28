@@ -165,14 +165,28 @@ void Renderer::update(float deltaTime) {
     timeAccumulator += deltaTime;
     
     while (timeAccumulator >= fixedTimeStep) {
+        if (draggedBody) applyDragSpring();
         world->step(fixedTimeStep);
-        if (draggedBody) {
-            draggedBody->SetPosition(screenToWorld(sf::Mouse::getPosition(window)) + dragOffset);
-            draggedBody->SetVelocity({0, 0});
-            draggedBody->SetAngularVelocity(0);
-        }
         timeAccumulator -= fixedTimeStep;
     }
+}
+
+// Pull the grab point toward the mouse with a critically damped spring so the
+// dragged body still collides, swings about the grab point and keeps its
+// velocity when released, instead of being teleported through its neighbours.
+void Renderer::applyDragSpring() {
+    constexpr float frequency = 5.0f; // Hz
+    const float omega = 2.0f * 3.14159265f * frequency;
+    const float mass = draggedBody->GetMass();
+    const Vector2 target = screenToWorld(sf::Mouse::getPosition(window));
+    const Vector2 arm = Matrix2x2::rotation(draggedBody->GetOrientation()) * dragLocalAnchor;
+    const Vector2 anchor = draggedBody->GetPosition() + arm;
+    const Vector2 anchorVelocity = draggedBody->GetVelocityAtPoint(anchor);
+    Vector2 force = ((target - anchor) * (omega * omega) - anchorVelocity * (2.0f * omega)) * mass;
+    const float limit = 1000.0f * mass;
+    if (force.magnitude() > limit) force = force.normalized() * limit;
+    draggedBody->ApplyForce(force);
+    draggedBody->ApplyTorque(arm.cross(force));
 }
 
 void Renderer::render() {
@@ -390,11 +404,8 @@ void Renderer::handleMousePressed(sf::Mouse::Button button, const sf::Vector2i& 
             
             if (hit) {
                 draggedBody = body.get();
-                dragOffset = body->GetPosition() - worldPos;
-                
-                // Position-control the selected body while retaining valid mass.
-                draggedBody->SetVelocity(Vector2(0, 0));
-                draggedBody->SetAngularVelocity(0);
+                dragLocalAnchor = Matrix2x2::rotation(-body->GetOrientation())
+                    * (worldPos - body->GetPosition());
                 break;
             }
         }
@@ -411,13 +422,8 @@ void Renderer::handleMouseReleased(sf::Mouse::Button button) {
     }
 }
 
-void Renderer::handleMouseMoved(const sf::Vector2i& position) {
-    if (draggedBody) {
-        Vector2 worldPos = screenToWorld(position);
-        draggedBody->SetPosition(worldPos + dragOffset);
-        draggedBody->SetVelocity(Vector2(0, 0));
-        draggedBody->SetAngularVelocity(0);
-    }
+void Renderer::handleMouseMoved(const sf::Vector2i&) {
+    // The drag spring reads the mouse position every physics step.
 }
 
 void Renderer::addCircle(const Vector2& position) {

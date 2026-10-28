@@ -27,6 +27,7 @@ private:
     void renderCircle(const RigidBody* body);
     void renderPolygon(const RigidBody* body);
     void renderCapsule(const RigidBody* body);
+    void applyDragSpring();
     
     Vector2 screenToWorld(const sf::Vector2i& screenPos) const;
     sf::Vector2f worldToScreen(const Vector2& worldPos) const;
@@ -48,7 +49,7 @@ private:
     
     // Interaction
     RigidBody* draggedBody;
-    Vector2 dragOffset;
+    Vector2 dragLocalAnchor; // grab point in the dragged body's frame
     bool isPaused;
     
     // Simulation
