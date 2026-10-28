@@ -5,7 +5,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -29,7 +31,8 @@ Vector2 CheckedVector(Point p) { return {CheckedFloat(p.x), CheckedFloat(p.y)}; 
 // Inline storage for the usual small outlines; larger polygons spill to the
 // heap. Narrow phase runs per candidate pair per step, so small polygons must
 // not allocate.
-template <class T, std::size_t N = 8>
+constexpr std::size_t kInlineVertices = 8;
+template <class T, std::size_t N = kInlineVertices>
 class SmallVector {
 public:
     void push_back(const T& value) {
@@ -57,6 +60,8 @@ struct Geometry {
     SmallVector<Point> offsets, normals, tangents;
     SmallVector<double> edgeLengths;
     const std::vector<Vector2>* vertices = nullptr;
+    double minimumWidth = 0; // valid when hasMinimumWidth
+    bool hasMinimumWidth = false;
 };
 // Narrowest face-normal thickness of the local outline. Only pairs that pass
 // both separating-axis tests need it, so it is computed after those exits.
@@ -76,6 +81,9 @@ double MinimumWidth(const Geometry& geometry) {
     }
     return result;
 }
+double WidthOf(const Geometry& geometry) {
+    return geometry.hasMinimumWidth ? geometry.minimumWidth : MinimumWidth(geometry);
+}
 Geometry GetGeometry(const RigidBody* body) {
     if (!body || !body->shape)
         throw std::invalid_argument("Polygon collision requires two polygon bodies.");
@@ -87,6 +95,36 @@ Geometry GetGeometry(const RigidBody* body) {
     // Also validate derived Polygon implementations whose protected outline
     // might have changed after construction. Work remains O(N^2), like SAT,
     // but the outline is checked in place rather than copied into a Polygon.
+    // Each body meets several neighbours per detection pass, and twice per
+    // step, with the same outline and orientation. Reuse the rotated outline
+    // when both match bit for bit: validation and the rotation are pure
+    // functions of exactly those inputs, so a hit returns what this call
+    // would compute.
+    struct Slot {
+        const Polygon* polygon = nullptr;
+        std::uint32_t orientationBits = 0;
+        std::size_t count = 0;
+        Vector2 vertices[kInlineVertices];
+        Geometry geometry;
+    };
+    constexpr unsigned kSlotBits = 10;
+    thread_local std::unique_ptr<Slot[]> slots;
+    std::uint32_t orientationBits;
+    std::memcpy(&orientationBits, &body->orientation, sizeof orientationBits);
+    const bool cacheable = vertices.size() <= kInlineVertices;
+    Slot* slot = nullptr;
+    if (cacheable) {
+        if (!slots) slots.reset(new Slot[std::size_t{1} << kSlotBits]);
+        const std::uint64_t key = reinterpret_cast<std::uintptr_t>(polygon) ^ (std::uint64_t{orientationBits} << 32);
+        slot = &slots[(key * 0x9E3779B97F4A7C15ull) >> (64 - kSlotBits)];
+        if (slot->polygon == polygon && slot->orientationBits == orientationBits && slot->count == vertices.size()
+            && std::memcmp(slot->vertices, vertices.data(), vertices.size() * sizeof(Vector2)) == 0) {
+            Geometry result = slot->geometry;
+            result.vertices = &vertices;
+            result.position = ToPoint(body->position);
+            return result;
+        }
+    }
     Polygon::ValidateOutline(vertices);
     const Detail::CosSin rotation = Detail::CachedCosSin(static_cast<double>(body->orientation));
     const double cosine = rotation.cosine, sine = rotation.sine;
@@ -95,7 +133,6 @@ Geometry GetGeometry(const RigidBody* body) {
     };
     Geometry result;
     result.vertices = &vertices;
-    result.position = ToPoint(body->position);
     const Point origin = ToPoint(vertices.front());
     result.localOrigin = rotate(origin);
     const Point firstEdge = ToPoint(vertices[1]) - origin;
@@ -110,6 +147,16 @@ Geometry GetGeometry(const RigidBody* body) {
         result.tangents.push_back(tangent);
         result.normals.push_back(ccw ? Point{tangent.y, -tangent.x} : Point{-tangent.y, tangent.x});
     }
+    if (slot) {
+        result.minimumWidth = MinimumWidth(result);
+        result.hasMinimumWidth = true;
+        slot->polygon = polygon;
+        slot->orientationBits = orientationBits;
+        slot->count = vertices.size();
+        std::memcpy(slot->vertices, vertices.data(), vertices.size() * sizeof(Vector2));
+        slot->geometry = result;
+    }
+    result.position = ToPoint(body->position);
     return result;
 }
 Point Difference(const Geometry& a, std::size_t i, const Geometry& b, std::size_t j) {
@@ -226,7 +273,7 @@ CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b, double ma
     if (separationB.separation >= margin) return manifold;
     // Dimensionless hysteresis/contact allowance, bounded by the narrower
     // polygon's minimum face-normal thickness; exact SAT still rejects touching.
-    const double allowance = 1e-5 * std::min(MinimumWidth(geometryA), MinimumWidth(geometryB));
+    const double allowance = 1e-5 * std::min(WidthOf(geometryA), WidthOf(geometryB));
     const bool referenceIsB = separationB.separation > separationA.separation + allowance;
     const Geometry& reference = referenceIsB ? geometryB : geometryA;
     const Geometry& incident = referenceIsB ? geometryA : geometryB;

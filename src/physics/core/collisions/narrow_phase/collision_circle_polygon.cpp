@@ -41,13 +41,28 @@ CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b, float margi
     const double c = rotation.cosine, s = rotation.sine;
     const D2 translation{double(polygonBody->position.x)-circleBody->position.x,
                          double(polygonBody->position.y)-circleBody->position.y};
-    std::vector<D2> relative;
-    relative.reserve(local.size());
+    // Small outlines (the common case) stay on the stack.
+    constexpr std::size_t kInline = 8;
+    D2 inlineRelative[kInline];
+    std::vector<D2> heapRelative;
+    if (local.size() > kInline) heapRelative.reserve(local.size());
+    D2* const relativeData = local.size() > kInline ? nullptr : inlineRelative;
+    std::size_t relativeCount = 0;
+    const auto push = [&](D2 p) {
+        if (relativeData) relativeData[relativeCount] = p; else heapRelative.push_back(p);
+        ++relativeCount;
+    };
     for (const auto& v : local) {
         if (!std::isfinite(v.x) || !std::isfinite(v.y))
             throw std::invalid_argument("Polygon vertices must be finite.");
-        relative.push_back({translation.x+c*v.x-s*v.y,translation.y+s*v.x+c*v.y});
+        push({translation.x+c*v.x-s*v.y,translation.y+s*v.x+c*v.y});
     }
+    struct Span {
+        const D2* first; std::size_t count;
+        const D2* begin() const { return first; }
+        const D2* end() const { return first + count; }
+        const D2& front() const { return *first; }
+    } const relative{relativeData ? relativeData : heapRelative.data(), relativeCount};
     CollisionManifold result; result.A=a; result.B=b;
     // Inflating the circle by the margin turns SAT overlap into overlap plus
     // margin, so speculative separations come out of the same axis tests.
