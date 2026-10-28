@@ -674,7 +674,8 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
 
     // An exact SweepAndPrune (not a subclass, which may override the virtual)
     // can take the precomputed bounds.
-    auto* sweep = typeid(*broadPhase) == typeid(SweepAndPrune) ? static_cast<SweepAndPrune*>(broadPhase.get()) : nullptr;
+    IBroadPhase& phase = *broadPhase;
+    auto* sweep = typeid(phase) == typeid(SweepAndPrune) ? static_cast<SweepAndPrune*>(&phase) : nullptr;
     potentialCollisions = sweep ? sweep->FindSpeculativeCollisions(bodies, margins, knownBounds, knownBound)
                                 : broadPhase->FindSpeculativeCollisions(bodies, margins);
     statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
