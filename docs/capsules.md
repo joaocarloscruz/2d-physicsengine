@@ -98,9 +98,14 @@ standalone relative-motion sweeps. No capsule rotates during a sweep.
 ## Other modules
 
 - **Fluids.** `SampleRigidBodyBoundaries`, `CoupledFluidSimulation` and
-  `FluidRigidCoupler::couple` reject capsule bodies with
-  `std::invalid_argument` before changing particles or bodies. Capsules add no
-  SPH boundary sampling or coupling accuracy.
+  `FluidRigidCoupler::couple` accept capsule bodies, so capsules float, sink
+  and are pushed and turned by WCSPH fluid like circles and polygons. Boundary
+  samples sit on inset capsule outlines (radius `r - k * spacing`, evenly spaced
+  by arc length, `ceil(perimeter / spacing)` per layer) down to the spine; the
+  coupler's closest point, normal and signed distance are the circle's about
+  the closest spine point. A zero half-length capsule samples and couples bit
+  for bit like the circle of the same radius. See
+  [fluid-rigid coupling](fluid-rigid-coupling.md#capsule-bodies).
 - **Export.** World JSON writes
   `{"type":"capsule","halfLength":h,"radius":r}`. Export now rejects unknown
   shape tags instead of reinterpreting them as polygons.
