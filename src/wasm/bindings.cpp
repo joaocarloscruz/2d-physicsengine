@@ -196,7 +196,9 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
     class_<IJoint>("Joint")
         .smart_ptr<JointPtr>("JointPtr")
         .function("getAnchorA", &IJoint::getAnchorA)
-        .function("getAnchorB", &IJoint::getAnchorB);
+        .function("getAnchorB", &IJoint::getAnchorB)
+        .function("setCollideConnected", &IJoint::setCollideConnected)
+        .function("getCollideConnected", &IJoint::getCollideConnected);
     class_<PrismaticJoint, base<IJoint>>("PrismaticJoint")
         .smart_ptr<std::shared_ptr<PrismaticJoint>>("PrismaticJointPtr")
         .function("getAxis", &PrismaticJoint::getAxis)

@@ -1351,6 +1351,10 @@ async function main() {
     const hinge = physics.createRevoluteJoint(support, rotor, {x: 0, y: 0}, {x: 0, y: 0});
     assert.equal(hinge.isMotorEnabled(), false);
     assert.equal(hinge.areLimitsEnabled(), false);
+    assert.equal(hinge.getCollideConnected(), false);
+    hinge.setCollideConnected(true);
+    assert.equal(hinge.getCollideConnected(), true);
+    hinge.setCollideConnected(false);
     hinge.setMotor(true, 10, 2);
     assert.equal(hinge.getMotorSpeed(), 10);
     assert.equal(hinge.getMaxMotorTorque(), 2);

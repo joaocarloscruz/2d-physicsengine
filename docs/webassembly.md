@@ -1001,7 +1001,9 @@ removes all bodies and joints.
 
 `createDistanceJoint(a, b, length, localAnchorA, localAnchorB)` and
 `createRevoluteJoint(a, b, localAnchorA, localAnchorB)` return shared joint handles
-for `engine.addJoint`/`removeJoint`. CCD and waking use `body.setCcdEnabled`,
+for `engine.addJoint`/`removeJoint`. Jointed bodies do not collide with each
+other unless `joint.setCollideConnected(true)` is called; `getCollideConnected()`
+reads the setting. CCD and waking use `body.setCcdEnabled`,
 `isCcdEnabled`, `wake` and `isAwake`. Sleeping is configured through the object
 returned by `getSimulationConfig`. Use that complete object when changing fields.
 `engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.
