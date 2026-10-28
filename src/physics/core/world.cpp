@@ -45,6 +45,15 @@ namespace {
             manifold.normal = manifold.normal * -1.0f;
         }
     }
+
+    // Ends are collected from a hash map, whose order depends on the body
+    // ids; sorting them by pair key makes the order depend only on the pairs.
+    template <class Events>
+    void SortByPair(Events& events, std::size_t first) {
+        std::sort(events.begin() + static_cast<std::ptrdiff_t>(first), events.end(), [](const auto& x, const auto& y) {
+            return std::tie(x.event.bodyAId, x.event.bodyBId) < std::tie(y.event.bodyAId, y.event.bodyBId);
+        });
+    }
 }
 
 // Per-step working vectors kept between steps, so their (large) buffers are
@@ -593,6 +602,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
     touchingCount = touchingNow;
     statistics.activeContactCount = static_cast<std::uint32_t>(touchingCount);
     lastStepStatistics = statistics;
+    const std::size_t firstEnd = pendingEvents.size();
     for (auto it = contactEvents.begin(); it != contactEvents.end();) {
         if (it->second.activeStep != stamp) {
             it->second.phase = EventPhase::End;
@@ -602,6 +612,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             ++it;
         }
     }
+    SortByPair(pendingEvents, firstEnd);
     dispatchEvents();
     return integratedPlan;
 }
@@ -1165,6 +1176,7 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
 }
 
 void World::endContacts(std::uint64_t bodyId) {
+    const std::size_t firstEnd = pendingEvents.size();
     for (auto it = contactEvents.begin(); it != contactEvents.end();) {
         if (it->first.contains(bodyId)) {
             it->second.bodyA->Wake(); it->second.bodyB->Wake();
@@ -1175,6 +1187,7 @@ void World::endContacts(std::uint64_t bodyId) {
             ++it;
         }
     }
+    SortByPair(pendingEvents, firstEnd);
 }
 
 void World::dispatchEvents() {
