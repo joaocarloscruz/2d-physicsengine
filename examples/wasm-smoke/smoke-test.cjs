@@ -136,6 +136,83 @@ function testCapsules(physics) {
     engine.delete();
 }
 
+function testSimulationConfig(physics) {
+    const engine = new physics.Engine();
+    const defaults = engine.getSimulationConfig();
+    // Defaults match include/physics/core/simulation_config.h.
+    assert.equal(defaults.solverSubsteps, 4);
+    assert.equal(defaults.contactHertz, 60);
+    assert.equal(defaults.contactDampingRatio, 2);
+    assert.equal(defaults.contactPushSpeed, 3);
+    assert.equal(defaults.enableSpeculativeContacts, true);
+    assert.equal(defaults.enableFrictionDisplacementCorrection, false);
+    assert.equal(defaults.enableSleeping, false);
+    assert.equal(defaults.maximumCcdImpacts, 32);
+
+    const changed = {
+        solverSubsteps: 7, contactHertz: 30.5, contactDampingRatio: 0, contactPushSpeed: 1.25,
+        enableSpeculativeContacts: false, enableFrictionDisplacementCorrection: true,
+    };
+    for (const [key, value] of Object.entries(changed)) {
+        engine.setSimulationConfig({...defaults, [key]: value});
+        const stored = engine.getSimulationConfig();
+        assert.equal(stored[key], value, key);
+        assert.deepEqual({...stored, [key]: defaults[key]}, defaults, `${key} changed another field`);
+        engine.setSimulationConfig(defaults);
+    }
+    engine.setSimulationConfig({...defaults, ...changed});
+    assert.deepEqual(engine.getSimulationConfig(), {...defaults, ...changed});
+    engine.setSimulationConfig({...defaults, solverSubsteps: 1});
+    engine.setSimulationConfig({...defaults, solverSubsteps: 64});
+    assert.equal(engine.getSimulationConfig().solverSubsteps, 64);
+    engine.setSimulationConfig(defaults);
+
+    const invalid = [
+        ["solverSubsteps", [0, 65, 2.5, -1, NaN, Infinity, 2 ** 31, 2 ** 32 + 4]],
+        ["contactHertz", [NaN, Infinity, 0, -1]],
+        ["contactDampingRatio", [-0.5, NaN, Infinity]],
+        ["contactPushSpeed", [0, -1, NaN, Infinity]],
+    ];
+    for (const [key, values] of invalid)
+        for (const value of values) {
+            assert.throws(() => engine.setSimulationConfig({...defaults, [key]: value}), undefined, `${key}=${value}`);
+            assert.deepEqual(engine.getSimulationConfig(), defaults, `${key}=${value} changed the config`);
+        }
+    // A missing field is rejected by the value object and also leaves the config alone.
+    const {contactHertz, ...partial} = defaults;
+    assert.throws(() => engine.setSimulationConfig(partial));
+    assert.deepEqual(engine.getSimulationConfig(), defaults);
+    engine.delete();
+
+    // A box tower settling on a floor: the soft substepped solve and the
+    // speculative step order each change the result.
+    const material = {density: 1, restitution: 0, staticFriction: 0.6, dynamicFriction: 0.4};
+    const settle = (overrides) => {
+        const world = new physics.Engine();
+        world.setSimulationConfig({...world.getSimulationConfig(), ...overrides});
+        const floorShape = physics.Polygon.makeBox(20, 1), boxShape = physics.Polygon.makeBox(1, 1);
+        const bodies = [physics.createRigidBody(floorShape, material, {x: 0, y: 0}, true)];
+        for (let i = 0; i < 3; ++i)
+            bodies.push(physics.createRigidBody(boxShape, material, {x: 0.05 * i, y: 1.1 + 1.05 * i}, false));
+        floorShape.delete(); boxShape.delete();
+        for (const body of bodies) world.addBody(body);
+        for (let i = 0; i < 90; ++i) {
+            for (const body of bodies.slice(1)) body.applyForce({x: 0, y: -9.81 * body.getMass()});
+            world.step(1 / 60);
+        }
+        const result = bodies.slice(1).map((body) => [body.getPosition().x, body.getPosition().y]);
+        for (const body of bodies) body.delete();
+        world.delete();
+        return result;
+    };
+    const base = settle({});
+    assert.deepEqual(settle({}), base, "the scene is deterministic");
+    assert.deepEqual(settle({solverSubsteps: 4, enableSpeculativeContacts: true}), base);
+    assert.notDeepEqual(settle({solverSubsteps: 1}), base, "solverSubsteps changes the result");
+    assert.notDeepEqual(settle({enableSpeculativeContacts: false}), base, "enableSpeculativeContacts changes the result");
+    for (const [y, expected] of base.map(([, y], i) => [y, 1.0 + i])) assert.ok(Math.abs(y - expected) < 0.1, `tower box at ${y}`);
+}
+
 function testScalarTransport(physics) {
     const near=(a,b,t=4e-14)=>assert.ok(Math.abs(a-b)<=t, `${a} vs ${b}, tolerance ${t}`);
     const nearArray=(a,b,t)=>{assert.equal(a.length,b.length);a.forEach((v,k)=>near(v,b[k],t));};
@@ -1030,6 +1107,7 @@ async function main() {
     require("./incompressible-tests.cjs").smoke(physics);
     testQueries(physics);
     testCapsules(physics);
+    testSimulationConfig(physics);
     const integerEngine = new physics.Engine();
     const integerConfig = integerEngine.getSimulationConfig();
     for (const key of ["maxSubstepsPerAdvance", "solverIterations", "maximumCcdImpacts"])

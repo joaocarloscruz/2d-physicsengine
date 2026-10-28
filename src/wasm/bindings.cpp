@@ -24,7 +24,7 @@ namespace {
 // Keep integer input fields as JS doubles until the complete native call can
 // validate them. Embind otherwise truncates/wraps before native validation.
 struct SimulationConfigInput : SimulationConfig {
-    double substepCount = 8, iterationCount = 10, ccdCount = 32;
+    double substepCount = 8, iterationCount = 10, ccdCount = 32, solverSubstepCount = 4;
 };
 int SignedCount(double value) {
     const auto count = Wasm::Count(value);
@@ -37,6 +37,7 @@ void SetSimulationConfig(Engine& engine, const SimulationConfigInput& input) {
     native.maxSubstepsPerAdvance = SignedCount(input.substepCount);
     native.solverIterations = SignedCount(input.iterationCount);
     native.maximumCcdImpacts = SignedCount(input.ccdCount);
+    native.solverSubsteps = SignedCount(input.solverSubstepCount);
     engine.setSimulationConfig(native);
 }
 SimulationConfigInput GetSimulationConfig(const Engine& engine) {
@@ -46,6 +47,7 @@ SimulationConfigInput GetSimulationConfig(const Engine& engine) {
     result.substepCount = native.maxSubstepsPerAdvance;
     result.iterationCount = native.solverIterations;
     result.ccdCount = native.maximumCcdImpacts;
+    result.solverSubstepCount = native.solverSubsteps;
     return result;
 }
 
@@ -140,7 +142,13 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("enableSleeping", &SimulationConfig::enableSleeping)
         .field("sleepEnergyThreshold", &SimulationConfig::sleepEnergyThreshold)
         .field("sleepTimeThreshold", &SimulationConfig::sleepTimeThreshold)
-        .field("maximumCcdImpacts", &SimulationConfigInput::ccdCount);
+        .field("maximumCcdImpacts", &SimulationConfigInput::ccdCount)
+        .field("enableFrictionDisplacementCorrection", &SimulationConfig::enableFrictionDisplacementCorrection)
+        .field("enableSpeculativeContacts", &SimulationConfig::enableSpeculativeContacts)
+        .field("solverSubsteps", &SimulationConfigInput::solverSubstepCount)
+        .field("contactHertz", &SimulationConfig::contactHertz)
+        .field("contactDampingRatio", &SimulationConfig::contactDampingRatio)
+        .field("contactPushSpeed", &SimulationConfig::contactPushSpeed);
 
     value_object<FixedStepResult>("FixedStepResult")
         .field("stepsPerformed", &FixedStepResult::stepsPerformed)
