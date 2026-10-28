@@ -73,6 +73,18 @@ notifies at most once per World step even if multiple impacts occur. Transient
 impacts begin a lifecycle even if the bodies have already separated by step end;
 they end on the following step if contact does not recur.
 
+The sweep uses each body's actual displacement over the step, measured after the
+velocity solve, so velocity added by joints, forces, impulses or contacts is
+swept, including speed beyond `maxLinearSpeed` that a joint adds after the clamp.
+Position correction (joint and contact position solves, and the legacy
+friction displacement) runs after the sweep, so it is swept separately: each
+body's correction starts from its swept pose and stops at the first static body
+of a CCD pair it would move into. A correction that separates from or slides
+along a surface is kept whole; one that would enter a static body is cut at
+contact (dropped entirely when the body already touches it), so a joint pulling a CCD circle toward a body beyond a wall leaves it
+against the wall. This second sweep covers static targets only; corrections
+between two moving bodies are not swept.
+
 `maximumCcdImpacts` bounds per-step work (default 32). Exhaustion sets
 `ccdIterationLimitReached` and conservatively stops position advancement at the
 last safe time. `ccdImpactCount` reports actual resolved impacts. Sweeps currently
