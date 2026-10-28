@@ -408,7 +408,10 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             std::isfinite(p.body->inverseInertia) && p.body->inverseInertia > 0;
         if (integratedPlan && p.closedContact) {
             const auto &m = p.manifold;
+            // A sensor pair is never a contact, so a plan that closes one
+            // falls back to the regular step.
             integratedPlan = m.hasCollision && m.A && m.B && m.A != m.B && member(m.A) &&
+                             !m.A->IsSensor() && !m.B->IsSensor() &&
                              member(m.B) && (m.A == p.body || m.B == p.body) &&
                              m.contactCount == 2 && p.reaction.contactCount == 2 &&
                              finite(m.normal) && finite(m.contactPoint) && m.normal.magnitudeSquared() == 1 &&
@@ -1134,7 +1137,8 @@ void World::validateCcdSupport() const {
         for (std::size_t j=0; j<bodies.size(); ++j) {
             if (j == i) continue;
             const auto& a = *bodies[i]; const auto& b = *bodies[j];
-            if ((a.IsStatic() && b.IsStatic()) || !a.CanCollideWith(b)) continue;
+            // Sensor pairs are never swept, so any shape pairing is fine.
+            if ((a.IsStatic() && b.IsStatic()) || !a.CanCollideWith(b) || a.IsSensor() || b.IsSensor()) continue;
             if ((a.shape->type == ShapeType::CAPSULE || b.shape->type == ShapeType::CAPSULE)
                 && !SupportsCapsuleCcd(a, b))
                 throw std::invalid_argument(
