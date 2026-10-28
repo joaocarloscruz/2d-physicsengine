@@ -167,6 +167,8 @@ void SynchronizeCache(const CollisionManifold &m, ContactImpulseCache &cache) {
     const auto previous = cache;
     bool matched[2]{};
     cache = ContactImpulseCache{};
+    cache.impulseSubsteps = previous.impulseSubsteps;
+    cache.rigidSolve = previous.rigidSolve;
     cache.contactCount = EffectiveContactCount(m);
     for (std::uint8_t i = 0; i < cache.contactCount; ++i) {
         const auto p = EffectiveContact(m, i);
@@ -366,6 +368,8 @@ ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &
         p.impulse = cache.contacts[i].impulse;
         const auto ra = DVector(contact.position) - DVector(m.A->position),
                    rb = DVector(contact.position) - DVector(m.B->position);
+        p.leverA[0] = ra.x; p.leverA[1] = ra.y;
+        p.leverB[0] = rb.x; p.leverB[1] = rb.y;
         p.normalMass = EffectiveMass(m.A, m.B, ra, rb, c.normal);
         p.tangentMass = EffectiveMass(m.A, m.B, ra, rb, c.tangent);
         const double normalVelocity =
@@ -523,6 +527,203 @@ bool CollisionResolver::SolvePosition(ContactConstraint &c) {
         ApplyPair(c.bodyA, c.bodyB, ra, rb, DVector(c.normal) * (-mass * correction), true);
     }
     return minimumSeparation >= -3.0 * c.penetrationSlop;
+}
+CollisionResolver::Softness CollisionResolver::MakeSoftness(double hertz, double dampingRatio,
+                                                            double substep) {
+    if (!(hertz > 0) || !(substep > 0))
+        return {};
+    // Box2D v3's soft constraint: a spring of this frequency and damping
+    // ratio, integrated implicitly over the substep.
+    const double omega = 2 * 3.14159265358979323846 * hertz;
+    const double a1 = 2 * dampingRatio + substep * omega;
+    const double a2 = substep * omega * a1;
+    const double a3 = 1 / (1 + a2);
+    return {omega / a1, a2 * a3, a3};
+}
+namespace {
+DVector LeverA(const ContactConstraintPoint &p) { return {p.leverA[0], p.leverA[1]}; }
+DVector LeverB(const ContactConstraintPoint &p) { return {p.leverB[0], p.leverB[1]}; }
+DVector LeverVelocity(const RigidBody *body, DVector r) {
+    return DVector(body->velocity) +
+           DVector{-double(body->angularVelocity) * r.y, double(body->angularVelocity) * r.x};
+}
+} // namespace
+bool CollisionResolver::UpdateRigidSolve(ContactConstraint &c, const Softness &soft,
+                                         int substeps) {
+    if (!c.cache)
+        return false;
+    bool &rigid = c.cache->rigidSolve;
+    if (!(soft.biasRate > 0) || substeps <= 1)
+        return rigid;
+    // A soft row carrying impulse lambda per substep settles where its bias
+    // balances the relaxed impulse: overlap lambda * impulseScale /
+    // (normalMass * massScale * biasRate).
+    const double perSubstep = double(c.cache->impulseSubsteps) / substeps;
+    double sag = 0;
+    for (std::uint8_t i = 0; i < c.pointCount; ++i)
+        if (c.points[i].normalMass > 0)
+            sag = std::max(sag, c.points[i].impulse.normal * perSubstep * soft.impulseScale /
+                                    (c.points[i].normalMass * soft.massScale * soft.biasRate));
+    // The sag follows the load, not the body size, and a stack of small
+    // bodies buckles once it is a sizable part of their size: the bound is
+    // also 1% of the smaller body's size (the square root of its area).
+    double limit = c.penetrationSlop;
+    for (const RigidBody *body : {c.bodyA, c.bodyB})
+        if (!body->IsStatic())
+            limit = std::min(limit, 0.01 * std::sqrt(std::max(double(body->shape->GetArea()), 0.0)));
+    if (!rigid && sag > 1.25 * limit)
+        rigid = true;
+    else if (rigid && sag < 0.75 * limit)
+        rigid = false;
+    return rigid;
+}
+void CollisionResolver::MatchImpulseSubsteps(ContactConstraint &c, int substeps) {
+    if (!c.cache || substeps < 1 || c.cache->impulseSubsteps == substeps)
+        return;
+    const double scale = double(c.cache->impulseSubsteps) / substeps;
+    for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+        auto &p = c.points[i];
+        PublishImpulse(c, p, i, {Checked(p.impulse.normal * scale), Checked(p.impulse.tangent * scale)});
+    }
+    c.cache->impulseSubsteps = static_cast<std::uint8_t>(substeps);
+}
+void CollisionResolver::WarmStartSubstep(ContactConstraint &c) {
+    if (!c.bodyA || !c.bodyB)
+        return;
+    ValidateBody(*c.bodyA);
+    ValidateBody(*c.bodyB);
+    if (c.pointCount == 2) {
+        // One combined update, as in WarmStart: applying the two points one
+        // after the other rounds differently and tilts a symmetric stack.
+        DVector sum;
+        double torqueA = 0, torqueB = 0;
+        for (std::uint8_t i = 0; i < 2; ++i) {
+            const auto &p = c.points[i];
+            ValidateImpulse(p.impulse);
+            const auto impulse = DVector(c.normal) * p.impulse.normal + DVector(c.tangent) * p.impulse.tangent;
+            sum = sum + impulse;
+            torqueA += LeverA(p).cross(impulse);
+            torqueB += LeverB(p).cross(impulse);
+        }
+        ApplyCombinedVelocity(c.bodyA, c.bodyB, sum, torqueA, torqueB, false);
+        return;
+    }
+    for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+        const auto &p = c.points[i];
+        ValidateImpulse(p.impulse);
+        if (p.impulse.normal == 0 && p.impulse.tangent == 0)
+            continue;
+        ApplyPair(c.bodyA, c.bodyB, LeverA(p), LeverB(p),
+                  DVector(c.normal) * p.impulse.normal + DVector(c.tangent) * p.impulse.tangent,
+                  false, false);
+    }
+}
+void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep,
+                                     const Softness &soft, double maxPushSpeed, bool useBias,
+                                     bool gapRows) {
+    if (!c.bodyA || !c.bodyB)
+        return;
+    RigidBody *a = c.bodyA, *b = c.bodyB;
+    ValidateBody(*a);
+    ValidateBody(*b);
+    const DVector n = c.normal, t = c.tangent;
+    double biases[2]{}, massScales[2]{1, 1}, impulseScales[2]{}, normalVelocities[2]{};
+    bool skip[2]{};
+    for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+        auto &p = c.points[i];
+        ValidateImpulse(p.impulse);
+        // Separation at the current poses; the normal stays the prepared one.
+        const double separation = Checked(
+            (ToWorldPoint(b, p.localAnchorB) - ToWorldPoint(a, p.localAnchorA)).dot(n) -
+            p.penetration);
+        if (separation > 0) {
+            skip[i] = !gapRows;
+            biases[i] = separation * inverseSubstep; // the gap may close this substep, no further
+        } else if (useBias && separation < 0) {
+            // Any overlap, not only overlap beyond the slop: a dead band would
+            // leave the relative rotation of stacked boxes free.
+            biases[i] = std::max(soft.biasRate * separation, -maxPushSpeed);
+            massScales[i] = soft.massScale;
+            impulseScales[i] = soft.impulseScale;
+        }
+    }
+    if (c.pointCount == 2 && !skip[0] && !skip[1]) {
+        // Both normal rows together: the 2x2 LCP x >= 0, w = (K + G) x + q >= 0,
+        // x.w = 0, where G holds each soft row's compliance K_ii * impulseScale /
+        // massScale and q = v_n + bias - K * accumulated.
+        double ca[2], cb[2], old[2], q[2], gamma[2];
+        for (int i = 0; i < 2; ++i) {
+            const auto &p = c.points[i];
+            ca[i] = LeverA(p).cross(n);
+            cb[i] = LeverB(p).cross(n);
+            old[i] = p.impulse.normal;
+            normalVelocities[i] = Checked((LeverVelocity(b, LeverB(p)) - LeverVelocity(a, LeverA(p))).dot(n));
+        }
+        const double m = double(a->inverseMass) + b->inverseMass, ia = a->inverseInertia, ib = b->inverseInertia;
+        const double k11 = Checked(m + ia * ca[0] * ca[0] + ib * cb[0] * cb[0]),
+                     k22 = Checked(m + ia * ca[1] * ca[1] + ib * cb[1] * cb[1]),
+                     k12 = Checked(m + ia * ca[0] * ca[1] + ib * cb[0] * cb[1]);
+        gamma[0] = k11 * impulseScales[0] / massScales[0];
+        gamma[1] = k22 * impulseScales[1] / massScales[1];
+        const double a11 = k11 + gamma[0], a22 = k22 + gamma[1];
+        for (int i = 0; i < 2; ++i) q[i] = normalVelocities[i] + biases[i];
+        q[0] = Checked(q[0] - (k11 * old[0] + k12 * old[1]));
+        q[1] = Checked(q[1] - (k12 * old[0] + k22 * old[1]));
+        const double deltaA = ca[0] - ca[1], deltaB = cb[0] - cb[1], cross = ca[0] * cb[1] - ca[1] * cb[0];
+        const double determinant = Checked(m * ia * deltaA * deltaA + m * ib * deltaB * deltaB + ia * ib * cross * cross
+            + gamma[0] * k22 + gamma[1] * k11 + gamma[0] * gamma[1]);
+        double x[2]{};
+        bool solved = false;
+        if (determinant > 1e-12 * a11 * a22) {
+            x[0] = (-a22 * q[0] + k12 * q[1]) / determinant;
+            x[1] = (k12 * q[0] - a11 * q[1]) / determinant;
+            solved = x[0] >= 0 && x[1] >= 0;
+        }
+        if (!solved) {
+            x[0] = std::max(-q[0] / a11, 0.0); x[1] = 0;
+            if (x[0] > 0 && k12 * x[0] + q[1] >= 0) solved = true;
+        }
+        if (!solved) {
+            x[0] = 0; x[1] = std::max(-q[1] / a22, 0.0);
+            if (x[1] > 0 && k12 * x[1] + q[0] >= 0) solved = true;
+        }
+        if (!solved) { x[0] = 0; x[1] = 0; }
+        const double d1 = Checked(x[0] - old[0]), d2 = Checked(x[1] - old[1]);
+        ApplyCombinedVelocity(a, b, n * Checked(d1 + d2), Checked(ca[0] * d1 + ca[1] * d2),
+                              Checked(cb[0] * d1 + cb[1] * d2), false);
+        for (std::uint8_t i = 0; i < 2; ++i) {
+            PublishImpulse(c, c.points[i], i, {x[i], c.points[i].impulse.tangent});
+            c.points[i].maxNormalImpulse = std::max(c.points[i].maxNormalImpulse, x[i]);
+        }
+    } else for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+        if (skip[i]) continue;
+        auto &p = c.points[i];
+        const DVector ra = LeverA(p), rb = LeverB(p);
+        const double bias = biases[i], massScale = massScales[i], impulseScale = impulseScales[i];
+        const double normalVelocity = Checked((LeverVelocity(b, rb) - LeverVelocity(a, ra)).dot(n));
+        const double change = Checked(-p.normalMass * massScale * (normalVelocity + bias) -
+                                      impulseScale * p.impulse.normal);
+        const double total = std::max(Checked(p.impulse.normal + change), 0.0);
+        ApplyPair(a, b, ra, rb, n * (total - p.impulse.normal), false, false);
+        PublishImpulse(c, p, i, {total, p.impulse.tangent});
+        p.maxNormalImpulse = std::max(p.maxNormalImpulse, total);
+    }
+    for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+        auto &p = c.points[i];
+        const DVector ra = LeverA(p), rb = LeverB(p);
+        const double tangentVelocity = Checked((LeverVelocity(b, rb) - LeverVelocity(a, ra)).dot(t));
+        const double maximumStatic = Checked(p.impulse.normal * c.staticFriction);
+        if (!(std::abs(tangentVelocity) > c.velocityTolerance) && std::abs(p.impulse.tangent) <= maximumStatic)
+            continue;
+        const double candidate = Checked(p.impulse.tangent - p.tangentMass * tangentVelocity);
+        double tangent = candidate;
+        if (std::abs(candidate) > maximumStatic) {
+            const double maximumDynamic = Checked(p.impulse.normal * c.dynamicFriction);
+            tangent = std::clamp(candidate, -maximumDynamic, maximumDynamic);
+        }
+        ApplyPair(a, b, ra, rb, t * (tangent - p.impulse.tangent), false, false);
+        PublishImpulse(c, p, i, {p.impulse.normal, tangent});
+    }
 }
 void CollisionResolver::WarmStart(const CollisionManifold &m, const ContactImpulse &j) {
     if (!m.hasCollision || !m.A || !m.B)

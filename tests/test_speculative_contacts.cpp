@@ -3,6 +3,8 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include "physics/core/collisions/broad_phase/uniform_grid.h"
 #include <cmath>
+#include <cstring>
+#include <vector>
 #include <memory>
 
 using namespace PhysicsEngine;
@@ -334,4 +336,84 @@ TEST_CASE("A tall aligned tower stands", "[speculative][stacking]") {
     for (int i = 0; i < 25 * 60; ++i) world.step();
     REQUIRE(std::abs(top->position.x) < 0.01f);
     REQUIRE(std::abs(top->orientation) < 0.005f);
+}
+
+namespace {
+// A tower of unit boxes offset by +-1 cm and tilted by +-0.005 rad, dropped
+// from 1 mm gaps (benchmarks/physics_scenarios.cpp, TallStack).
+std::vector<RigidBodyPtr> MisalignedTower(World& world, int count) {
+    world.addBody(Body(Polygon::MakeBox(200, 2), {0, -1}, true, Material{1, 0.2f, 0.6f, 0.4f}));
+    std::vector<RigidBodyPtr> boxes;
+    for (int i = 0; i < count; ++i) {
+        auto box = Body(Polygon::MakeBox(1, 1), {0.01f * float((i * 7) % 3 - 1), 0.5f + 1.001f * i}, false,
+                        Material{1, 0.2f, 0.6f, 0.4f});
+        box->SetOrientation(0.005f * float((i * 5) % 3 - 1));
+        world.addBody(box);
+        boxes.push_back(box);
+    }
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+    return boxes;
+}
+}
+
+TEST_CASE("A tall misaligned tower stands at 60 Hz", "[speculative][stacking][substeps]") {
+    // The single-pass solve let this tower sway and topple after ~12 s.
+    World world;
+    const auto boxes = MisalignedTower(world, 20);
+    for (int i = 0; i < 2 * 60; ++i) world.step();
+    std::vector<Vector2> settled;
+    for (const auto& box : boxes) settled.push_back(box->position);
+    double drift = 0;
+    for (int i = 0; i < 10 * 60; ++i) {
+        world.step();
+        for (std::size_t k = 0; k < boxes.size(); ++k)
+            drift = std::max(drift, double((boxes[k]->position - settled[k]).magnitude()));
+    }
+    REQUIRE(drift < 0.02);
+    REQUIRE(std::abs(boxes.back()->orientation) < 0.01f);
+}
+
+TEST_CASE("Substepped steps are bit-identical across runs", "[speculative][substeps][determinism]") {
+    const auto run = [] {
+        World world;
+        const auto boxes = MisalignedTower(world, 8);
+        auto ball = Body(Circle(0.25f), {3, 2}, false, Material{1, 0.8f, 0.3f, 0.2f});
+        ball->SetVelocity({-2, 0});
+        world.addBody(ball);
+        for (int i = 0; i < 180; ++i) world.step();
+        std::vector<float> state;
+        for (const auto& body : world.getBodies())
+            state.insert(state.end(), {body->position.x, body->position.y, body->orientation,
+                                       body->velocity.x, body->velocity.y, body->angularVelocity});
+        return state;
+    };
+    const auto first = run(), second = run();
+    REQUIRE(first.size() == second.size());
+    REQUIRE(std::memcmp(first.data(), second.data(), first.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("Small boxes keep the rigid solve and stay upright", "[speculative][substeps][scale]") {
+    // Under the soft model a 1 cm stack would sag 0.5 mm per contact, 5% of a
+    // box, and buckle; its contacts take the single rigid solve instead.
+    for (const bool scaledSlop : {false, true}) {
+        SimulationConfig config;
+        if (scaledSlop) {
+            config.penetrationSlop *= 0.01f;
+            config.maxPositionCorrection *= 0.01f;
+        }
+        World world(config);
+        world.addBody(Body(Polygon::MakeBox(200, 2), {0, -1}, true, Material{1, 0.2f, 0.6f, 0.4f}));
+        std::vector<RigidBodyPtr> boxes;
+        for (int i = 0; i < 5; ++i) {
+            boxes.push_back(Body(Polygon::MakeBox(0.01f, 0.01f), {0, 0.01f * (0.5f + i)}, false,
+                                 Material{1, 0.2f, 0.6f, 0.4f}));
+            world.addBody(boxes.back());
+        }
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        for (int i = 0; i < 6 * 60; ++i) world.step();
+        for (const auto& box : boxes) {
+            REQUIRE(std::abs(box->orientation) < 0.01f);
+            REQUIRE(std::abs(box->position.x) < 1e-4f);
+        }
+    }
 }

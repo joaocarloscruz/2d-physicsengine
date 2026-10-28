@@ -58,6 +58,18 @@ void SimulationConfig::Validate() const {
             "Maximum position correction must be positive and finite."
         );
     }
+    if (solverSubsteps < 1 || solverSubsteps > 64) {
+        throw std::invalid_argument("Solver substeps must be between 1 and 64.");
+    }
+    if (!std::isfinite(contactHertz) || contactHertz <= 0.0f) {
+        throw std::invalid_argument("Contact hertz must be positive and finite.");
+    }
+    if (!std::isfinite(contactDampingRatio) || contactDampingRatio < 0.0f) {
+        throw std::invalid_argument("Contact damping ratio must be finite and non-negative.");
+    }
+    if (!std::isfinite(contactPushSpeed) || contactPushSpeed <= 0.0f) {
+        throw std::invalid_argument("Contact push speed must be positive and finite.");
+    }
     if (enableLinearVelocityLimit
         && (!std::isfinite(maxLinearSpeed) || maxLinearSpeed <= 0.0f)) {
         throw std::invalid_argument(

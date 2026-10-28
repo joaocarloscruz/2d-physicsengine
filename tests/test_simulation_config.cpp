@@ -41,7 +41,53 @@ TEST_CASE("SimulationConfig preserves the current numerical defaults", "[simulat
     REQUIRE(config.maxLinearSpeed == Catch::Approx(200.0f));
     REQUIRE(config.enableAngularVelocityLimit);
     REQUIRE(config.maxAngularSpeed == Catch::Approx(30.0f));
+    REQUIRE(config.solverSubsteps == 4);
+    REQUIRE(config.contactHertz == Catch::Approx(60.0f));
+    REQUIRE(config.contactDampingRatio == Catch::Approx(2.0f));
+    REQUIRE(config.contactPushSpeed == Catch::Approx(3.0f));
     REQUIRE_NOTHROW(config.Validate());
+}
+
+TEST_CASE("SimulationConfig rejects invalid substep and soft contact settings", "[simulation_config][validation]") {
+    SimulationConfig config;
+    SECTION("substeps must be between 1 and 64") {
+        config.solverSubsteps = 0;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.solverSubsteps = 65;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.solverSubsteps = 1;
+        REQUIRE_NOTHROW(config.Validate());
+        config.solverSubsteps = 64;
+        REQUIRE_NOTHROW(config.Validate());
+    }
+    SECTION("contact hertz must be positive and finite") {
+        config.contactHertz = 0.0f;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.contactHertz = std::numeric_limits<float>::infinity();
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+    }
+    SECTION("contact damping ratio must be finite and non-negative") {
+        config.contactDampingRatio = -1.0f;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.contactDampingRatio = std::numeric_limits<float>::quiet_NaN();
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.contactDampingRatio = 0.0f;
+        REQUIRE_NOTHROW(config.Validate());
+    }
+    SECTION("contact push speed must be positive and finite") {
+        config.contactPushSpeed = 0.0f;
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+        config.contactPushSpeed = std::numeric_limits<float>::infinity();
+        REQUIRE_THROWS_AS(config.Validate(), std::invalid_argument);
+    }
+    SECTION("World rejects an invalid substep count and keeps its config") {
+        World world;
+        SimulationConfig invalid;
+        invalid.solverSubsteps = 0;
+        REQUIRE_THROWS_AS(world.setSimulationConfig(invalid), std::invalid_argument);
+        REQUIRE(world.getSimulationConfig().solverSubsteps == 4);
+        REQUIRE_THROWS_AS(World(invalid), std::invalid_argument);
+    }
 }
 
 TEST_CASE("SimulationConfig rejects invalid numerical settings", "[simulation_config][validation]") {

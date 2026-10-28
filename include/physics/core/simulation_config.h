@@ -36,6 +36,21 @@ struct SimulationConfig {
     // (integrate, detect at the new poses, solve), which lets fast bodies sink
     // up to v * dt before their contact is seen.
     bool enableSpeculativeContacts = true;
+    // Speculative order only. Substeps per step for groups of touching
+    // bodies without joints: each substep integrates velocities, solves the
+    // contacts as soft springs that push overlap out, integrates positions
+    // and relaxes (Box2D v3's soft step). Groups whose contacts would sag
+    // past min(penetrationSlop, 1% of the contact width) under the soft model,
+    // and groups with joints, keep the single rigid solve, as does every group
+    // with 1. In 1..64; solverIterations / solverSubsteps (at least one)
+    // iterations run per substep, plus one relax pass.
+    int solverSubsteps = 4;
+    // Soft contact stiffness, capped at a quarter of the substep rate, and
+    // its damping ratio.
+    float contactHertz = 60.0f;
+    float contactDampingRatio = 2.0f;
+    // Fastest speed (m/s) at which a substep pushes overlapping bodies apart.
+    float contactPushSpeed = 3.0f;
 
     void Validate() const;
 };

@@ -539,6 +539,8 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
                 simulationConfig,
                 true
             ));
+            // Impulses cached by a substepped solve are per substep.
+            CollisionResolver::MatchImpulseSubsteps(constraints.back(), 1);
             if (closed) integratedConstraint = &constraints.back();
             publishContact(key, manifold, pair.first, pair.second, false);
         }
@@ -673,6 +675,19 @@ DPoint WorldAnchor(const RigidBody& body, Vector2 local) {
     return {body.position.x + c * local.x - s * local.y, body.position.y + s * local.x + c * local.y};
 }
 double Cross(DPoint r, DPoint v) { return r.x * v.y - r.y * v.x; }
+// Weight of the trapezoid (half) displacement for a solver velocity change:
+// 1 while the change is no larger than the load over the step, 0 from twice
+// that on, blended in between.
+double ForceLike(double change, double load, double step) {
+    const double scale = step * load;
+    if (change <= scale) return 1.0;
+    return change >= 2 * scale ? 0.0 : 2.0 - change / scale;
+}
+float StateFloat(double value) {
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
+        throw std::overflow_error("RigidBody result exceeds finite float range.");
+    return static_cast<float>(value);
+}
 }
 
 void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
@@ -919,9 +934,127 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
             groups[groupOf(root(dynamicIsland(constraints[j].bodyA, constraints[j].bodyB)))]
                 .contacts.push_back(&constraints[j]);
 
+    // Solve path of each group. With solverSubsteps > 1, a group of contacts
+    // only takes Box2D v3's soft step (substeps with soft contacts and a relax
+    // pass) unless one of its contacts would sag past its tolerance under the
+    // soft model (CollisionResolver::UpdateRigidSolve: small boxes, heavy
+    // loads on a small slop). Those groups, groups with joints (which keep
+    // their one-solve-per-step semantics) and every group when
+    // solverSubsteps is 1 take the rigid single velocity solve.
+    const int substeps = deltaTime > 0 ? config.solverSubsteps : 1;
+    const double substep = dt / substeps;
+    // A soft contact is stable up to about a quarter of the substep rate.
+    const auto softness = substeps > 1
+        ? CollisionResolver::MakeSoftness(std::min(double(config.contactHertz), 0.25 / substep),
+                                          config.contactDampingRatio, substep)
+        : CollisionResolver::Softness{};
+    std::vector<char> groupSubstepped(groups.size(), 0), substepped(bodies.size(), 0);
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        auto& group = groups[g];
+        bool rigid = substeps <= 1 || !group.joints.empty() || group.contacts.empty();
+        for (auto* c : group.contacts)
+            rigid = CollisionResolver::UpdateRigidSolve(*c, softness, substeps) || rigid;
+        groupSubstepped[g] = !rigid;
+        for (auto* c : group.contacts) {
+            CollisionResolver::MatchImpulseSubsteps(*c, rigid ? 1 : substeps);
+            if (!rigid)
+                for (const RigidBody* body : {c->bodyA, c->bodyB})
+                    if (!body->IsStatic()) substepped[bodyIndex(body)] = 1;
+        }
+    }
+    const auto substeppedContact = [&](const ContactConstraint& c) {
+        return substepped[bodyIndex(c.bodyA->IsStatic() ? c.bodyB : c.bodyA)] != 0;
+    };
+
+    if (std::find(groupSubstepped.begin(), groupSubstepped.end(), 1) != groupSubstepped.end()) {
+        // Restitution of points that already overlap at the start of the
+        // step is applied after the substeps, like the speculative bounces.
+        for (std::size_t j = 0; j < constraints.size(); ++j) {
+            const auto& c = constraints[j];
+            if (!solved[j] || !substeppedContact(c)) continue;
+            for (std::uint8_t i = 0; i < c.pointCount; ++i)
+                if (c.points[i].penetration >= 0 && c.points[i].velocityBias > 0)
+                    bounces[j][i] = c.points[i].velocityBias;
+        }
+        // Each substep integrates velocities, warm-starts the contacts and
+        // solves them with a soft push-out of overlap, integrates positions,
+        // then relaxes (rigid rows, no push-out) so that the push-out leaves
+        // no velocity behind. The contacts keep the start-of-step manifold;
+        // each row measures its separation at the current poses.
+        const double inverseSubstep = 1 / substep;
+        const int iterations = std::max(1, config.solverIterations / substeps);
+        std::vector<RigidBody::StepStart> sub(bodies.size());
+        for (std::size_t i = 0; i < bodies.size(); ++i) {
+            if (!substepped[i]) continue;
+            bodies[i]->velocity = start[i].velocity;
+            bodies[i]->angularVelocity = start[i].angularVelocity;
+        }
+        for (int k = 0; k < substeps; ++k) {
+            for (std::size_t i = 0; i < bodies.size(); ++i) {
+                if (!substepped[i]) continue;
+                auto& body = *bodies[i];
+                auto& u = sub[i];
+                u = start[i];
+                u.velocity = body.velocity;
+                u.angularVelocity = body.angularVelocity;
+                // The same load and limits as IntegrateVelocity, over one substep.
+                double vx = body.velocity.x + u.ax * substep, vy = body.velocity.y + u.ay * substep;
+                double omega = body.angularVelocity + u.alpha * substep;
+                if (config.enableLinearVelocityLimit) {
+                    const double speed = std::hypot(vx, vy);
+                    if (speed > config.maxLinearSpeed) {
+                        const double scale = config.maxLinearSpeed / speed;
+                        vx *= scale;
+                        vy *= scale;
+                    }
+                }
+                if (config.enableAngularVelocityLimit)
+                    omega = std::clamp(omega, -double(config.maxAngularSpeed), double(config.maxAngularSpeed));
+                body.velocity = {StateFloat(vx), StateFloat(vy)};
+                body.angularVelocity = StateFloat(omega);
+                u.predictedVelocity = body.velocity;
+                u.predictedAngularVelocity = body.angularVelocity;
+            }
+            for (std::size_t g = 0; g < groups.size(); ++g) {
+                if (!groupSubstepped[g]) continue;
+                const auto& contacts = groups[g].contacts;
+                for (auto* c : contacts) CollisionResolver::WarmStartSubstep(*c);
+                for (int iter = 0; iter < iterations; ++iter)
+                    for (auto* c : contacts)
+                        CollisionResolver::SolveSubstep(*c, inverseSubstep, softness, config.contactPushSpeed,
+                                                        true, true);
+            }
+            for (std::size_t i = 0; i < bodies.size(); ++i) {
+                if (!substepped[i]) continue;
+                auto& body = *bodies[i];
+                const auto& u = sub[i];
+                const double dvx = double(body.velocity.x) - u.predictedVelocity.x;
+                const double dvy = double(body.velocity.y) - u.predictedVelocity.y;
+                const double dw = double(body.angularVelocity) - u.predictedAngularVelocity;
+                const double linear = ForceLike(std::hypot(dvx + u.ax * substep, dvy + u.ay * substep),
+                                                std::hypot(u.ax, u.ay), substep);
+                const double angular = ForceLike(std::abs(dw + u.alpha * substep), std::abs(u.alpha), substep);
+                body.IntegratePosition(static_cast<float>(substep), u, dvx * (1 - 0.5 * linear),
+                                       dvy * (1 - 0.5 * linear), dw * (1 - 0.5 * angular));
+            }
+            // The last relax leaves open gaps alone: the next step detects
+            // them again, and clamping the approach now would slow a body
+            // before its contact (and its bounce) is reached.
+            const bool gapRows = k + 1 < substeps;
+            for (std::size_t g = 0; g < groups.size(); ++g) {
+                if (!groupSubstepped[g]) continue;
+                for (auto* c : groups[g].contacts)
+                    CollisionResolver::SolveSubstep(*c, inverseSubstep, softness, config.contactPushSpeed,
+                                                    false, gapRows);
+            }
+        }
+    }
+
     // Joints and contacts share one velocity solve, so a chain resting on a
     // box or a ragdoll on the ground gets impulses that satisfy both.
-    for (auto& group : groups) {
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        if (groupSubstepped[g]) continue;
+        auto& group = groups[g];
         for (const auto& joint : group.joints) joint->warmStart(config.warmStartFactor);
         for (auto* c : group.contacts) CollisionResolver::WarmStart(*c);
         for (int iter = 0; iter < config.solverIterations; ++iter) {
@@ -936,31 +1069,31 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     // resting and sliding bodies on their constant-load path with no friction
     // creep. A larger change is an impact and moves the body by all of it,
     // which is what v_n >= -gap/dt assumed. In between the two blend.
+    // Substepped bodies have already moved.
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         if (!integrated[i]) continue;
         auto& body = *bodies[i];
-        const auto& s = start[i];
-        const double dvx = double(body.velocity.x) - s.predictedVelocity.x;
-        const double dvy = double(body.velocity.y) - s.predictedVelocity.y;
-        const double dw = double(body.angularVelocity) - s.predictedAngularVelocity;
-        const auto forceLike = [&](double change, double load) {
-            const double scale = dt * load;
-            if (change <= scale) return 1.0;
-            return change >= 2 * scale ? 0.0 : 2.0 - change / scale;
-        };
-        const double linear = forceLike(std::hypot(dvx + s.ax * dt, dvy + s.ay * dt), std::hypot(s.ax, s.ay));
-        const double angular = forceLike(std::abs(dw + s.alpha * dt), std::abs(s.alpha));
-        body.IntegratePosition(deltaTime, s, dvx * (1 - 0.5 * linear), dvy * (1 - 0.5 * linear),
-                               dw * (1 - 0.5 * angular));
+        if (!substepped[i]) {
+            const auto& s = start[i];
+            const double dvx = double(body.velocity.x) - s.predictedVelocity.x;
+            const double dvy = double(body.velocity.y) - s.predictedVelocity.y;
+            const double dw = double(body.angularVelocity) - s.predictedAngularVelocity;
+            const double linear = ForceLike(std::hypot(dvx + s.ax * dt, dvy + s.ay * dt), std::hypot(s.ax, s.ay), dt);
+            const double angular = ForceLike(std::abs(dw + s.alpha * dt), std::abs(s.alpha), dt);
+            body.IntegratePosition(deltaTime, s, dvx * (1 - 0.5 * linear), dvy * (1 - 0.5 * linear),
+                                   dw * (1 - 0.5 * angular));
+        }
         body.orientation = std::remainder(body.orientation, 6.283185307179586f);
     }
 
     for (std::size_t j = 0; j < constraints.size(); ++j) {
         if (!solved[j]) continue;
         auto& c = constraints[j];
+        const bool substepContact = substeppedContact(c);
         for (std::uint8_t i = 0; i < c.pointCount; ++i) {
             auto& p = c.points[i];
-            if (bounces[j][i] <= 0 || p.impulse.normal <= 0) continue;
+            // A substepped point counts if any substep carried it.
+            if (bounces[j][i] <= 0 || (substepContact ? p.maxNormalImpulse : p.impulse.normal) <= 0) continue;
             const DPoint a = WorldAnchor(*c.bodyA, p.localAnchorA), b = WorldAnchor(*c.bodyB, p.localAnchorB);
             const DPoint point{0.5 * (a.x + b.x), 0.5 * (a.y + b.y)};
             const DPoint rA{point.x - c.bodyA->position.x, point.y - c.bodyA->position.y};
