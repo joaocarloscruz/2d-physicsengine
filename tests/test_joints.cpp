@@ -350,3 +350,20 @@ TEST_CASE("Editing a stop wakes a sleeping articulation", "[joints][limits][slee
     world.step(0.01f);
     REQUIRE(joint->getAngle() == Catch::Approx(0.2));
 }
+
+TEST_CASE("Jointed bodies do not collide unless asked to", "[joints][contacts]") {
+    for (bool collide : {false, true}) {
+        World world;
+        auto a = std::make_shared<RigidBody>(Polygon::MakeBox(1, 1), Material{1, 0}, Vector2{0, 0}, true);
+        auto b = std::make_shared<RigidBody>(Polygon::MakeBox(1, 1), Material{1, 0}, Vector2{0.8f, 0});
+        world.addBody(a); world.addBody(b);
+        auto joint = std::make_shared<RevoluteJoint>(a, b, Vector2{0.4f, 0}, Vector2{-0.4f, 0});
+        REQUIRE_FALSE(joint->getCollideConnected());
+        joint->setCollideConnected(collide);
+        world.addJoint(joint);
+        world.step(1.0f / 60);
+        // Overlapping neighbors would otherwise be pushed apart against the joint.
+        REQUIRE(world.getPersistentContactCount() == (collide ? 1u : 0u));
+        if (!collide) REQUIRE(b->velocity.magnitude() < 1e-6f);
+    }
+}

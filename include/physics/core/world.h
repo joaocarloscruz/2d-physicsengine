@@ -97,6 +97,9 @@ private:
     void stepSpeculative(float deltaTime, SimulationStatistics& statistics, ContactKeySet& touching,
         ContactKeySet& cached, std::vector<CollisionManifold>& impacts);
     void wakeIsland(Island& island);
+    // Broad-phase pair filter: collision bits, then joints that disable
+    // collision between their bodies (jointedPairs, rebuilt every step).
+    bool pairCollides(const CollisionPair& pair) const;
     std::vector<JointPtr> joints;
     enum class EventPhase { Begin, Persist, End };
     struct PendingEvent {
@@ -129,6 +132,7 @@ private:
     // Cached pairs that are actually touching; speculative-only cache entries
     // are excluded from the persistent contact count.
     ContactKeySet touchingContacts;
+    ContactKeySet jointedPairs;
 };
 
 }

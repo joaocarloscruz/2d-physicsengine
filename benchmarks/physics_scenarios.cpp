@@ -53,8 +53,12 @@ RigidBodyPtr Ground(World& w, const Material& m = Mat(1, 0.2f), float width = 20
     return g;
 }
 
-// Jointed pairs collide like any other pair in this engine.
-bool Jointed(World&, const RigidBodyPtr&, const RigidBodyPtr&) { return false; }
+bool Jointed(World& w, const RigidBodyPtr& a, const RigidBodyPtr& b) {
+    for (const auto& j : w.getJoints())
+        if (!j->getCollideConnected() && ((j->getBodyA() == a && j->getBodyB() == b) || (j->getBodyA() == b && j->getBodyB() == a)))
+            return true;
+    return false;
+}
 
 double Penetration(World& w) {
     double worst = 0;

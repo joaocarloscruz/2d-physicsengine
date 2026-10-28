@@ -257,6 +257,12 @@ Vector2 IJoint::getAnchorB() const {
     Validate(*b);
     return CheckedVector(Double(b->position) + Rotate(localB, b->orientation));
 }
+void IJoint::setCollideConnected(bool enabled) {
+    if (collideConnected == enabled) return;
+    collideConnected = enabled;
+    a->Wake();
+    b->Wake();
+}
 void IJoint::prepareStep(float deltaTime) {
     if (!std::isfinite(deltaTime) || deltaTime < 0)
         throw std::invalid_argument("Joint step duration must be finite and non-negative.");

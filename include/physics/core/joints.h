@@ -10,6 +10,11 @@ public:
     const RigidBodyPtr& getBodyB() const { return b; }
     Vector2 getAnchorA() const;
     Vector2 getAnchorB() const;
+    // Whether the two joined bodies still collide with each other. Off by
+    // default: neighbors in a chain or ragdoll overlap at their shared anchor,
+    // and those contacts would fight the joint.
+    void setCollideConnected(bool enabled);
+    bool getCollideConnected() const { return collideConnected; }
 protected:
     friend class World;
     IJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 localAnchorA, Vector2 localAnchorB);
@@ -19,6 +24,7 @@ protected:
     virtual bool solvePosition(float tolerance, float maxCorrection) = 0;
     RigidBodyPtr a, b;
     Vector2 localA, localB;
+    bool collideConnected = false;
 };
 using JointPtr = std::shared_ptr<IJoint>;
 

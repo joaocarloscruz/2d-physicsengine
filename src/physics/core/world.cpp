@@ -368,6 +368,10 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         }
     }
 
+    jointedPairs.clear();
+    for (const auto& joint : joints)
+        if (!joint->getCollideConnected())
+            jointedPairs.insert(ContactKey::From(joint->getBodyA().get(), joint->getBodyB().get()));
     std::vector<CollisionManifold> impacts;
     std::unordered_set<ContactKey, ContactKeyHash> cachedContacts;
     // A published strategy plan is an end-of-step state with its contact
@@ -429,11 +433,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             std::remove_if(
                 potentialCollisions.begin(),
                 potentialCollisions.end(),
-                [](const CollisionPair& pair) {
-                    return !pair.first
-                        || !pair.second
-                        || !pair.first->CanCollideWith(*pair.second);
-                }
+                [&](const CollisionPair& pair) { return !pairCollides(pair); }
             ),
             potentialCollisions.end()
         );
@@ -660,9 +660,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
     potentialCollisions = broadPhase->FindSpeculativeCollisions(bodies, margins);
     statistics.broadPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
     potentialCollisions.erase(std::remove_if(potentialCollisions.begin(), potentialCollisions.end(),
-        [](const CollisionPair& pair) {
-            return !pair.first || !pair.second || !pair.first->CanCollideWith(*pair.second);
-        }), potentialCollisions.end());
+        [&](const CollisionPair& pair) { return !pairCollides(pair); }), potentialCollisions.end());
     statistics.narrowPhaseCandidateCount = static_cast<std::uint32_t>(potentialCollisions.size());
 
     struct Entry { ContactKey key; CollisionManifold manifold; RigidBodyPtr bodyA, bodyB; };
@@ -935,6 +933,11 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
     }
 }
 
+bool World::pairCollides(const CollisionPair& pair) const {
+    return pair.first && pair.second && pair.first->CanCollideWith(*pair.second)
+        && !jointedPairs.count(ContactKey::From(pair.first.get(), pair.second.get()));
+}
+
 // Capsule CCD covers only translating circles against static capsules; any
 // other requested capsule pair is rejected before a step advances state.
 bool World::SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b) {
@@ -975,7 +978,7 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
             for (std::size_t j=i+1; j<bodies.size(); ++j) {
                 const auto& a = bodies[i]; const auto& b = bodies[j];
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
-                    (a->IsStatic() && b->IsStatic()) || !a->CanCollideWith(*b)) continue;
+                    (a->IsStatic() && b->IsStatic()) || !pairCollides({a, b})) continue;
                 SweepHit hit;
                 const auto typeA = a->shape->type, typeB = b->shape->type;
                 if (typeA == ShapeType::CAPSULE || typeB == ShapeType::CAPSULE) {

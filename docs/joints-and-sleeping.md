@@ -8,11 +8,14 @@ while permitting relative rotation. Getters report the current world-space ancho
 Removing a body removes its attached joints. Removing a joint wakes both endpoints.
 
 Joint and contact velocity constraints share the iteration budget. Position
-projection corrects drift using the configured correction bound and tolerance.
+projection corrects drift using the configured
+correction bound and tolerance.
 Distance constraints use scalar effective mass; revolute constraints solve a 2×2
 point-mass system including angular inertia. Compliance is not yet implemented.
-Connected bodies still collide unless their collision masks exclude
-each other. The tests include analytical momentum transfer and 3,000-step pendulums.
+Bodies joined by a joint do not collide with each other unless
+`joint->setCollideConnected(true)` is called: neighbors in a chain or ragdoll
+overlap at their shared anchor, and those contacts would fight the joint. The
+tests include analytical momentum transfer and 3,000-step pendulums.
 
 Distance and revolute solvers compute rotated levers, point velocities, effective
 masses, and impulses in double precision. No physical mass or nonzero distance is
