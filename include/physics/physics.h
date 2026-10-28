@@ -21,6 +21,7 @@
 #include "physics/core/spatial_queries.h"
 #include "physics/core/prismatic_joint.h"
 #include "physics/core/mouse_joint.h"
+#include "physics/core/weld_joint.h"
 #include "physics/core/wave_membrane.h"
 #include "physics/core/maxwell_grid.h"
 #include "physics/core/periodic_electrostatic_grid.h"
