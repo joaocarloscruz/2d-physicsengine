@@ -1,6 +1,7 @@
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/rigidbody.h"
 #include "normal_contact_block.h"
+#include "../trig_cache.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -89,7 +90,8 @@ void ValidateManifold(const CollisionManifold &m) {
     }
 }
 DVector Rotate(DVector v, double angle) {
-    const double c = std::cos(angle), s = std::sin(angle);
+    const Detail::CosSin rotation = Detail::CachedCosSin(angle);
+    const double c = rotation.cosine, s = rotation.sine;
     return {c * v.x - s * v.y, s * v.x + c * v.y};
 }
 Vector2 ToLocalPoint(const RigidBody *body, Vector2 point) {
@@ -147,9 +149,14 @@ Proposal Propose(const RigidBody *body, DVector lever, DVector impulse, double s
     return {CheckedVector(DVector(linear) + impulse * (sign * body->inverseMass)),
             CheckedFloat(double(angular) + sign * body->inverseInertia * lever.cross(impulse))};
 }
-void ApplyPair(RigidBody *a, RigidBody *b, DVector ra, DVector rb, DVector impulse, bool position) {
-    ValidateBody(*a);
-    ValidateBody(*b);
+// validate = false only where both bodies were validated earlier in the same
+// solver call and changed since then only through checked (finite) updates.
+void ApplyPair(RigidBody *a, RigidBody *b, DVector ra, DVector rb, DVector impulse, bool position,
+               bool validate = true) {
+    if (validate) {
+        ValidateBody(*a);
+        ValidateBody(*b);
+    }
     Checked(impulse.x);
     Checked(impulse.y);
     // Stage all six components before publishing either endpoint. These internal
@@ -175,12 +182,13 @@ void ApplyPair(RigidBody *a, RigidBody *b, DVector ra, DVector rb, DVector impul
         }
     }
 }
-void ApplyVelocityImpulse(RigidBody *a, RigidBody *b, DVector point, DVector impulse) {
-    ApplyPair(a, b, point - DVector(a->position), point - DVector(b->position), impulse, false);
+void ApplyVelocityImpulse(RigidBody *a, RigidBody *b, DVector point, DVector impulse,
+                          bool validate = true) {
+    ApplyPair(a, b, point - DVector(a->position), point - DVector(b->position), impulse, false, validate);
 }
 void ApplyCombinedVelocity(RigidBody *a, RigidBody *b, DVector impulse,
-                           double torqueA, double torqueB) {
-    ValidateBody(*a); ValidateBody(*b);
+                           double torqueA, double torqueB, bool validate = true) {
+    if (validate) { ValidateBody(*a); ValidateBody(*b); }
     Checked(impulse.x); Checked(impulse.y); Checked(torqueA); Checked(torqueB);
     // Both torque sums are complete before any float state conversion. No
     // intermediate contact correction or cache is visible on failure.
@@ -206,14 +214,16 @@ void ContactSolverDetail::SynchronizeFeatureCache(const CollisionManifold& manif
     SynchronizeCache(manifold,cache);
 }
 
-bool ContactSolverDetail::SolveNormalBlock(ContactConstraint &c) {
+namespace {
+// points: the two constraint point positions. They depend only on the
+// bodies' poses, which stay fixed through a velocity solve.
+bool SolveNormalBlock(ContactConstraint &c, const DVector (&points)[2]) {
     if(c.pointCount!=2) return false;
     ValidateBody(*c.bodyA); ValidateBody(*c.bodyB);
     const DVector n=c.normal;
-    DVector points[2]; double ca[2],cb[2],vn[2],old[2],b[2];
+    double ca[2],cb[2],vn[2],old[2],b[2];
     for(int i=0;i<2;++i) {
         ValidateImpulse(c.points[i].impulse);
-        points[i]=ConstraintPointPosition(c,c.points[i]);
         ca[i]=(points[i]-DVector(c.bodyA->position)).cross(n);
         cb[i]=(points[i]-DVector(c.bodyB->position)).cross(n);
         vn[i]=Checked((PointVelocity(c.bodyB,points[i])-PointVelocity(c.bodyA,points[i])).dot(n));
@@ -261,11 +271,19 @@ bool ContactSolverDetail::SolveNormalBlock(ContactConstraint &c) {
         accepted[1]=std::max(Checked(old[1]+(c.points[1].velocityBias-vn[1]-k12*(accepted[0]-old[0]))/k22),0.0);
     }
     const double d1=Checked(accepted[0]-old[0]),d2=Checked(accepted[1]-old[1]);
+    // Both bodies were validated above and have not changed since.
     ApplyCombinedVelocity(c.bodyA,c.bodyB,n*Checked(d1+d2),
-        Checked(ca[0]*d1+ca[1]*d2),Checked(cb[0]*d1+cb[1]*d2));
+        Checked(ca[0]*d1+ca[1]*d2),Checked(cb[0]*d1+cb[1]*d2),false);
     for(std::uint8_t i=0;i<2;++i)
         PublishImpulse(c,c.points[i],i,{accepted[i],c.points[i].impulse.tangent});
     return true;
+}
+} // namespace
+
+bool ContactSolverDetail::SolveNormalBlock(ContactConstraint &c) {
+    if(c.pointCount!=2) return false;
+    const DVector points[2]{ConstraintPointPosition(c,c.points[0]),ConstraintPointPosition(c,c.points[1])};
+    return PhysicsEngine::SolveNormalBlock(c,points);
 }
 
 ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &m,
@@ -342,17 +360,26 @@ void CollisionResolver::WarmStart(ContactConstraint &c) {
 void CollisionResolver::SolveVelocity(ContactConstraint &c) {
     if (!c.bodyA || !c.bodyB)
         return;
-    const bool block=ContactSolverDetail::SolveNormalBlock(c);
+    // Poses do not change during the velocity solve, so each point position
+    // is computed once here and shared with the normal block.
+    DVector points[2];
+    for (std::uint8_t i = 0; i < c.pointCount && i < 2; ++i)
+        points[i] = ConstraintPointPosition(c, c.points[i]);
+    const bool block = SolveNormalBlock(c, points);
+    // After the first validated impulse in this call the bodies change only
+    // through checked velocity updates, so later impulses skip revalidation.
+    bool validated = block;
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         auto &p = c.points[i];
-        const auto worldPoint = ConstraintPointPosition(c, p);
+        const auto worldPoint = points[i];
         auto relative = PointVelocity(c.bodyB, worldPoint) - PointVelocity(c.bodyA, worldPoint);
         if (!block) {
             const double normalVelocity = Checked(relative.dot(c.normal));
             const double normal = std::max(
                 Checked(p.impulse.normal + p.normalMass * (-normalVelocity + p.velocityBias)), 0.0);
             ApplyVelocityImpulse(c.bodyA, c.bodyB, worldPoint,
-                                 DVector(c.normal) * (normal - p.impulse.normal));
+                                 DVector(c.normal) * (normal - p.impulse.normal), !validated);
+            validated = true;
             PublishImpulse(c, p, i, {normal, p.impulse.tangent});
         }
         relative = PointVelocity(c.bodyB, worldPoint) - PointVelocity(c.bodyA, worldPoint);
@@ -370,7 +397,8 @@ void CollisionResolver::SolveVelocity(ContactConstraint &c) {
                 tangent = std::clamp(candidate, -maximumDynamic, maximumDynamic);
             }
             ApplyVelocityImpulse(c.bodyA, c.bodyB, worldPoint,
-                                 DVector(c.tangent) * (tangent - p.impulse.tangent));
+                                 DVector(c.tangent) * (tangent - p.impulse.tangent), !validated);
+            validated = true;
             PublishImpulse(c, p, i, {p.impulse.normal, tangent});
         }
     }
