@@ -140,3 +140,34 @@ bulk anti-restoring acceleration and severe finite-surface collapse at every
 tested timestep. The diagnostic independently measures the legacy summation-
 density/pressure energy-gradient mismatch and keeps calibrated-input controls
 separate. No production correction or expected-failure threshold is changed.
+
+## Resolution of the nine #44 targets (2026-10-28)
+
+All nine expected-failure cases now pass at their original thresholds with the
+default `WcsphConfig`, and their `[!mayfail]` tags are removed. No assertion or
+threshold changed. The causes, each confirmed by measurement:
+
+- **Lattice density and rest.** Poly6's square-lattice sum at `h = 2dx` is
+  1.0146. Continuity density keeps density as state (exact for a lattice at
+  rest), and the cubic family's sum is 1.0009 for summation users.
+- **Uncompressed and calibrated columns, gravity ramp.** The continuity update
+  used pre-kick velocities, a forward-Euler acoustic map whose growth depended
+  on `dt`; it is now symplectic. At eight neighbours the spiky and cubic
+  pressure gradients buckle under uniform pressure (negative transverse
+  eigenvalues of the lattice stiffness), so the default kernel is Wendland C2.
+  The startup sound wave of an uncompressed column is damped by bulk viscosity
+  `p + beta*h*c*(D rho/Dt)`, which acts only on divergence.
+- **Disorder healing.** The checkerboard mode is invisible to pressure.
+  Surface-aware particle shifting (`-s*h*c*dt*grad C`, normal component removed
+  near free surfaces detected from the kernel moment matrix) heals it without
+  moving a perfect lattice or its surface.
+- **Hydrostatic initialization and wall balance.** `prepare(particles,
+  boundaryParticles)` seeds wall-supported rest-density fluid with a Tait column
+  using the active kernel's gradient-stencil moment; constant-pressure wall
+  completion removes the sampling defect that kept the floor force balance from
+  converging with spacing.
+
+Metrics, the previous behaviour's explicit settings and the remaining limits
+are listed in [the solver's default model](wcsph-solver.md#default-model).
+Summation-density operator tests and the earlier diagnostics select the legacy
+settings explicitly, so their archived results still describe those operators.

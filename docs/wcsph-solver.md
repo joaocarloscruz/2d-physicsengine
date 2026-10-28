@@ -10,6 +10,56 @@ The formulation follows the conservative SPH equations described in
 state and timestep approach documented by
 [DualSPHysics](https://github.com/DualSPHysics/DualSPHysics/wiki/3.-SPH-formulation).
 
+## Default model
+
+The default `WcsphConfig` is the configuration validated by the WCSPH physical
+targets in `tests/test_fluid_physics_validation.cpp` (issue #44), all of which
+pass at their original thresholds. Each piece answers a measured defect:
+
+| Setting | Default | Why |
+| --- | --- | --- |
+| `densityMode` | `Continuity` | Summation density cannot represent a resting column: a uniform lattice has no pressure and free-surface particles read 16-21% low by construction. |
+| `kernelFamily` | `WendlandC2` | At `h = 2dx` (eight neighbours) the symmetric pressure term's uniform-pressure stiffness `sum_j H(r_ij)(1 - cos k.r_ij)` has negative transverse eigenvalues for the spiky and cubic gradients, so a pressurized lattice buckles (predicted growth 15.8 and 23.9 1/s; columns slide vertically against each other near the floor). Wendland C2 is positive semidefinite there. |
+| `timeIntegration` | `SymplecticEuler` | The continuity rate is evaluated from the kicked velocity, then position and density drift together. The legacy `ExplicitDensity` order made the velocity/density acoustic pair a forward-Euler map whose growth depended on `dt` (87 J vs 1.3 J at `dt` 0.001 vs 0.0005 in a ramped column). |
+| `acousticDamping` | `0.5` | Bulk viscosity: the momentum equation uses `p + beta*h*c*(D rho/Dt)`, equivalent to `zeta = beta*h*c*rho` acting only on velocity divergence, so it always removes energy and leaves shear untouched. It damps the startup sound wave of a column released uncompressed (amplitude about `g*H/c`), which neither physical viscosity nor density diffusion removes. Adds the timestep limit `0.125*h/(beta*c)`, equal to the acoustic CFL limit at the default. |
+| `particleShifting` | `0.02` | Fully supported particles drift by `-s*h*c*dt*grad(C)`, `C = sum_j V_j W_ij` over fluid and wall volumes. It heals disorder that pressure cannot see (the checkerboard mode has zero linear density response). Free surfaces are detected from the smallest eigenvalue `lambda` of the kernel moment matrix, which wall samples complete: no shift for `lambda < 0.55`, normal component removed for `0.55 <= lambda < 0.9`. A perfect lattice, including its free surface, does not move. Adds the limit `0.05*h/(s*c)`. Shifting behaves as diffusion only when the kernel stiffness is positive semidefinite (Wendland at `h = 2dx`); set it to 0 with Poly6/Spiky or cubic. Shifted particles do not receive a Taylor correction of density or velocity. |
+| `hydrostaticInitialization` | `RestDensityParticles` | See [hydrostatic initialization](#hydrostatic-initialization-and-wall-completion): `prepare(particles, boundaryParticles)` seeds wall-supported fluid at rest density. |
+| `wallConsistency` | `ConstantPressureCompletion` | Makes a uniform pressure exert no net wall force where wall samples nearly complete the stencil, so the floor force balance converges with spacing. |
+
+The previous behaviour remains available explicitly:
+`densityMode = Summation`, `kernelFamily = Poly6Spiky`,
+`timeIntegration = ExplicitDensity`, `acousticDamping = 0`,
+`particleShifting = 0`, `hydrostaticInitialization = Disabled`,
+`wallConsistency = RawSamples`. Tests and diagnostics that characterize those
+operators select them explicitly. For summation density, prefer
+`CubicSpline`: its square-lattice sum at `h = 2dx` is 1.0009, against 1.0146 for
+Poly6 and about 1.038 for Wendland C2 (or calibrate masses with
+`SphKernels2D::SquareLatticeMassScale`).
+
+Measured results at the validated defaults (Windows Release Clang 23.1.4).
+"Before" values come from issue #44, or were measured at commit ad06fe4
+(continuity density, old kernel and integrator) where the issue gives none.
+
+| Target | Threshold | Before | Now |
+| --- | --- | --- | --- |
+| Uniform lattice interior density | error < 1% | 1.46% | exact (continuity state) |
+| Zero-gravity block at rest | speed < 0.05 m/s, displacement < 5 mm | 0.227 m/s | 0, 0 |
+| Disorder heals | final RMS < 0.9 x initial | ratio 1.000 | 0.467 |
+| Resting column hydrostatic pressure | RMSE < 0.1, acceleration < 1 m/s^2 | 0.548, 9.81 | 0.086, 0.050 |
+| Dummy wall balances column weight | residual < 0.1 | 0.63 | 0.0019 |
+| Wall balance converges (dx 0.1/0.05/0.025) | -20% per step, < 0.1 | 0.018/0.165/0.236 | 0.0032/0.0014/0.00085 |
+| Sampled-wall column quiet, uncompressed start | speed < 0.2 m/s, bulk density < 5% | bulk density 5.2% | 0.167, 0.96% |
+| Calibrated column bounded | speed < 0.5 m/s, density < 5% | density 27.8% | 0.174, 0.91% |
+| Gravity ramp reduces startup impulse | peak < 0.7x, density < 0.8x immediate | ramp increased peak speed | 0.32x, 0.60x |
+
+The dynamic results are unchanged between `dt = 0.001` and `0.0005` (final speeds
+0.1665/0.1669 and 0.1737/0.1738 m/s; ramp ratios identical), so they are not
+tuned to one timestep. `acousticDamping = 0.5` is the one chosen coefficient:
+final speeds at 0.5 s for beta 0/0.3/0.4/0.5 are 0.325/0.202/0.179/0.161 m/s.
+Wall columns oscillate slightly out of phase with the interior because the wall
+continuity term carries only normal velocity; a tangential wall-velocity
+treatment could let the damping drop.
+
 ## State preparation
 
 For each particle `i`, density is estimated from the particle itself, every
@@ -158,8 +208,9 @@ pressure-bearing wall samples straddling it below are seeded; free-falling fluid
 and explicitly set densities are left alone. Pressure follows a Tait column with
 `g / M`, where `M` is the measured first moment of the kernel-gradient stencil
 (doubled lower half, iterated with the seeded volumes); `M` is not one at finite
-`h/dx` (about 0.89 at `h = 2dx`, 0.92 at `2.5dx` for Poly6/Spiky), so this is what
-lets the discrete pressure force carry the weight. Floor-supported particles
+`h/dx` (about 0.89 at `h = 2dx`, 0.92 at `2.5dx` for Poly6/Spiky; it is computed
+for the active kernel family), so this is what lets the discrete pressure force
+carry the weight. Floor-supported particles
 integrate the profile from the particle above.
 
 `wallConsistency = ConstantPressureCompletion` (default) adds `p_i (S_fluid +

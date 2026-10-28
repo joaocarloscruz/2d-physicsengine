@@ -45,11 +45,13 @@ free-surface fluid-only density/divergence projections. The common `IFluidSolver
 interface supports interchangeable fluid-only experiments; WCSPH's boundary and
 coupling overloads remain method-specific.
 
-The legacy poly6/spiky kernel combination remains the default. An explicit
-matched cubic family improves nominal lattice rest in the tested regime while
-preserving caller masses and rest densities. Perturbed neighborhoods and sampled
-wall startup retain limitations; see [kernel experiments](cubic-kernel-experiments.md).
-The nine legacy physical targets tracked in issue #44 remain expected failures.
+WCSPH defaults to continuity density with the Wendland C2 kernel, symplectic
+density integration, bulk acoustic damping, surface-aware particle shifting,
+hydrostatic initialization in `prepare` and constant-pressure wall completion.
+Together they pass the nine physical targets of issue #44 at their original
+thresholds; see the [default model](wcsph-solver.md#default-model). The legacy
+poly6/spiky summation operators remain available explicitly, and the
+[kernel experiments](cubic-kernel-experiments.md) describe their limits.
 
 `PeriodicMacGrid` is a separate Eulerian component with double face velocities
 and compatible staggered divergence/gradient operators. It solves a bounded
