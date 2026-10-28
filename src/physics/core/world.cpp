@@ -95,6 +95,8 @@ struct World::StepScratch {
     std::vector<EndContact> ended;
     // This step's sensor candidates (see SplitCandidates).
     std::vector<CollisionPair> sensorPairs;
+    // Body positions when advanceCcd returned (see sweepCcdCorrections).
+    std::vector<Vector2> ccdPositions;
 };
 
 World::World() : World(SimulationConfig{}) {}
@@ -597,6 +599,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
                 }
             }
         }
+        if (useCcd) sweepCcdCorrections(deltaTime);
     }
 
     // A transient swept impact also participates in the lifecycle, even when
@@ -1037,6 +1040,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
             if (done) break;
         }
     }
+    if (useCcd) sweepCcdCorrections(deltaTime);
 
     for (std::size_t k = 0; k < islands.size(); ++k) {
         if (!awakeIsland[k] || !config.enableSleeping || deltaTime <= 0) continue;
@@ -1147,8 +1151,56 @@ void World::validateCcdSupport() const {
     }
 }
 
+namespace {
+// Translational sweep of one pair from the bodies' current poses; the normal
+// points from a to b. Pairs without a circle (pure polygons) are not swept.
+SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 db, bool capsuleSupported) {
+    SweepHit hit;
+    const auto typeA = a.shape->type, typeB = b.shape->type;
+    if (typeA == ShapeType::CAPSULE || typeB == ShapeType::CAPSULE) {
+        const bool firstCircle = typeA == ShapeType::CIRCLE;
+        const RigidBody& circle = firstCircle ? a : b;
+        const RigidBody& capsuleBody = firstCircle ? b : a;
+        const auto* capsule = dynamic_cast<const Capsule*>(capsuleBody.shape.get());
+        if (!capsuleSupported || !capsule)
+            throw std::logic_error("Unsupported capsule continuous collision reached the sweep.");
+        const Vector2 axis = Matrix2x2::rotation(capsuleBody.orientation) * Vector2{1, 0};
+        hit = SweepCircleCapsule(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
+            capsuleBody.position - axis*capsule->GetHalfLength(),
+            capsuleBody.position + axis*capsule->GetHalfLength(), capsule->GetRadius(),
+            firstCircle ? db : da);
+        if (!firstCircle) hit.normal = hit.normal*-1.0f;
+    } else if (typeA == ShapeType::CIRCLE && typeB == ShapeType::CIRCLE) {
+        hit = SweepCircleCircle(a.position, da, a.shape->GetRadius(), b.position, db, b.shape->GetRadius());
+    } else if (typeA == ShapeType::CIRCLE || typeB == ShapeType::CIRCLE) {
+        const bool firstCircle = typeA == ShapeType::CIRCLE;
+        const RigidBody& circle = firstCircle ? a : b;
+        const RigidBody& polygon = firstCircle ? b : a;
+        std::vector<Vector2> vertices;
+        const auto rotation = Matrix2x2::rotation(polygon.orientation);
+        for (const auto& v : static_cast<const Polygon*>(polygon.shape.get())->getVertices())
+            vertices.push_back(polygon.position + rotation*v);
+        hit = SweepCirclePolygon(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
+            vertices, firstCircle ? db : da);
+        if (!firstCircle) hit.normal = hit.normal*-1.0f;
+    }
+    return hit;
+}
+}
+
 std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& starts,
     float deltaTime, SimulationStatistics& statistics) {
+    if (!scratch) scratch = std::make_unique<StepScratch>();
+    // Every return leaves the poses sweepCcdCorrections starts from. Sized
+    // here so that the recording itself cannot throw.
+    scratch->ccdPositions.resize(bodies.size());
+    struct RecordPositions {
+        World& world;
+        ~RecordPositions() {
+            for (std::size_t i = 0; i < world.bodies.size(); ++i)
+                world.scratch->ccdPositions[i] = world.bodies[i]->position;
+        }
+    } record{*this};
     std::vector<Vector2> motion;
     for (std::size_t i=0; i<bodies.size(); ++i) {
         motion.push_back((bodies[i]->position-starts[i])/deltaTime);
@@ -1164,38 +1216,8 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
                 const auto& a = bodies[i]; const auto& b = bodies[j];
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
                     (a->IsStatic() && b->IsStatic()) || !pairCollides({a, b})) continue;
-                SweepHit hit;
-                const auto typeA = a->shape->type, typeB = b->shape->type;
-                if (typeA == ShapeType::CAPSULE || typeB == ShapeType::CAPSULE) {
-                    const bool firstCircle = typeA == ShapeType::CIRCLE;
-                    const auto& circle = firstCircle ? a : b;
-                    const auto& capsuleBody = firstCircle ? b : a;
-                    const auto* capsule = dynamic_cast<const Capsule*>(capsuleBody->shape.get());
-                    if (!SupportsCapsuleCcd(*a, *b) || !capsule)
-                        throw std::logic_error("Unsupported capsule continuous collision reached the sweep.");
-                    const Vector2 axis = Matrix2x2::rotation(capsuleBody->orientation) * Vector2{1, 0};
-                    hit = SweepCircleCapsule(circle->position,
-                        motion[firstCircle ? i : j]*remaining, circle->shape->GetRadius(),
-                        capsuleBody->position - axis*capsule->GetHalfLength(),
-                        capsuleBody->position + axis*capsule->GetHalfLength(), capsule->GetRadius(),
-                        motion[firstCircle ? j : i]*remaining);
-                    if (!firstCircle) hit.normal = hit.normal*-1.0f;
-                } else if (typeA == ShapeType::CIRCLE && typeB == ShapeType::CIRCLE) {
-                    hit = SweepCircleCircle(a->position, motion[i]*remaining, a->shape->GetRadius(),
-                        b->position, motion[j]*remaining, b->shape->GetRadius());
-                } else if (a->shape->type == ShapeType::CIRCLE || b->shape->type == ShapeType::CIRCLE) {
-                    const bool firstCircle = a->shape->type == ShapeType::CIRCLE;
-                    const auto& circle = firstCircle ? a : b;
-                    const auto& polygon = firstCircle ? b : a;
-                    std::vector<Vector2> vertices;
-                    const auto rotation = Matrix2x2::rotation(polygon->orientation);
-                    for (const auto& v : static_cast<const Polygon*>(polygon->shape.get())->getVertices())
-                        vertices.push_back(polygon->position + rotation*v);
-                    hit = SweepCirclePolygon(circle->position,
-                        motion[firstCircle ? i : j]*remaining, circle->shape->GetRadius(),
-                        vertices, motion[firstCircle ? j : i]*remaining);
-                    if (!firstCircle) hit.normal = hit.normal*-1.0f;
-                }
+                const SweepHit hit = SweepPair(*a, motion[i]*remaining, *b, motion[j]*remaining,
+                    SupportsCapsuleCcd(*a, *b));
                 // Ignore resting/separating pairs, including initial overlap.
                 if (hit.hit && (motion[j]-motion[i]).dot(hit.normal) < -1e-6f &&
                     (!earliest.hit || hit.fraction < earliest.fraction)) {
@@ -1229,6 +1251,42 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
     // Stay at the last safe time when the work budget is exhausted.
     statistics.ccdIterationLimitReached = true;
     return impacts;
+}
+
+void World::sweepCcdCorrections(float deltaTime) {
+    // Joint and contact position correction (and the legacy friction
+    // displacement) move bodies after advanceCcd has swept the step. A rigid
+    // joint pulling toward a body beyond a wall would otherwise carry a CCD
+    // circle through it without any velocity. Each moved body sweeps its
+    // correction against the static bodies of its CCD pairs and stops at the
+    // first one it would enter, as advanceCcd does; corrections that only
+    // separate or slide along a surface pass unchanged.
+    if (!scratch || deltaTime <= 0) return;
+    const auto& from = scratch->ccdPositions;
+    if (from.size() != bodies.size()) return;
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        const auto& body = bodies[i];
+        if (body->IsStatic()) continue;
+        const Vector2 correction = body->position - from[i];
+        if (correction.x == 0 && correction.y == 0) continue;
+        const Vector2 motion = correction/deltaTime;
+        bool hit = false;
+        float earliest = 1;
+        const Vector2 corrected = body->position;
+        body->position = from[i];
+        for (std::size_t j = 0; j < bodies.size(); ++j) {
+            const auto& other = bodies[j];
+            if (!other->IsStatic() || (!body->IsCcdEnabled() && !other->IsCcdEnabled())
+                || !pairCollides({body, other})) continue;
+            const SweepHit sweep = SweepPair(*body, correction, *other, {}, SupportsCapsuleCcd(*body, *other));
+            // Same approach test as advanceCcd, with the static body at rest.
+            if (sweep.hit && (motion*-1.0f).dot(sweep.normal) < -1e-6f && sweep.fraction < earliest) {
+                hit = true;
+                earliest = sweep.fraction;
+            }
+        }
+        body->position = hit ? from[i] + correction*earliest : corrected;
+    }
 }
 
 void World::endContacts(std::uint64_t bodyId) {

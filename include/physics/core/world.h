@@ -126,6 +126,10 @@ private:
     void validateCcdSupport() const;
     std::vector<CollisionManifold> advanceCcd(const std::vector<Vector2>& starts,
         float deltaTime, SimulationStatistics& statistics);
+    // Position correction runs after advanceCcd and is not part of its sweep.
+    // Sweeps each body's correction from its advanceCcd pose and stops it at a
+    // static body it would otherwise be moved into (CCD pairs only).
+    void sweepCcdCorrections(float deltaTime);
     void endContacts(std::uint64_t bodyId);
     std::unordered_map<ContactKey, PendingEvent, ContactKeyHash> contactEvents;
     std::vector<PendingEvent> pendingEvents;
