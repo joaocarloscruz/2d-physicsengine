@@ -6,6 +6,9 @@
 #include "engine.h"
 #include "physics/core/charged_particle.h"
 #include "physics/core/prismatic_joint.h"
+#include "physics/core/mouse_joint.h"
+#include "physics/core/weld_joint.h"
+#include "physics/core/wheel_joint.h"
 #include "physics/core/material.h"
 #include "physics/core/fixed_step_runner.h"
 #include "physics/core/particles/particle_system.h"
@@ -63,7 +66,7 @@ ParticleSystemPtr CreateParticleSystem() {
     return std::make_shared<ParticleSystem>();
 }
 
-JointPtr CreateDistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 anchorA, Vector2 anchorB) {
+std::shared_ptr<DistanceJoint> CreateDistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 anchorA, Vector2 anchorB) {
     return std::make_shared<DistanceJoint>(std::move(a), std::move(b), length, anchorA, anchorB);
 }
 std::shared_ptr<RevoluteJoint> CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
@@ -72,6 +75,18 @@ std::shared_ptr<RevoluteJoint> CreateRevoluteJoint(RigidBodyPtr a, RigidBodyPtr 
 std::shared_ptr<PrismaticJoint> CreatePrismaticJoint(RigidBodyPtr a, RigidBodyPtr b,
     Vector2 axis, Vector2 anchorA, Vector2 anchorB) {
     return std::make_shared<PrismaticJoint>(std::move(a), std::move(b), axis, anchorA, anchorB);
+}
+std::shared_ptr<MouseJoint> CreateMouseJoint(RigidBodyPtr ground, RigidBodyPtr body, Vector2 localAnchor,
+    Vector2 target, float frequency, float dampingRatio, float maxForce) {
+    return std::make_shared<MouseJoint>(std::move(ground), std::move(body), localAnchor, target,
+        frequency, dampingRatio, maxForce);
+}
+std::shared_ptr<WeldJoint> CreateWeldJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 anchorA, Vector2 anchorB) {
+    return std::make_shared<WeldJoint>(std::move(a), std::move(b), anchorA, anchorB);
+}
+std::shared_ptr<WheelJoint> CreateWheelJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 axis,
+    Vector2 anchorA, Vector2 anchorB) {
+    return std::make_shared<WheelJoint>(std::move(a), std::move(b), axis, anchorA, anchorB);
 }
 
 } // namespace
@@ -243,7 +258,63 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("getLowerLimit", &RevoluteJoint::getLowerLimit)
         .function("getUpperLimit", &RevoluteJoint::getUpperLimit)
         .function("getAngle", &RevoluteJoint::getAngle);
+    class_<DistanceJoint, base<IJoint>>("DistanceJoint")
+        .smart_ptr<std::shared_ptr<DistanceJoint>>("DistanceJointPtr")
+        .function("getLength", &DistanceJoint::getLength)
+        .function("setSpring", &DistanceJoint::setSpring)
+        .function("getSpringFrequency", &DistanceJoint::getSpringFrequency)
+        .function("getSpringDampingRatio", &DistanceJoint::getSpringDampingRatio)
+        .function("setLengthRange", &DistanceJoint::setLengthRange)
+        .function("getMinLength", &DistanceJoint::getMinLength)
+        .function("getMaxLength", &DistanceJoint::getMaxLength)
+        .function("getCurrentLength", &DistanceJoint::getCurrentLength);
+    class_<MouseJoint, base<IJoint>>("MouseJoint")
+        .smart_ptr<std::shared_ptr<MouseJoint>>("MouseJointPtr")
+        .function("setTarget", &MouseJoint::setTarget)
+        .function("getTarget", &MouseJoint::getTarget)
+        .function("getLocalAnchor", &MouseJoint::getLocalAnchor)
+        .function("setSpring", &MouseJoint::setSpring)
+        .function("getFrequency", &MouseJoint::getFrequency)
+        .function("getDampingRatio", &MouseJoint::getDampingRatio)
+        .function("setMaxForce", &MouseJoint::setMaxForce)
+        .function("getMaxForce", &MouseJoint::getMaxForce)
+        .function("getReactionForce", &MouseJoint::getReactionForce);
+    class_<WeldJoint, base<IJoint>>("WeldJoint")
+        .smart_ptr<std::shared_ptr<WeldJoint>>("WeldJointPtr")
+        .function("setLinearSpring", &WeldJoint::setLinearSpring)
+        .function("setAngularSpring", &WeldJoint::setAngularSpring)
+        .function("getLinearFrequency", &WeldJoint::getLinearFrequency)
+        .function("getLinearDampingRatio", &WeldJoint::getLinearDampingRatio)
+        .function("getAngularFrequency", &WeldJoint::getAngularFrequency)
+        .function("getAngularDampingRatio", &WeldJoint::getAngularDampingRatio)
+        .function("getAngle", &WeldJoint::getAngle)
+        .function("getReferenceAngle", &WeldJoint::getReferenceAngle)
+        .function("getSeparation", &WeldJoint::getSeparation);
+    class_<WheelJoint, base<IJoint>>("WheelJoint")
+        .smart_ptr<std::shared_ptr<WheelJoint>>("WheelJointPtr")
+        .function("getAxis", &WheelJoint::getAxis)
+        .function("getLocalAxis", &WheelJoint::getLocalAxis)
+        .function("getTranslation", &WheelJoint::getTranslation)
+        .function("getTranslationSpeed", &WheelJoint::getTranslationSpeed)
+        .function("getTransverseError", &WheelJoint::getTransverseError)
+        .function("getAngularSpeed", &WheelJoint::getAngularSpeed)
+        .function("setSpring", &WheelJoint::setSpring)
+        .function("getSpringFrequency", &WheelJoint::getSpringFrequency)
+        .function("getSpringDampingRatio", &WheelJoint::getSpringDampingRatio)
+        .function("getSpringForce", &WheelJoint::getSpringForce)
+        .function("setMotor", &WheelJoint::setMotor)
+        .function("isMotorEnabled", &WheelJoint::isMotorEnabled)
+        .function("getMotorSpeed", &WheelJoint::getMotorSpeed)
+        .function("getMaxMotorTorque", &WheelJoint::getMaxMotorTorque)
+        .function("getMotorTorque", &WheelJoint::getMotorTorque)
+        .function("setLimits", &WheelJoint::setLimits)
+        .function("areLimitsEnabled", &WheelJoint::areLimitsEnabled)
+        .function("getLowerLimit", &WheelJoint::getLowerLimit)
+        .function("getUpperLimit", &WheelJoint::getUpperLimit);
     function("createDistanceJoint", &CreateDistanceJoint);
+    function("createMouseJoint", &CreateMouseJoint);
+    function("createWeldJoint", &CreateWeldJoint);
+    function("createWheelJoint", &CreateWheelJoint);
     function("createRevoluteJoint", &CreateRevoluteJoint);
 
     class_<ParticleSystem>("ParticleSystem")
