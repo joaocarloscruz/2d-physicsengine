@@ -35,7 +35,8 @@ On Windows, run these commands in a compiler environment or use a portable
 LLVM-MinGW distribution with its `bin` directory on the current process's PATH.
 `build.ps1` runs the same configure/build/test sequence. Neither the library nor
 its tests require the SFML visualizer. See [WebAssembly](docs/webassembly.md) for
-the JavaScript build and [visualization](visualization/README.md) for SFML.
+the JavaScript build, [visualization](visualization/README.md) for SFML, and the
+[web playground](docs/web-playground.md) to try the engine in a browser.
 
 ## Use the library
 

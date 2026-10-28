@@ -915,6 +915,9 @@ Serve the directory over HTTP and open `index.html` to run it:
 emrun .\build-wasm\wasm\index.html
 ```
 
+The same directory also holds an interactive [web playground](web-playground.md)
+(`playground.html`) and its Node test, `scenes-test.cjs`.
+
 ## JavaScript API
 
 The module exposes `Engine`, `Circle`, `Polygon`, `Capsule`, `RigidBody`,
@@ -1006,6 +1009,8 @@ other unless `joint.setCollideConnected(true)` is called; `getCollideConnected()
 reads the setting. CCD and waking use `body.setCcdEnabled`,
 `isCcdEnabled`, `wake` and `isAwake`. Sleeping is configured through the object
 returned by `getSimulationConfig`. Use that complete object when changing fields.
+`physics.addGravity(engine, {x, y})` adds a uniform acceleration to every dynamic
+body. Calls stack and cannot be removed from an engine.
 `engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.
 Fluid solvers and collision listener subclasses currently have native C++ APIs only.
 
