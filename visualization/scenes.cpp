@@ -1,7 +1,11 @@
 #include "scenes.h"
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <initializer_list>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace PhysicsEngine {
@@ -20,6 +24,13 @@ constexpr std::uint32_t kNoChainMask = ~kChainCategory;
 // slider's controller lambda reads it, and MSVC rejects uncaptured constexpr
 // float locals inside lambdas.
 constexpr float kSliderTravel = 6.0f;
+
+// Car scene constants. They sit at namespace scope because the drive lambda
+// reads them, and MSVC rejects uncaptured constexpr float locals in lambdas.
+constexpr float kCarTopSpeed = 16.0f;   // rear wheel, rad/s
+constexpr float kCarDriveTorque = 16.0f; // N m
+constexpr float kCarIdleTorque = 1.5f;  // light brake so the car stays put
+constexpr std::uintptr_t kGoalTag = 7u;
 
 const Material kStone{1.0f, 0.1f, 0.6f, 0.4f};
 
@@ -283,6 +294,180 @@ SceneRuntime buildMachines(World& world) {
     return runtime;
 }
 
+// Counts how often the car enters the goal sensor. The car is the chassis and
+// both wheels; it is "in" the goal while any of the three overlaps it.
+class GoalTracker : public ICollisionListener {
+public:
+    void setGoal(std::uint64_t id) { goalId = id; }
+    void addCarPart(std::uint64_t id) { carParts.push_back(id); }
+
+    void onCollisionBegin(const CollisionEvent& event) override {
+        if (!concerns(event)) return;
+        if (partsInside++ == 0) ++entries;
+    }
+    void onCollisionEnd(const CollisionEvent& event) override {
+        if (concerns(event) && partsInside > 0) --partsInside;
+    }
+
+    bool inside() const { return partsInside > 0; }
+    int entryCount() const { return entries; }
+
+private:
+    bool concerns(const CollisionEvent& event) const {
+        if (!event.sensor) return false;
+        if (event.bodyAId != goalId && event.bodyBId != goalId) return false;
+        const std::uint64_t other = event.bodyAId == goalId ? event.bodyBId : event.bodyAId;
+        return std::find(carParts.begin(), carParts.end(), other) != carParts.end();
+    }
+
+    std::uint64_t goalId = 0;
+    std::vector<std::uint64_t> carParts;
+    int partsInside = 0;
+    int entries = 0;
+};
+
+// 9. Car and sensors: a chassis on two WheelJoint suspensions with a rear-wheel
+// motor, bumpy terrain and a sensor goal that lights up while the car is in it.
+SceneRuntime buildCar(World& world) {
+    addArena(world);
+
+    // Terrain: half-buried discs for bumps, then a hill.
+    const Material dirt{1.0f, 0.1f, 0.8f, 0.7f};
+    struct Bump { float x, radius, height; };
+    const Bump bumps[] = {{-5.6f, 0.9f, 0.30f}, {-3.4f, 0.7f, 0.35f}, {-1.4f, 1.3f, 0.55f},
+                          {0.6f, 0.6f, 0.30f}, {1.7f, 0.6f, 0.35f}};
+    // A gentle hill of two tilted slabs, 0.35 m high at the peak.
+    addBox(world, 2.0f, 0.3f, Vector2(3.24f, -4.967f), dirt, true, 0.17f);
+    addBox(world, 2.0f, 0.3f, Vector2(5.16f, -4.967f), dirt, true, -0.17f);
+    for (const Bump& bump : bumps) {
+        add(world, Circle(bump.radius), dirt,
+            Vector2(bump.x, kFloorTop + bump.height - bump.radius), true);
+    }
+
+    // Goal: a static sensor. It reports overlaps but never pushes anything.
+    auto goal = addBox(world, 3.0f, 2.6f, Vector2(7.7f, -3.7f), kStone, true);
+    goal->SetSensor(true);
+    goal->SetUserData(kGoalTag);
+
+    // Car, facing right: the left wheel is the rear.
+    const Vector2 start(-8.0f, -4.1f);
+    auto chassis = addBox(world, 2.4f, 0.6f, start, Material{4.0f, 0.1f, 0.4f, 0.3f});
+    auto tracker = std::make_shared<GoalTracker>();
+    tracker->setGoal(goal->GetId());
+    tracker->addCarPart(chassis->GetId());
+
+    const Material tire{1.0f, 0.1f, 1.4f, 1.2f};
+    std::shared_ptr<WheelJoint> rear;
+    for (const float side : {-1.0f, 1.0f}) {
+        const Vector2 mount(0.85f * side, -0.35f);
+        auto wheel = addBall(world, 0.45f, start + mount, tire);
+        tracker->addCarPart(wheel->GetId());
+        auto suspension = std::make_shared<WheelJoint>(chassis, wheel, Vector2(0.0f, 1.0f), mount, Vector2());
+        suspension->setSpring(3.0f, 0.7f);
+        suspension->setLimits(true, -0.3f, 0.3f);
+        world.addJoint(suspension);
+        if (side < 0.0f) rear = suspension;
+    }
+    world.addCollisionListener(tracker.get());
+
+    SceneRuntime runtime;
+    runtime.drive = [rear, chassis](float throttle) {
+        if (throttle != 0.0f) {
+            chassis->Wake();
+            rear->setMotor(true, -throttle * kCarTopSpeed, kCarDriveTorque);
+        } else {
+            rear->setMotor(true, 0.0f, kCarIdleTorque);
+        }
+    };
+    runtime.status = [tracker, chassis]() {
+        char line[96];
+        std::snprintf(line, sizeof(line), "Goal entries: %d%s   Speed: %.1f m/s",
+                      tracker->entryCount(), tracker->inside() ? "  [CAR IN GOAL]" : "",
+                      chassis->GetVelocity().x);
+        return std::string(line);
+    };
+    runtime.highlighted = [tracker](const RigidBody& body) {
+        return body.GetUserData() == kGoalTag && tracker->inside();
+    };
+    runtime.onUnload = [tracker](World& unloading) { unloading.removeCollisionListener(tracker.get()); };
+    return runtime;
+}
+
+// 10. Joints gallery: a welded cantilever, a soft weld, a rope, a spring and a
+// wheel suspension rig, each hit by or carrying a ball.
+SceneRuntime buildGallery(World& world) {
+    addArena(world);
+    const Material plank{1.0f, 0.1f, 0.6f, 0.4f};
+    const Material heavy{4.0f, 0.1f, 0.6f, 0.4f};
+
+    // Rigid weld: a cantilever of five segments, with a ball dropped on its tip.
+    constexpr int segments = 5;
+    constexpr float segment = 1.0f;
+    const Vector2 wall(-9.45f, 2.4f);
+    auto previous = addBox(world, 0.7f, 1.0f, wall, kStone, true);
+    for (int i = 0; i < segments; ++i) {
+        auto part = addBox(world, segment, 0.25f, Vector2(wall.x + 0.35f + segment * (i + 0.5f), wall.y), plank);
+        const Vector2 anchorA = i == 0 ? Vector2(0.35f, 0.0f) : Vector2(0.5f * segment, 0.0f);
+        world.addJoint(std::make_shared<WeldJoint>(previous, part, anchorA, Vector2(-0.5f * segment, 0.0f)));
+        previous = part;
+    }
+    addBall(world, 0.4f, Vector2(wall.x + 0.35f + segment * (segments - 0.5f), 4.6f), heavy);
+
+    // Soft weld: one beam welded to the wall through an angular spring, so it
+    // sags and bounces instead of holding still.
+    const Vector2 post(-9.45f, -1.4f);
+    auto stub = addBox(world, 0.7f, 1.0f, post, kStone, true);
+    auto beam = addBox(world, 4.4f, 0.25f, Vector2(post.x + 0.35f + 2.2f, post.y), plank);
+    auto soft = std::make_shared<WeldJoint>(stub, beam, Vector2(0.35f, 0.0f), Vector2(-2.2f, 0.0f));
+    soft->setAngularSpring(2.0f, 0.15f);
+    world.addJoint(soft);
+    addBall(world, 0.4f, Vector2(-5.6f, 0.9f), heavy);
+
+    // Rope: slack until the ball has fallen the full length.
+    const Vector2 ropeTop(-1.2f, 6.3f);
+    auto ropeAnchor = addAnchor(world, ropeTop);
+    auto ropeBall = addBall(world, 0.5f, Vector2(ropeTop.x + 3.2f, ropeTop.y - 0.5f), Material{3.0f, 0.1f, 0.5f, 0.4f});
+    constexpr float ropeLength = 4.0f;
+    auto rope = std::make_shared<DistanceJoint>(ropeAnchor, ropeBall, ropeLength);
+    rope->setLengthRange(0.0f, ropeLength);
+    world.addJoint(rope);
+
+    // Spring: a box on a soft distance joint, released stretched.
+    const Vector2 springTop(4.6f, 6.3f);
+    auto springAnchor = addAnchor(world, springTop);
+    constexpr float restLength = 2.5f;
+    auto bob = addBox(world, 0.9f, 0.9f, springTop - Vector2(0.0f, restLength + 1.2f), Material{2.0f, 0.1f, 0.5f, 0.4f});
+    auto spring = std::make_shared<DistanceJoint>(springAnchor, bob, restLength);
+    spring->setSpring(1.2f, 0.08f);
+    world.addJoint(spring);
+
+    // Suspension rig: a wheel on a vertical spring axis fixed to the world,
+    // with a stroke limit. A motorized arm sweeps under it like a cam, so the
+    // wheel keeps bouncing against its spring.
+    const Vector2 rig(7.5f, 0.0f);
+    auto frame = addAnchor(world, rig, 0.4f);
+    auto guide = addBox(world, 0.12f, 2.6f, rig, kStone, true);
+    guide->SetCollisionMaskBits(0u);
+    auto wheel = addBall(world, 0.55f, rig, Material{1.0f, 0.1f, 0.8f, 0.6f});
+    auto strut = std::make_shared<WheelJoint>(frame, wheel, Vector2(0.0f, 1.0f));
+    strut->setSpring(2.0f, 0.3f);
+    strut->setLimits(true, -1.1f, 0.5f);
+    world.addJoint(strut);
+
+    const Vector2 pivot(rig.x, -2.2f);
+    constexpr float armLength = 2.0f;
+    constexpr float armStart = -1.2f;
+    auto hub = addAnchor(world, pivot, 0.4f);
+    auto arm = addBox(world, armLength, 0.25f,
+                      pivot + Vector2(std::cos(armStart), std::sin(armStart)) * (0.5f * armLength),
+                      Material{2.0f, 0.1f, 0.5f, 0.4f}, false, armStart);
+    auto drive = std::make_shared<RevoluteJoint>(hub, arm, Vector2(), Vector2(-0.5f * armLength, 0.0f));
+    drive->setMotor(true, 1.6f, 5000.0f);
+    world.addJoint(drive);
+
+    return {};
+}
+
 std::vector<SceneInfo> makeScenes() {
     const SimulationConfig defaults;
     return {
@@ -294,6 +479,9 @@ std::vector<SceneInfo> makeScenes() {
         {"Capsules and ramps", "Capsules and balls sliding down static ramps.", 40.0f, Vector2(0, 0), defaults, buildRamps},
         {"Seesaw and mass ratio", "A heavy ball launches a light box from a hinged plank.", 40.0f, Vector2(0, 0), stackedConfig(), buildSeesaw},
         {"Machines", "A motorized paddle and roller, and a prismatic slider.", 40.0f, Vector2(0, 0), stackedConfig(), buildMachines},
+        {"Car and sensors", "A car on wheel-joint suspension drives to a sensor goal; the HUD counts entries.", 40.0f, Vector2(0, 0), stackedConfig(), buildCar,
+         "Left/Right or A/D: Drive   Shift+arrows: Camera"},
+        {"Joints gallery", "Weld cantilever, soft weld, rope, spring and wheel suspension rig.", 40.0f, Vector2(0, 0), stackedConfig(), buildGallery},
     };
 }
 
