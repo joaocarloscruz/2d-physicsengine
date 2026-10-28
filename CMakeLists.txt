@@ -122,6 +122,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(softbody_rope PRIVATE PhysicsEngine::Engine)
         add_executable(capsule_pile examples/capsule_pile.cpp)
         target_link_libraries(capsule_pile PRIVATE PhysicsEngine::Engine)
+        add_executable(getting_started examples/getting_started.cpp)
+        target_link_libraries(getting_started PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
         target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_radiation_demo examples/thermal_radiation_demo.cpp)
@@ -167,6 +169,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME elastic_wave_smoke COMMAND elastic_wave_demo)
             add_test(NAME softbody_rope_smoke COMMAND softbody_rope)
             add_test(NAME capsule_pile_smoke COMMAND capsule_pile)
+            add_test(NAME getting_started_smoke COMMAND getting_started)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
                 -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}

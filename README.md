@@ -52,6 +52,9 @@ world.step();
 std::string snapshot = ExportWorldJson(world, 1.0 / 60);
 ```
 
+[Getting started](docs/getting-started.md) walks through shapes, units, game-loop
+stepping, events, joints, sleeping, queries and tuning, with a runnable example.
+
 Bodies clone their shapes during construction. Stack shapes and temporary shapes
 are safe; JavaScript shape handles can be deleted immediately after body creation.
 Worlds own shared body/joint handles. Listeners remain caller-owned and must be
@@ -129,6 +132,7 @@ finite output includes substantial stack drift in difficult configurations.
 
 ## Documentation
 
+- [Getting started with rigid bodies](docs/getting-started.md)
 - [Architecture, units and numerical limits](docs/architecture.md)
 - [Physics capabilities, evidence and remaining gaps](docs/physics-capabilities.md)
 - [Polygon centroids and rigid-body setup](docs/polygon-centering.md)
