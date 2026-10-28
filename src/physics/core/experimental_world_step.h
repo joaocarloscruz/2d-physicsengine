@@ -28,7 +28,7 @@ struct ExperimentalWorldStep {
         const auto it = world.contactCache.find(World::ContactKey::From(&a, &b));
         if (it == world.contactCache.end())
             return std::nullopt;
-        return it->second;
+        return it->second.impulses;
     }
 };
 } // namespace PhysicsEngine::Detail

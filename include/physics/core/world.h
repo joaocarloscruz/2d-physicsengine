@@ -92,10 +92,20 @@ private:
     std::vector<Island> buildIslands(std::vector<ContactConstraint>& constraints, bool previousContacts = false,
         const std::vector<char>* connects = nullptr);
     using ContactKeySet = std::unordered_set<ContactKey, ContactKeyHash>;
-    // Speculative-contact step after loads are applied. Fills the touching
-    // (event) keys, the cache keys to keep and the swept CCD impacts.
-    void stepSpeculative(float deltaTime, SimulationStatistics& statistics, ContactKeySet& touching,
-        ContactKeySet& cached, std::vector<CollisionManifold>& impacts);
+    // Speculative-contact step after loads are applied. Publishes the
+    // touching (event) contacts, stamps the cache entries to keep and fills
+    // the swept CCD impacts.
+    void stepSpeculative(float deltaTime, SimulationStatistics& statistics,
+        std::vector<CollisionManifold>& impacts);
+    // Position of body in `bodies` (O(1) through the index each step
+    // records), or bodies.size() when the body is not in this world.
+    std::size_t findBodyIndex(const RigidBody* body) const;
+    // As findBodyIndex, but a body outside this world throws std::out_of_range.
+    std::size_t bodyIndex(const RigidBody* body) const;
+    // Records a touching contact for this step and queues its Begin/Persist
+    // event. Returns false, doing nothing, if the key was already recorded.
+    bool publishContact(const ContactKey& key, const CollisionManifold& manifold,
+        const RigidBodyPtr& bodyA, const RigidBodyPtr& bodyB, bool skipIfActive);
     void wakeIsland(Island& island);
     // Broad-phase pair filter: collision bits, then joints that disable
     // collision between their bodies (jointedPairs, rebuilt every step).
@@ -108,6 +118,8 @@ private:
         CollisionManifold manifold;
         RigidBodyPtr bodyA;
         RigidBodyPtr bodyB;
+        // Step stamp of the last step in which this contact was touching.
+        std::uint64_t activeStep = 0;
     };
     void dispatchEvents();
     static bool SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b);
@@ -128,10 +140,20 @@ private:
     SimulationConfig simulationConfig;
     SimulationStatistics lastStepStatistics;
     std::unique_ptr<IBroadPhase> broadPhase;
-    std::unordered_map<ContactKey, ContactImpulseCache, ContactKeyHash> contactCache;
-    // Cached pairs that are actually touching; speculative-only cache entries
-    // are excluded from the persistent contact count.
-    ContactKeySet touchingContacts;
+    struct CachedContact {
+        ContactImpulseCache impulses;
+        std::uint64_t keptStep = 0;     // stamp of the last step that detected the pair
+        std::uint64_t touchingStep = 0; // stamp of the last step it was touching
+    };
+    std::unordered_map<ContactKey, CachedContact, ContactKeyHash> contactCache;
+    // Incremented at the start of every step; entries compare their stamps
+    // against it instead of collecting per-step key sets.
+    std::uint64_t stepStamp = 0;
+    // Cached pairs that are actually touching (touchingStep == touchingStamp);
+    // speculative-only cache entries are excluded from the persistent contact
+    // count. Updated when a step finishes its contact bookkeeping.
+    std::uint64_t touchingStamp = ~std::uint64_t{0};
+    std::size_t touchingCount = 0;
     ContactKeySet jointedPairs;
 };
 

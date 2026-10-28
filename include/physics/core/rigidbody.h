@@ -105,6 +105,9 @@ namespace PhysicsEngine {
         float sleepTime = 0;
         bool applyingAutomaticForces = false;
         bool contactWakeRequested = false;
+        // Scratch for World::step: this body's index in the stepping world's
+        // body list. Only a hint; World verifies it before use.
+        std::size_t worldIndex = 0;
         std::uint32_t collisionCategoryBits = 0x00000001u;
         std::uint32_t collisionMaskBits = 0xFFFFFFFFu;
     };
