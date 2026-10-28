@@ -331,14 +331,15 @@ bool ContactSolverDetail::SolveNormalBlock(ContactConstraint &c) {
 
 ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &m,
                                                        ContactImpulseCache &cache,
-                                                       const SimulationConfig &config) {
+                                                       const SimulationConfig &config,
+                                                       bool configValidated) {
     ContactConstraint c;
     if (!m.hasCollision || !m.A || !m.B) {
         cache = ContactImpulseCache{};
         return c;
     }
     ValidateManifold(m);
-    config.Validate();
+    if (!configValidated) config.Validate();
     SynchronizeCache(m, cache);
     c.bodyA = m.A;
     c.bodyB = m.B;

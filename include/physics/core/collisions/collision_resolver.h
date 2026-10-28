@@ -90,7 +90,10 @@ namespace PhysicsEngine {
         static ContactConstraint PrepareConstraint(
             const CollisionManifold& manifold,
             ContactImpulseCache& cache,
-            const SimulationConfig& config
+            const SimulationConfig& config,
+            // true when config is known valid (World validates its own
+            // configuration when it is set), skipping the re-check
+            bool configValidated = false
         );
 
         static void WarmStart(ContactConstraint& constraint);

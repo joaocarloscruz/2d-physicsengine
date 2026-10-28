@@ -495,7 +495,8 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             constraints.push_back(CollisionResolver::PrepareConstraint(
                 manifold,
                 cache,
-                simulationConfig
+                simulationConfig,
+                true
             ));
             if (closed) integratedConstraint = &constraints.back();
             publishContact(key, manifold, pair.first, pair.second, false);
@@ -720,7 +721,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
                 cache.contacts[i].impulse.tangent *= config.warmStartFactor;
             }
         }
-        constraints.push_back(CollisionResolver::PrepareConstraint(manifold, cache, config));
+        constraints.push_back(CollisionResolver::PrepareConstraint(manifold, cache, config, true));
         auto& c = constraints.back();
         std::array<double, 2> bounce{0.0, 0.0};
         bool closes = false;
@@ -966,7 +967,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         const RigidBody* other = dynamic == a ? b : a;
         if (!other->IsStatic() && !other->IsAwake()) continue; // Woken next step via its Begin event.
         endCaches.emplace_back();
-        endConstraints.push_back(CollisionResolver::PrepareConstraint(manifold, endCaches.back(), config));
+        endConstraints.push_back(CollisionResolver::PrepareConstraint(manifold, endCaches.back(), config, true));
         positionContacts[groupOf(root(islandOf(dynamic)))].push_back(&endConstraints.back());
     }
 
@@ -1148,7 +1149,7 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
         manifold.contacts[0] = {earliest.point, 0, 0x60000001u};
         bodies[hitA]->Wake(); bodies[hitB]->Wake();
         ContactImpulseCache cache;
-        auto constraint = CollisionResolver::PrepareConstraint(manifold, cache, simulationConfig);
+        auto constraint = CollisionResolver::PrepareConstraint(manifold, cache, simulationConfig, true);
         for (int i=0; i<simulationConfig.solverIterations; ++i)
             CollisionResolver::SolveVelocity(constraint);
         impacts.push_back(manifold);
