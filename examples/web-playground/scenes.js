@@ -2,7 +2,7 @@
 //
 // This file has no DOM dependency: the page loads it with a <script> tag
 // (global `PlaygroundScenes`) and scenes-test.cjs loads it with require().
-// The eight scenes mirror visualization/scenes.cpp. Every Embind handle a
+// The ten scenes mirror visualization/scenes.cpp. Every Embind handle a
 // scene creates is kept in the Scene and released by Scene.dispose().
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -18,7 +18,14 @@
     const NO_CHAIN_MASK = (~CHAIN_CATEGORY) >>> 0;
     const SLIDER_TRAVEL = 6;
     const DRAG_FREQUENCY = 5; // Hz
+    // The engine solves the mouse spring implicitly, which adds numerical
+    // damping at 60 Hz; 0.9 settles like the old critically damped spring.
+    const DRAG_DAMPING = 0.9;
     const DRAG_FORCE_PER_MASS = 1000;
+    const CAR_TOP_SPEED = 16;    // rear wheel, rad/s
+    const CAR_DRIVE_TORQUE = 16; // N m
+    const CAR_IDLE_TORQUE = 1.5; // light brake so the car stays put
+    const GOAL_TAG = 7;
     const MAX_FRAME_SECONDS = 0.1; // Same spiral-of-death cap as the native visualizer.
 
     const now = typeof performance !== 'undefined' && performance.now
@@ -39,6 +46,9 @@
             this.joints = [];            // joint records
             this.byId = new Map();       // BigInt body id -> record
             this.controllers = [];       // (scene, sceneTime) called before every step
+            this.input = {throttle: 0};  // vehicle throttle in [-1, 1], set by the page
+            this.status = null;          // optional () => string with extra HUD lines
+            this.goal = null;            // car scene: {record, inside, entries}
             this.sceneTime = 0;
             this.stepMilliseconds = 0;   // smoothed wall-clock cost of one fixed step
             this.drag = null;
@@ -58,7 +68,8 @@
         // ---- building -------------------------------------------------------
 
         addShapeBody(shapeHandle, descriptor, mat, position, options) {
-            const {isStatic = false, angle = 0, category = null, mask = null, spawned = false} = options;
+            const {isStatic = false, angle = 0, category = null, mask = null, spawned = false,
+                sensor = false} = options;
             let body;
             try {
                 body = this.physics.createRigidBody(shapeHandle, mat, position, isStatic);
@@ -69,6 +80,7 @@
                 if (angle !== 0) body.setOrientation(angle);
                 if (category !== null) body.setCollisionCategoryBits(category);
                 if (mask !== null) body.setCollisionMaskBits(mask);
+                if (sensor) { body.setSensor(true); body.setUserData(GOAL_TAG); }
                 this.engine.addBody(body);
             } catch (error) {
                 body.delete();
@@ -77,6 +89,7 @@
             const record = {
                 body, id: body.getId(), isStatic, spawned,
                 ghost: mask === 0, // collides with nothing: a pivot or rail anchor
+                sensor,            // overlap zone: drawn translucent, never solid
                 x: position.x, y: position.y, a: angle, px: position.x, py: position.y, pa: angle,
                 ...descriptor,
             };
@@ -122,9 +135,33 @@
             return joint;
         }
 
-        distance(a, b, length) {
+        // Optional {spring: [frequency, damping], range: [min, max]}. The record
+        // kind tells the renderer how to draw it: a plain distance joint, a
+        // spring (zig-zag) or a rope (free between the stops).
+        distance(a, b, length, options = {}) {
             const joint = this.physics.createDistanceJoint(a.body, b.body, length, ZERO, ZERO);
-            this.addJointRecord('distance', joint, a, b, ZERO, ZERO);
+            let kind = 'distance';
+            try {
+                if (options.spring) { joint.setSpring(...options.spring); kind = 'spring'; }
+                if (options.range) { joint.setLengthRange(...options.range); if (!options.spring) kind = 'rope'; }
+            } catch (error) {
+                joint.delete();
+                throw error;
+            }
+            this.addJointRecord(kind, joint, a, b, ZERO, ZERO);
+            return joint;
+        }
+
+        weld(a, b, localAnchorA = ZERO, localAnchorB = ZERO) {
+            const joint = this.physics.createWeldJoint(a.body, b.body, localAnchorA, localAnchorB);
+            this.addJointRecord('weld', joint, a, b, localAnchorA, localAnchorB);
+            return joint;
+        }
+
+        // A is the chassis (or frame), B the wheel; the axis is in A's frame.
+        wheel(a, b, localAxisA, localAnchorA = ZERO, localAnchorB = ZERO) {
+            const joint = this.physics.createWheelJoint(a.body, b.body, localAxisA, localAnchorA, localAnchorB);
+            this.addJointRecord('wheel', joint, a, b, localAnchorA, localAnchorB);
             return joint;
         }
 
@@ -145,7 +182,6 @@
         // Work done before every fixed step, however the step is triggered.
         beforeStep() {
             for (const controller of this.controllers) controller(this, this.sceneTime);
-            if (this.drag) this.applyDragSpring();
             this.sceneTime += this.fixedTimeStep;
         }
 
@@ -228,6 +264,18 @@
             throw new Error('Unknown shape kind: ' + kind);
         }
 
+        // Whether any body in `ids` overlaps the disc (x, y, radius), through the
+        // bound queryCircle. The result is an owned collection, deleted here.
+        overlapsDisc(x, y, radius, id) {
+            const results = this.physics.queryCircle(this.engine, {x, y}, radius);
+            try {
+                for (let i = 0; i < results.size(); ++i) if (results.getBodyId(i) === id) return true;
+                return false;
+            } finally {
+                results.delete();
+            }
+        }
+
         // Dynamic body under a world point, or null. The query result is an
         // owned collection and is deleted here; only the BigInt ids are used.
         pick(x, y) {
@@ -243,49 +291,60 @@
             }
         }
 
+        // Grabs `record` at a world point with a MouseJoint, which pulls the
+        // grab point toward the target with a 5 Hz damped spring and a force cap
+        // of 1000 * mass (the same feel as the native visualizer). The joint
+        // needs a static body that is already in the engine, so a tiny
+        // collision-free ground body is created for the drag and removed with
+        // it. Neither is listed in `bodies` or `joints`.
         beginDrag(record, x, y) {
+            this.endDrag();
             const p = record.body.getPosition();
             const angle = record.body.getOrientation();
             const dx = x - p.x, dy = y - p.y;
             const c = Math.cos(angle), s = Math.sin(angle);
+            const localAnchor = {x: c * dx + s * dy, y: -s * dx + c * dy};
+            const circle = new this.physics.Circle(0.05);
+            let ground;
+            try {
+                ground = this.physics.createRigidBody(circle, material(1, 0.1, 0.5, 0.4), ZERO, true);
+            } finally {
+                circle.delete();
+            }
+            let joint = null;
+            let grounded = false;
+            try {
+                ground.setCollisionMaskBits(0);
+                this.engine.addBody(ground);
+                grounded = true;
+                joint = this.physics.createMouseJoint(ground, record.body, localAnchor, {x, y},
+                    DRAG_FREQUENCY, DRAG_DAMPING, DRAG_FORCE_PER_MASS * record.body.getMass());
+                this.engine.addJoint(joint);
+            } catch (error) {
+                if (joint) joint.delete();
+                if (grounded) this.engine.removeBody(ground);
+                ground.delete();
+                throw error;
+            }
             record.body.wake();
-            this.drag = {
-                record, target: {x, y},
-                localAnchor: {x: c * dx + s * dy, y: -s * dx + c * dy},
-            };
+            this.drag = {record, target: {x, y}, localAnchor, joint, ground};
         }
 
         setDragTarget(x, y) {
-            if (this.drag) this.drag.target = {x, y};
+            if (!this.drag) return;
+            this.drag.target = {x, y};
+            this.drag.joint.setTarget({x, y});
         }
 
+        // Removes the joint and the ground body, then deletes both handles.
         endDrag() {
+            const drag = this.drag;
+            if (!drag) return;
             this.drag = null;
-        }
-
-        // Critically damped spring on a local grab anchor (5 Hz, force capped at
-        // 1000 * mass), as in visualization/renderer.cpp applyDragSpring. It is
-        // applied once per fixed step because forces clear after each step.
-        applyDragSpring() {
-            const {record, target, localAnchor} = this.drag;
-            const body = record.body;
-            const omega = 2 * Math.PI * DRAG_FREQUENCY;
-            const mass = body.getMass();
-            const p = body.getPosition();
-            const angle = body.getOrientation();
-            const c = Math.cos(angle), s = Math.sin(angle);
-            const armX = c * localAnchor.x - s * localAnchor.y;
-            const armY = s * localAnchor.x + c * localAnchor.y;
-            const v = body.getVelocity();
-            const w = body.getAngularVelocity();
-            const vx = v.x - w * armY, vy = v.y + w * armX;
-            let fx = ((target.x - (p.x + armX)) * omega * omega - vx * 2 * omega) * mass;
-            let fy = ((target.y - (p.y + armY)) * omega * omega - vy * 2 * omega) * mass;
-            const limit = DRAG_FORCE_PER_MASS * mass;
-            const magnitude = Math.hypot(fx, fy);
-            if (magnitude > limit) { fx *= limit / magnitude; fy *= limit / magnitude; }
-            body.applyForce({x: fx, y: fy});
-            body.applyTorque(armX * fy - armY * fx);
+            this.engine.removeJoint(drag.joint);
+            this.engine.removeBody(drag.ground);
+            drag.joint.delete();
+            drag.ground.delete();
         }
 
         // Drops spawned bodies that fell or flew far outside the arena.
@@ -293,7 +352,7 @@
             for (let i = this.bodies.length - 1; i >= 0; --i) {
                 const r = this.bodies[i];
                 if (!r.spawned || (Math.abs(r.x) < limit && Math.abs(r.y) < limit)) continue;
-                if (this.drag && this.drag.record === r) this.drag = null;
+                if (this.drag && this.drag.record === r) this.endDrag();
                 this.removeBodyAt(i);
             }
         }
@@ -313,8 +372,8 @@
         // Releases every handle this scene created. Safe to call twice.
         dispose() {
             if (this.disposed) return;
+            this.endDrag();
             this.disposed = true;
-            this.drag = null;
             for (const j of this.joints) j.joint.delete();
             for (const b of this.bodies) b.body.delete();
             this.engine.delete();
@@ -508,6 +567,113 @@
         });
     }
 
+    // A car on two wheel-joint suspensions with a rear-wheel motor, bumpy
+    // terrain and a static sensor goal. JavaScript has no collision listeners,
+    // so overlap is found by querying: the wheels are discs, and the chassis is
+    // covered by five discs along its length (queryCircle against the goal).
+    // The page sets scene.input.throttle; the controller below applies it.
+    function buildCar(s) {
+        s.arena();
+        const dirt = material(1, 0.1, 0.8, 0.7);
+        const bumps = [[-5.6, 0.9, 0.30], [-3.4, 0.7, 0.35], [-1.4, 1.3, 0.55], [0.6, 0.6, 0.30], [1.7, 0.6, 0.35]];
+        for (const [x, radius, height] of bumps) {
+            s.ball(radius, {x, y: FLOOR_TOP + height - radius}, {material: dirt, isStatic: true});
+        }
+        // A gentle hill of two tilted slabs, 0.35 m high at the peak.
+        s.box(2, 0.3, {x: 3.24, y: -4.967}, {material: dirt, isStatic: true, angle: 0.17});
+        s.box(2, 0.3, {x: 5.16, y: -4.967}, {material: dirt, isStatic: true, angle: -0.17});
+
+        const goal = s.box(3, 2.6, {x: 7.7, y: -3.7}, {isStatic: true, sensor: true});
+
+        const start = {x: -8, y: -4.1};
+        const chassis = s.box(2.4, 0.6, start, {material: material(4, 0.1, 0.4, 0.3)});
+        const tire = material(1, 0.1, 1.4, 1.2);
+        const wheels = [];
+        let rear = null;
+        for (const side of [-1, 1]) {
+            const mount = {x: 0.85 * side, y: -0.35};
+            const wheel = s.ball(0.45, {x: start.x + mount.x, y: start.y + mount.y}, {material: tire});
+            const suspension = s.wheel(chassis, wheel, {x: 0, y: 1}, mount, ZERO);
+            suspension.setSpring(3, 0.7);
+            suspension.setLimits(true, -0.3, 0.3);
+            wheels.push(wheel);
+            if (side < 0) rear = suspension;
+        }
+
+        s.goal = {record: goal, inside: false, entries: 0, car: {chassis, wheels}};
+        s.controllers.push(scene => {
+            const throttle = scene.input.throttle;
+            if (throttle !== 0) chassis.body.wake();
+            rear.setMotor(true, -throttle * CAR_TOP_SPEED, throttle !== 0 ? CAR_DRIVE_TORQUE : CAR_IDLE_TORQUE);
+
+            const c = Math.cos(chassis.a), sn = Math.sin(chassis.a);
+            let inside = wheels.some(w => scene.overlapsDisc(w.x, w.y, 0.45, goal.id));
+            for (let i = 0; !inside && i < 5; ++i) {
+                const along = -1 + 0.5 * i;
+                inside = scene.overlapsDisc(chassis.x + c * along, chassis.y + sn * along, 0.3, goal.id);
+            }
+            if (inside && !scene.goal.inside) ++scene.goal.entries;
+            scene.goal.inside = inside;
+        });
+        s.status = () => `goal entries ${s.goal.entries}${s.goal.inside ? '  [CAR IN GOAL]' : ''}` +
+            `   speed ${chassis.body.getVelocity().x.toFixed(1)} m/s`;
+    }
+
+    // A welded cantilever, a soft weld, a rope, a spring and a wheel suspension
+    // rig, each carrying or hit by something.
+    function buildGallery(s) {
+        s.arena();
+        const plank = material(1, 0.1, 0.6, 0.4);
+        const heavy = material(4, 0.1, 0.6, 0.4);
+
+        // Rigid weld: a cantilever of five segments, with a ball dropped on its tip.
+        const segments = 5, segment = 1;
+        const wall = {x: -9.45, y: 2.4};
+        let previous = s.box(0.7, 1, wall, {isStatic: true});
+        for (let i = 0; i < segments; ++i) {
+            const part = s.box(segment, 0.25, {x: wall.x + 0.35 + segment * (i + 0.5), y: wall.y}, {material: plank});
+            s.weld(previous, part, {x: i === 0 ? 0.35 : 0.5 * segment, y: 0}, {x: -0.5 * segment, y: 0});
+            previous = part;
+        }
+        s.ball(0.4, {x: wall.x + 0.35 + segment * (segments - 0.5), y: 4.6}, {material: heavy});
+
+        // Soft weld: one beam welded through an angular spring, so it sags and bounces.
+        const post = {x: -9.45, y: -1.4};
+        const stub = s.box(0.7, 1, post, {isStatic: true});
+        const beam = s.box(4.4, 0.25, {x: post.x + 0.35 + 2.2, y: post.y}, {material: plank});
+        s.weld(stub, beam, {x: 0.35, y: 0}, {x: -2.2, y: 0}).setAngularSpring(2, 0.15);
+        s.ball(0.4, {x: -5.6, y: 0.9}, {material: heavy});
+
+        // Rope: slack until the ball has fallen the full length.
+        const ropeTop = {x: -1.2, y: 6.3};
+        const ropeAnchor = s.anchor(ropeTop);
+        const ropeBall = s.ball(0.5, {x: ropeTop.x + 3.2, y: ropeTop.y - 0.5}, {material: material(3, 0.1, 0.5, 0.4)});
+        s.distance(ropeAnchor, ropeBall, 4, {range: [0, 4]});
+
+        // Spring: a box on a soft distance joint, released stretched.
+        const springTop = {x: 4.6, y: 6.3}, restLength = 2.5;
+        const springAnchor = s.anchor(springTop);
+        const bob = s.box(0.9, 0.9, {x: springTop.x, y: springTop.y - restLength - 1.2}, {material: material(2, 0.1, 0.5, 0.4)});
+        s.distance(springAnchor, bob, restLength, {spring: [1.2, 0.08]});
+
+        // Suspension rig: a wheel on a vertical spring axis fixed to the world,
+        // with a stroke limit. A motorized arm sweeps under it like a cam, so
+        // the wheel keeps bouncing against its spring.
+        const rig = {x: 7.5, y: 0};
+        const frame = s.anchor(rig, 0.4);
+        s.box(0.12, 2.6, rig, {isStatic: true, mask: 0}); // guide rail
+        const wheel = s.ball(0.55, rig, {material: material(1, 0.1, 0.8, 0.6)});
+        const strut = s.wheel(frame, wheel, {x: 0, y: 1});
+        strut.setSpring(2, 0.3);
+        strut.setLimits(true, -1.1, 0.5);
+        const pivot = {x: rig.x, y: -2.2}, armLength = 2, armStart = -1.2;
+        const hub = s.anchor(pivot, 0.4);
+        const arm = s.box(armLength, 0.25, {
+            x: pivot.x + 0.5 * armLength * Math.cos(armStart), y: pivot.y + 0.5 * armLength * Math.sin(armStart),
+        }, {material: material(2, 0.1, 0.5, 0.4), angle: armStart});
+        s.revolute(hub, arm, ZERO, {x: -0.5 * armLength, y: 0}).setMotor(true, 1.6, 5000);
+    }
+
     const DEFAULT_ITERATIONS = 10, STACKED_ITERATIONS = 20;
     const SCENES = [
         {name: 'Playground', description: 'Two boxes and a ball; spawn more and drag them.',
@@ -528,6 +694,13 @@
             solverIterations: STACKED_ITERATIONS, build: buildSeesaw},
         {name: 'Machines', description: 'A motorized paddle and roller, and a prismatic slider.',
             solverIterations: STACKED_ITERATIONS, build: buildMachines},
+        {name: 'Car and sensors',
+            description: 'A car on wheel-joint suspension drives to a sensor goal; the HUD counts entries.',
+            controls: 'Left/Right or A/D drive',
+            solverIterations: STACKED_ITERATIONS, build: buildCar},
+        {name: 'Joints gallery',
+            description: 'Weld cantilever, soft weld, rope, spring and wheel suspension rig.',
+            solverIterations: STACKED_ITERATIONS, build: buildGallery},
     ];
 
     return {
