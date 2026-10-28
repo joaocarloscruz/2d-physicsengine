@@ -123,14 +123,69 @@ std::uint32_t MakeFeatureId(bool referenceIsB, std::size_t referenceFace,
         | (static_cast<std::uint32_t>(incidentFace & 0x3fffu) << 2)
         | static_cast<std::uint32_t>(ordinal + 1);
 }
-CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b) {
+// Closest points of two separated convex polygons, relative to A's position.
+struct Closest {
+    double distance = std::numeric_limits<double>::max();
+    Point onA{0, 0}, onB{0, 0};
+    std::size_t vertexA = 0, vertexB = 0;
+    bool vertexVertex = false;
+};
+Closest FindClosest(const Geometry& a, const Geometry& b) {
+    Closest best;
+    const auto vertex = [&](const Geometry& g, std::size_t i) {
+        return (g.position - a.position) + g.localOrigin + g.offsets[i];
+    };
+    const auto test = [&](const Geometry& edges, const Geometry& points, bool edgesOnA) {
+        for (std::size_t e = 0; e < edges.offsets.size(); ++e) {
+            const Point from = vertex(edges, e);
+            for (std::size_t v = 0; v < points.offsets.size(); ++v) {
+                const Point q = vertex(points, v);
+                const double raw = edges.tangents[e].dot(q - from);
+                const double along = std::clamp(raw, 0.0, edges.edgeLengths[e]);
+                const Point onEdge = from + edges.tangents[e] * along;
+                const Point gap = q - onEdge;
+                const double distance = std::hypot(gap.x, gap.y);
+                const bool atVertex = along == 0 || along == edges.edgeLengths[e];
+                // On ties prefer a face feature, which keeps two-point manifolds.
+                if (distance < best.distance || (distance == best.distance && !atVertex)) {
+                    const std::size_t edgeVertex = along * 2 < edges.edgeLengths[e] ? e : (e + 1) % edges.offsets.size();
+                    best.distance = distance;
+                    best.onA = edgesOnA ? onEdge : q;
+                    best.onB = edgesOnA ? q : onEdge;
+                    best.vertexA = edgesOnA ? edgeVertex : v;
+                    best.vertexB = edgesOnA ? v : edgeVertex;
+                    best.vertexVertex = atVertex;
+                }
+            }
+        }
+    };
+    test(a, b, true);
+    test(b, a, false);
+    return best;
+}
+CollisionManifold VertexManifold(RigidBody* a, RigidBody* b, const Geometry& geometryA, const Closest& closest) {
+    CollisionManifold manifold;
+    manifold.A = a; manifold.B = b;
+    const Point direction = (closest.onB - closest.onA) * (1 / closest.distance);
+    manifold.hasCollision = true;
+    manifold.contactCount = 1;
+    manifold.normal = CheckedVector(direction);
+    manifold.penetration = CheckedFloat(-closest.distance);
+    // Ordinal bits 3 mark a vertex pair; clipped face points use 1 and 2.
+    manifold.contacts[0] = {CheckedVector(geometryA.position + (closest.onA + closest.onB) * 0.5),
+        manifold.penetration, 0x80000003u | (static_cast<std::uint32_t>(closest.vertexA & 0x3fffu) << 16)
+            | (static_cast<std::uint32_t>(closest.vertexB & 0x3fffu) << 2)};
+    manifold.contactPoint = manifold.contacts[0].position;
+    return manifold;
+}
+CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b, double margin) {
     CollisionManifold manifold;
     manifold.A = a; manifold.B = b;
     const Geometry geometryA = GetGeometry(a), geometryB = GetGeometry(b);
     const FaceSeparation separationA = FindMaximumSeparation(geometryA, geometryB);
-    if (separationA.separation >= 0) return manifold;
+    if (separationA.separation >= margin) return manifold;
     const FaceSeparation separationB = FindMaximumSeparation(geometryB, geometryA);
-    if (separationB.separation >= 0) return manifold;
+    if (separationB.separation >= margin) return manifold;
     // Dimensionless hysteresis/contact allowance, bounded by the narrower
     // polygon's minimum face-normal thickness; exact SAT still rejects touching.
     const double allowance = 1e-5 * std::min(geometryA.minimumWidth, geometryB.minimumWidth);
@@ -147,31 +202,47 @@ CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b) {
     const auto firstCount = ClipToPlane(edge, 2, side * -1, 0, first);
     const double length = reference.edgeLengths[face];
     const auto count = ClipToPlane(first, firstCount, side, length, second);
+    // Separated speculative pairs: face separation is only a lower bound on
+    // the distance, and a closest vertex beyond the reference face is clipped
+    // away. When the true gap exceeds the face separation the approach is
+    // vertex to vertex and gets one point along the true gap.
+    Closest closest;
+    const double faceGap = std::max(separationA.separation, separationB.separation);
+    const bool separated = margin > 0 && faceGap > 0;
+    if (separated) {
+        closest = FindClosest(geometryA, geometryB);
+        if (closest.distance >= margin) return manifold;
+        if (closest.vertexVertex && closest.distance > faceGap + allowance)
+            return VertexManifold(a, b, geometryA, closest);
+    }
     std::sort(second.begin(), second.begin() + count, [&](Point left, Point right) {
         return side.dot(left) < side.dot(right);
     });
     for (std::uint8_t i = 0; i < count; ++i) {
         const double separation = normal.dot(second[i]);
-        if (separation <= allowance) {
+        if (separation <= allowance || separation < margin) {
             const auto index = manifold.contactCount++;
             manifold.contacts[index] = {CheckedVector(reference.position + reference.localOrigin
-                + reference.offsets[face] + second[i]), CheckedFloat(std::max(-separation, 0.0)),
+                + reference.offsets[face] + second[i]),
+                CheckedFloat(margin > 0 ? -separation : std::max(-separation, 0.0)),
                 MakeFeatureId(referenceIsB, face, incidentFace, index)};
         }
     }
-    if (manifold.contactCount == 0) return manifold;
+    if (manifold.contactCount == 0)
+        return separated && closest.distance > 0 ? VertexManifold(a, b, geometryA, closest) : manifold;
     manifold.hasCollision = true;
     manifold.normal = CheckedVector(referenceIsB ? normal * -1 : normal);
-    for (std::uint8_t i = 0; i < manifold.contactCount; ++i)
+    manifold.penetration = manifold.contacts[0].penetration;
+    for (std::uint8_t i = 1; i < manifold.contactCount; ++i)
         manifold.penetration = std::max(manifold.penetration, manifold.contacts[i].penetration);
     manifold.contactPoint = manifold.contacts[0].position;
     return manifold;
 }
 } // namespace
-CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b) {
+CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b, float margin) {
     if (!a || !b) throw std::invalid_argument("Polygon collision requires two bodies.");
-    if (a->GetId() <= b->GetId()) return ComputeCanonicalManifold(a, b);
-    CollisionManifold manifold = ComputeCanonicalManifold(b, a);
+    if (a->GetId() <= b->GetId()) return ComputeCanonicalManifold(a, b, margin);
+    CollisionManifold manifold = ComputeCanonicalManifold(b, a, margin);
     std::swap(manifold.A, manifold.B);
     manifold.normal = manifold.normal * -1;
     return manifold;

@@ -17,6 +17,13 @@ namespace PhysicsEngine {
     };
 
     std::vector<CollisionPair> SweepAndPrune::FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) {
+        return FindSpeculativeCollisions(bodies, {});
+    }
+
+    std::vector<CollisionPair> SweepAndPrune::FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
+                                                                        const std::vector<float>& margins) {
+        if (!margins.empty() && margins.size() != bodies.size())
+            throw std::invalid_argument("Sweep and prune needs one margin per body.");
         std::vector<CollisionPair> potentialCollisions;
         if (bodies.empty()) {
             return potentialCollisions;
@@ -30,6 +37,11 @@ namespace PhysicsEngine {
             if (!bodies[i])
                 throw std::invalid_argument("Sweep and prune requires valid rigid bodies.");
             bounds.push_back(bodies[i]->GetAABB());
+            if (!margins.empty()) {
+                const Vector2 grow{margins[i], margins[i]};
+                bounds.back().min = bounds.back().min - grow;
+                bounds.back().max = bounds.back().max + grow;
+            }
             endpoints.push_back({i, bounds.back().min.x, true});
             endpoints.push_back({i, bounds.back().max.x, false});
         }

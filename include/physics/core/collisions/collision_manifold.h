@@ -9,6 +9,7 @@
 namespace PhysicsEngine {
     struct ContactPoint {
         Vector2 position;
+        // Negative only for speculative contacts: minus the separation gap.
         float penetration = 0.0f;
         std::uint32_t featureId = 0;
     };

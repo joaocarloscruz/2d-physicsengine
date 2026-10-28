@@ -12,7 +12,7 @@ float ManifoldFloat(double value) {
 }
 }
 
-PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody* a, RigidBody* b) {
+PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody* a, RigidBody* b, float margin) {
     if (!a || !b)
         throw std::invalid_argument("Circle collision requires two circle bodies");
     const auto* circleA = dynamic_cast<const Circle*>(a->shape.get());
@@ -31,7 +31,7 @@ PhysicsEngine::CollisionManifold PhysicsEngine::CollisionCircleCircle(RigidBody*
         throw std::invalid_argument("Circle contact positions must be finite");
     const double distance = std::hypot(dx, dy);
     const double sumRadii = radiusA + radiusB;
-    if (distance >= sumRadii) return manifold;
+    if (distance >= sumRadii + double(margin)) return manifold;
 
     manifold.penetration = ManifoldFloat(sumRadii - distance);
     if (distance == 0) {

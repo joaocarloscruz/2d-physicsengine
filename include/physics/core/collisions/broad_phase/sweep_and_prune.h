@@ -15,6 +15,8 @@ namespace PhysicsEngine {
         ~SweepAndPrune() override = default;
 
         std::vector<CollisionPair> FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) override;
+        std::vector<CollisionPair> FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
+                                                             const std::vector<float>& margins) override;
     };
 
 }

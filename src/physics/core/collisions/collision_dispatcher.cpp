@@ -10,7 +10,7 @@
 
 namespace PhysicsEngine {
 
-    using CollisionFunc = CollisionManifold (*)(RigidBody*, RigidBody*);
+    using CollisionFunc = CollisionManifold (*)(RigidBody*, RigidBody*, float);
 
     constexpr int SHAPE_COUNT = static_cast<int>(ShapeType::COUNT);
 
@@ -36,6 +36,10 @@ namespace PhysicsEngine {
     };
 
     CollisionManifold CheckCollision(RigidBody* a, RigidBody* b) {
+        return CheckCollision(a, b, 0.0f);
+    }
+
+    CollisionManifold CheckCollision(RigidBody* a, RigidBody* b, float margin) {
         if (a->IsStatic() && b->IsStatic()) {
             return {};
         }
@@ -56,7 +60,7 @@ namespace PhysicsEngine {
 
         CollisionFunc func = collisionLookup[typeA][typeB];
         if (func) {
-            CollisionManifold manifold = func(a, b);
+            CollisionManifold manifold = func(a, b, margin);
             if (swapped) {
                 std::swap(manifold.A, manifold.B);
                 manifold.normal = manifold.normal * -1.0f;

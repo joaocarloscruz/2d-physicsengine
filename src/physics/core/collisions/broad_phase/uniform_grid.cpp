@@ -29,17 +29,32 @@ namespace PhysicsEngine {
     }
 
     std::vector<CollisionPair> UniformGrid::FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) {
+        return FindSpeculativeCollisions(bodies, {});
+    }
+
+    std::vector<CollisionPair> UniformGrid::FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
+                                                                      const std::vector<float>& margins) {
+        if (!margins.empty() && margins.size() != bodies.size())
+            throw std::invalid_argument("Uniform grid needs one margin per body.");
         std::vector<CollisionPair> potentialCollisions;
 
         GridMap grid;
         std::uint64_t remainingVisits = CheckedGrid::MaximumGridVisits;
+        std::unordered_map<const RigidBody*, AABB> bounds;
 
         // Populate grid
-        for (const auto& body : bodies) {
+        for (std::size_t i = 0; i < bodies.size(); ++i) {
+            const auto& body = bodies[i];
             if (!body || !body->shape) {
                 throw std::invalid_argument("Uniform grid requires valid rigid bodies.");
             }
             AABB aabb = body->GetAABB();
+            if (!margins.empty()) {
+                const Vector2 grow{margins[i], margins[i]};
+                aabb.min = aabb.min - grow;
+                aabb.max = aabb.max + grow;
+            }
+            bounds[body.get()] = aabb;
             
             CellKey minCell = GetCellCoords(aabb.min);
             CellKey maxCell = GetCellCoords(aabb.max);
@@ -84,8 +99,8 @@ namespace PhysicsEngine {
                         continue;
                     }
 
-                    AABB aabbA = bodyA->GetAABB();
-                    AABB aabbB = bodyB->GetAABB();
+                    const AABB& aabbA = bounds.at(bodyA.get());
+                    const AABB& aabbB = bounds.at(bodyB.get());
 
                     if (aabbA.IsOverlapping(aabbB)) {
                         uniquePairs.insert({bodyA, bodyB});

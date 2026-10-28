@@ -102,19 +102,24 @@ std::uint8_t ClipToSlab(Point from, Point to, bool single, Point axis, double lo
     return result;
 }
 
+// A speculative margin inflates the first rounded shape's radius. Builder
+// subtracts it from every penetration and moves the inflated surface midpoint
+// (shift) back to the midpoint of the real surfaces.
 struct Builder {
     CollisionManifold manifold;
-    Point origin;
+    Point origin, shift{0, 0};
+    double margin = 0;
     void Add(Point local, double penetration, std::uint32_t feature) {
         if (manifold.contactCount == 2) return;
-        manifold.contacts[manifold.contactCount++] = {
-            CheckedVector(origin + local), CheckedFloat(std::max(penetration, 0.0)), feature};
+        manifold.contacts[manifold.contactCount++] = {CheckedVector(origin + local + shift),
+            CheckedFloat(margin > 0 ? penetration - margin : std::max(penetration, 0.0)), feature};
     }
     CollisionManifold Finish(Point normal) {
         if (manifold.contactCount == 0) return manifold;
         manifold.hasCollision = true;
         manifold.normal = CheckedVector(normal);
-        for (std::uint8_t i = 0; i < manifold.contactCount; ++i)
+        manifold.penetration = manifold.contacts[0].penetration;
+        for (std::uint8_t i = 1; i < manifold.contactCount; ++i)
             manifold.penetration = std::max(manifold.penetration, manifold.contacts[i].penetration);
         manifold.contactPoint = manifold.contacts[0].position;
         return manifold;
@@ -122,16 +127,19 @@ struct Builder {
 };
 
 // Rounded segment pair with the normal from a toward b.
-CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32_t kind) {
+CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32_t kind, double margin) {
     const Point origin = ToPoint(bodyA->position);
-    const Rounded a = MakeRounded(bodyA, origin), b = MakeRounded(bodyB, origin);
+    Rounded a = MakeRounded(bodyA, origin);
+    const Rounded b = MakeRounded(bodyB, origin);
     Builder builder;
     builder.manifold.A = bodyA; builder.manifold.B = bodyB; builder.origin = origin;
+    builder.margin = margin;
     const Point offset = b.center - a.center;
-    const double radii = a.radius + b.radius;
     // A dimensionless allowance prefers spine faces on near ties, so parallel
     // contact produces two points; overlap itself is decided exactly.
     const double allowance = 2e-5 * std::min(a.radius, b.radius);
+    a.radius += margin;
+    const double radii = a.radius + b.radius;
 
     // Spines are disjoint iff some candidate axis separates their projections.
     double coreGap = -std::numeric_limits<double>::infinity();
@@ -172,6 +180,7 @@ CollisionManifold CollideRounded(RigidBody* bodyA, RigidBody* bodyB, std::uint32
     for (const auto& candidate : candidates)
         if (candidate.penetration <= minimum + allowance) { chosen = &candidate; break; }
     const Point n = chosen->normal;
+    builder.shift = n * (-0.5 * margin);
 
     if (chosen->reference <= 1) {
         // Clip the incident spine to the reference spine's extent.
@@ -254,7 +263,8 @@ PolygonGeometry MakePolygon(const RigidBody* body, Point origin) {
 }
 
 // Capsule against convex polygon with the normal from capsule to polygon.
-CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polygonBody, bool capsuleIsA) {
+CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polygonBody, bool capsuleIsA,
+                                        double margin) {
     const Point origin = ToPoint(capsuleBody->position);
     const Rounded capsule = MakeRounded(capsuleBody, origin);
     const PolygonGeometry polygon = MakePolygon(polygonBody, origin);
@@ -262,9 +272,11 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
     builder.manifold.A = capsuleIsA ? capsuleBody : polygonBody;
     builder.manifold.B = capsuleIsA ? polygonBody : capsuleBody;
     builder.origin = origin;
-    const double r = capsule.radius, h = capsule.halfLength;
+    builder.margin = margin;
+    const double h = capsule.halfLength;
     const Point u = capsule.axis, w = Perp(u);
-    const double allowance = 1e-5 * std::min(polygon.minimumWidth, 2 * r);
+    const double allowance = 1e-5 * std::min(polygon.minimumWidth, 2 * capsule.radius);
+    const double r = capsule.radius + margin;
     const std::size_t count = polygon.vertices.size();
     const auto lowest = [&](Point n) {
         double low = std::numeric_limits<double>::infinity();
@@ -326,6 +338,7 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
         if (candidate.penetration <= minimum + allowance) { chosen = &candidate; break; }
     const Point n = chosen->normal;
     const Point normalAB = capsuleIsA ? n : n * -1;
+    builder.shift = n * (-0.5 * margin);
 
     if (chosen->kind == 0) {
         // Polygon reference face: clip the spine to the face's side planes.
@@ -378,31 +391,31 @@ CollisionManifold CollideCapsulePolygon(RigidBody* capsuleBody, RigidBody* polyg
 }
 } // namespace
 
-CollisionManifold CollisionCircleCapsule(RigidBody* a, RigidBody* b) {
+CollisionManifold CollisionCircleCapsule(RigidBody* a, RigidBody* b, float margin) {
     ValidateTransform(a); ValidateTransform(b);
     if (a == b) throw std::invalid_argument("Capsule collision requires two distinct bodies.");
-    if (a->shape->type == ShapeType::CIRCLE) return CollideRounded(a, b, CircleCapsuleKind);
-    CollisionManifold manifold = CollideRounded(b, a, CircleCapsuleKind);
+    if (a->shape->type == ShapeType::CIRCLE) return CollideRounded(a, b, CircleCapsuleKind, margin);
+    CollisionManifold manifold = CollideRounded(b, a, CircleCapsuleKind, margin);
     std::swap(manifold.A, manifold.B);
     manifold.normal = manifold.normal * -1;
     return manifold;
 }
 
-CollisionManifold CollisionPolygonCapsule(RigidBody* a, RigidBody* b) {
+CollisionManifold CollisionPolygonCapsule(RigidBody* a, RigidBody* b, float margin) {
     ValidateTransform(a); ValidateTransform(b);
     if (a == b) throw std::invalid_argument("Capsule collision requires two distinct bodies.");
     const bool capsuleIsA = a->shape->type == ShapeType::CAPSULE;
-    return capsuleIsA ? CollideCapsulePolygon(a, b, true) : CollideCapsulePolygon(b, a, false);
+    return capsuleIsA ? CollideCapsulePolygon(a, b, true, margin) : CollideCapsulePolygon(b, a, false, margin);
 }
 
-CollisionManifold CollisionCapsuleCapsule(RigidBody* a, RigidBody* b) {
+CollisionManifold CollisionCapsuleCapsule(RigidBody* a, RigidBody* b, float margin) {
     ValidateTransform(a); ValidateTransform(b);
     if (a == b) throw std::invalid_argument("Capsule collision requires two distinct bodies.");
     if (a->shape->type != ShapeType::CAPSULE || b->shape->type != ShapeType::CAPSULE)
         throw std::invalid_argument("Capsule collision requires two Capsule bodies.");
     // Canonical ID order makes exact feature ties independent of argument order.
-    if (a->GetId() <= b->GetId()) return CollideRounded(a, b, CapsuleCapsuleKind);
-    CollisionManifold manifold = CollideRounded(b, a, CapsuleCapsuleKind);
+    if (a->GetId() <= b->GetId()) return CollideRounded(a, b, CapsuleCapsuleKind, margin);
+    CollisionManifold manifold = CollideRounded(b, a, CapsuleCapsuleKind, margin);
     std::swap(manifold.A, manifold.B);
     manifold.normal = manifold.normal * -1;
     return manifold;

@@ -6,6 +6,9 @@
 
 namespace PhysicsEngine {
     CollisionManifold CheckCollision(RigidBody* a, RigidBody* b);
+    // Speculative query: also returns pairs separated by less than margin,
+    // with negative penetration for separated contact points.
+    CollisionManifold CheckCollision(RigidBody* a, RigidBody* b, float margin);
 }
 
 #endif // COLLISION_DISPATCHER_H

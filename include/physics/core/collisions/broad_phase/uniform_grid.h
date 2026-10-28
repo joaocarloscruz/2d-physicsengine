@@ -29,6 +29,8 @@ namespace PhysicsEngine {
         ~UniformGrid() override = default;
 
         std::vector<CollisionPair> FindPotentialCollisions(const std::vector<RigidBodyPtr>& bodies) override;
+        std::vector<CollisionPair> FindSpeculativeCollisions(const std::vector<RigidBodyPtr>& bodies,
+                                                             const std::vector<float>& margins) override;
 
         float getCellSize() const;
         void setCellSize(float size);

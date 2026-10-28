@@ -25,7 +25,7 @@ void Validate(const RigidBody* body) {
 }
 }
 
-CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b) {
+CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b, float margin) {
     Validate(a); Validate(b);
     RigidBody* circleBody = a->shape->type==ShapeType::CIRCLE ? a : b;
     RigidBody* polygonBody = circleBody==a ? b : a;
@@ -47,7 +47,9 @@ CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b) {
         relative.push_back({translation.x+c*v.x-s*v.y,translation.y+s*v.x+c*v.y});
     }
     CollisionManifold result; result.A=a; result.B=b;
-    const double radius=circle->GetRadius();
+    // Inflating the circle by the margin turns SAT overlap into overlap plus
+    // margin, so speculative separations come out of the same axis tests.
+    const double surfaceRadius=circle->GetRadius(), radius=surfaceRadius+double(margin);
     double minimum=std::numeric_limits<double>::infinity();
     D2 escape{};
     auto testAxis = [&](D2 axis) {
@@ -86,9 +88,9 @@ CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b) {
     const D2 normal=escape*(circleBody==a ? -1.0 : 1.0);
     const D2 towardsPolygon=escape*(-1);
     result.normal={Store(normal.x),Store(normal.y)};
-    result.penetration=Store(minimum);
-    result.contactPoint={Store(circleBody->position.x+towardsPolygon.x*radius),
-                         Store(circleBody->position.y+towardsPolygon.y*radius)};
+    result.penetration=Store(minimum-double(margin));
+    result.contactPoint={Store(circleBody->position.x+towardsPolygon.x*surfaceRadius),
+                         Store(circleBody->position.y+towardsPolygon.y*surfaceRadius)};
     result.hasCollision=true; result.contactCount=1;
     result.contacts[0]={result.contactPoint,result.penetration,0x40000001u};
     return result;

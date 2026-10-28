@@ -5,7 +5,9 @@
 #include "../../rigidbody.h"
 
 namespace PhysicsEngine {
-    CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b);
+    // A positive margin also reports separated contacts closer than the
+    // margin; their penetration is negative (minus the gap).
+    CollisionManifold CollisionPolygonPolygon(RigidBody* a, RigidBody* b, float margin = 0.0f);
 }
 
 #endif // COLLISION_POLYGON_POLYGON_H

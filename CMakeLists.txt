@@ -266,6 +266,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ownership.cpp
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
+        ${TESTS_SRC_DIR}/test_speculative_contacts.cpp
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
         ${TESTS_SRC_DIR}/test_contact_load_projection.cpp
         ${TESTS_SRC_DIR}/test_planar_contact_interval.cpp
