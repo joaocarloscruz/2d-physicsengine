@@ -53,6 +53,13 @@ namespace PhysicsEngine {
 
     public:
         Polygon(const std::vector<Vector2>& vertices) : Shape(ShapeType::POLYGON), vertices(vertices) {
+            ValidateOutline(vertices);
+        }
+
+        // Throws std::invalid_argument unless the outline is one the
+        // constructor accepts: at least three finite vertices forming a
+        // simple, strictly convex, non-degenerate polygon. O(N^2).
+        static void ValidateOutline(const std::vector<Vector2>& vertices) {
             if (vertices.size() < 3) {
                 throw std::invalid_argument("Polygon requires at least three vertices.");
             }

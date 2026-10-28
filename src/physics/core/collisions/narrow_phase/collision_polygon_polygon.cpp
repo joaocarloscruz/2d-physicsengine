@@ -1,4 +1,5 @@
 #include "physics/core/collisions/narrow_phase/collision_polygon_polygon.h"
+#include "../../trig_cache.h"
 
 #include <algorithm>
 #include <array>
@@ -25,45 +26,43 @@ float CheckedFloat(double value) {
 }
 Vector2 CheckedVector(Point p) { return {CheckedFloat(p.x), CheckedFloat(p.y)}; }
 
+// Inline storage for the usual small outlines; larger polygons spill to the
+// heap. Narrow phase runs per candidate pair per step, so small polygons must
+// not allocate.
+template <class T, std::size_t N = 8>
+class SmallVector {
+public:
+    void push_back(const T& value) {
+        if (count < N) {
+            local[count] = value;
+        } else {
+            if (count == N) heap.assign(local, local + N);
+            heap.push_back(value);
+        }
+        ++count;
+    }
+    std::size_t size() const { return count; }
+    const T& operator[](std::size_t i) const { return count <= N ? local[i] : heap[i]; }
+
+private:
+    T local[N];
+    std::vector<T> heap;
+    std::size_t count = 0;
+};
+
 // Keep translation, original local origin and local offsets separate. In
 // particular, subtracting two huge world vertices must not erase a small edge.
 struct Geometry {
     Point position, localOrigin;
-    std::vector<Point> offsets, normals, tangents;
-    std::vector<double> edgeLengths;
-    double minimumWidth = std::numeric_limits<double>::max();
+    SmallVector<Point> offsets, normals, tangents;
+    SmallVector<double> edgeLengths;
+    const std::vector<Vector2>* vertices = nullptr;
 };
-Geometry GetGeometry(const RigidBody* body) {
-    if (!body || !body->shape)
-        throw std::invalid_argument("Polygon collision requires two polygon bodies.");
-    const auto* polygon = dynamic_cast<const Polygon*>(body->shape.get());
-    if (!polygon || !std::isfinite(body->position.x) || !std::isfinite(body->position.y)
-        || !std::isfinite(body->orientation))
-        throw std::invalid_argument("Polygon collision requires polygons and finite transforms.");
-    const auto& vertices = polygon->getVertices();
-    // Also validate derived Polygon implementations whose protected outline
-    // might have changed after construction. Work remains O(N^2), like SAT.
-    const Polygon validated(vertices);
-    const double cosine = std::cos(static_cast<double>(body->orientation));
-    const double sine = std::sin(static_cast<double>(body->orientation));
-    const auto rotate = [&](Point p) -> Point {
-        return {cosine * p.x - sine * p.y, sine * p.x + cosine * p.y};
-    };
-    Geometry result;
-    result.position = ToPoint(body->position);
-    const Point origin = ToPoint(vertices.front());
-    result.localOrigin = rotate(origin);
-    const Point firstEdge = ToPoint(vertices[1]) - origin;
-    const Point nextEdge = ToPoint(vertices[2]) - ToPoint(vertices[1]);
-    const bool ccw = firstEdge.x * nextEdge.y - firstEdge.y * nextEdge.x > 0;
-    for (std::size_t i = 0; i < vertices.size(); ++i) {
-        result.offsets.push_back(rotate(ToPoint(vertices[i]) - origin));
-        const Point edge = rotate(ToPoint(vertices[(i + 1) % vertices.size()]) - ToPoint(vertices[i]));
-        const Point tangent = edge * (1 / std::hypot(edge.x, edge.y));
-        result.edgeLengths.push_back(std::hypot(edge.x, edge.y));
-        result.tangents.push_back(tangent);
-        result.normals.push_back(ccw ? Point{tangent.y, -tangent.x} : Point{-tangent.y, tangent.x});
-    }
+// Narrowest face-normal thickness of the local outline. Only pairs that pass
+// both separating-axis tests need it, so it is computed after those exits.
+double MinimumWidth(const Geometry& geometry) {
+    const auto& vertices = *geometry.vertices;
+    double result = std::numeric_limits<double>::max();
     for (std::size_t i = 0; i < vertices.size(); ++i) {
         const Point localEdge = ToPoint(vertices[(i + 1) % vertices.size()]) - ToPoint(vertices[i]);
         const Point localNormal = Point{-localEdge.y, localEdge.x} * (1 / std::hypot(localEdge.x, localEdge.y));
@@ -73,7 +72,43 @@ Geometry GetGeometry(const RigidBody* body) {
             minimum = std::min(minimum, projection);
             maximum = std::max(maximum, projection);
         }
-        result.minimumWidth = std::min(result.minimumWidth, maximum - minimum);
+        result = std::min(result, maximum - minimum);
+    }
+    return result;
+}
+Geometry GetGeometry(const RigidBody* body) {
+    if (!body || !body->shape)
+        throw std::invalid_argument("Polygon collision requires two polygon bodies.");
+    const auto* polygon = dynamic_cast<const Polygon*>(body->shape.get());
+    if (!polygon || !std::isfinite(body->position.x) || !std::isfinite(body->position.y)
+        || !std::isfinite(body->orientation))
+        throw std::invalid_argument("Polygon collision requires polygons and finite transforms.");
+    const auto& vertices = polygon->getVertices();
+    // Also validate derived Polygon implementations whose protected outline
+    // might have changed after construction. Work remains O(N^2), like SAT,
+    // but the outline is checked in place rather than copied into a Polygon.
+    Polygon::ValidateOutline(vertices);
+    const Detail::CosSin rotation = Detail::CachedCosSin(static_cast<double>(body->orientation));
+    const double cosine = rotation.cosine, sine = rotation.sine;
+    const auto rotate = [&](Point p) -> Point {
+        return {cosine * p.x - sine * p.y, sine * p.x + cosine * p.y};
+    };
+    Geometry result;
+    result.vertices = &vertices;
+    result.position = ToPoint(body->position);
+    const Point origin = ToPoint(vertices.front());
+    result.localOrigin = rotate(origin);
+    const Point firstEdge = ToPoint(vertices[1]) - origin;
+    const Point nextEdge = ToPoint(vertices[2]) - ToPoint(vertices[1]);
+    const bool ccw = firstEdge.x * nextEdge.y - firstEdge.y * nextEdge.x > 0;
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        result.offsets.push_back(rotate(ToPoint(vertices[i]) - origin));
+        const Point edge = rotate(ToPoint(vertices[(i + 1) % vertices.size()]) - ToPoint(vertices[i]));
+        const double length = std::hypot(edge.x, edge.y);
+        const Point tangent = edge * (1 / length);
+        result.edgeLengths.push_back(length);
+        result.tangents.push_back(tangent);
+        result.normals.push_back(ccw ? Point{tangent.y, -tangent.x} : Point{-tangent.y, tangent.x});
     }
     return result;
 }
@@ -191,7 +226,7 @@ CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b, double ma
     if (separationB.separation >= margin) return manifold;
     // Dimensionless hysteresis/contact allowance, bounded by the narrower
     // polygon's minimum face-normal thickness; exact SAT still rejects touching.
-    const double allowance = 1e-5 * std::min(geometryA.minimumWidth, geometryB.minimumWidth);
+    const double allowance = 1e-5 * std::min(MinimumWidth(geometryA), MinimumWidth(geometryB));
     const bool referenceIsB = separationB.separation > separationA.separation + allowance;
     const Geometry& reference = referenceIsB ? geometryB : geometryA;
     const Geometry& incident = referenceIsB ? geometryA : geometryB;
