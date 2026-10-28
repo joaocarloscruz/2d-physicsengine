@@ -1408,6 +1408,203 @@ async function main() {
     engine.clearBodies();
     assert.ok(Math.abs(slider.getTranslation() - 0.2) < 1e-5); // Joint retains both endpoints.
     slider.delete();
+    {
+        // Mouse, weld, wheel and distance joints: defaults, validation, one physical check each.
+        const near = (actual, expected, tolerance, label) =>
+            assert.ok(Math.abs(actual - expected) < tolerance, `${label}: ${actual} vs ${expected}`);
+        const ballShape = new physics.Circle(1);
+        const addTo = (world, x, y, isStatic, mass) => {
+            const ball = physics.createRigidBody(ballShape, material, {x, y}, isStatic);
+            if (mass) ball.setMass(mass); // Unit-radius disk: I = m/2.
+            ball.setCollisionMaskBits(0);
+            world.addBody(ball);
+            return ball;
+        };
+        const zero = {x: 0, y: 0};
+
+        // Distance joint: the handle is a DistanceJoint and is still accepted as a Joint.
+        const ropeEngine = new physics.Engine();
+        physics.addGravity(ropeEngine, {x: 0, y: -10});
+        const anchor = addTo(ropeEngine, 0, 0, true), bob = addTo(ropeEngine, 0, -1, false, 1);
+        const rope = physics.createDistanceJoint(anchor, bob, 5, zero, zero);
+        assert.equal(rope.getLength(), 5);
+        assert.equal(rope.getSpringFrequency(), 0);
+        assert.equal(rope.getSpringDampingRatio(), 0);
+        assert.equal(rope.getMinLength(), 5);
+        assert.equal(rope.getMaxLength(), 5);
+        near(rope.getCurrentLength(), 1, 1e-6, "initial rope separation");
+        assert.equal(rope.getCollideConnected(), false);
+        rope.setSpring(3, 0.5);
+        assert.equal(rope.getSpringFrequency(), 3);
+        assert.equal(rope.getSpringDampingRatio(), 0.5);
+        rope.setSpring(0, 0);
+        assert.throws(() => rope.setSpring(-1, 0));
+        assert.throws(() => rope.setSpring(1, -0.5));
+        assert.throws(() => rope.setSpring(NaN, 0));
+        assert.equal(rope.getSpringFrequency(), 0);
+        assert.throws(() => rope.setLengthRange(6, 7));  // minimum above the length
+        assert.throws(() => rope.setLengthRange(0, 4));  // maximum below the length
+        assert.throws(() => rope.setLengthRange(-1, 5));
+        assert.throws(() => rope.setLengthRange(0, Infinity));
+        assert.equal(rope.getMinLength(), 5);
+        rope.setLengthRange(0, 5);
+        assert.equal(rope.getMinLength(), 0);
+        assert.equal(rope.getMaxLength(), 5);
+        assert.equal(rope.getLength(), 5);
+        assert.throws(() => physics.createDistanceJoint(anchor, bob, 0, zero, zero));
+        ropeEngine.addJoint(rope);
+        for (let i = 0; i < 30; ++i) ropeEngine.step(1 / 60);
+        // Slack rope: free fall, v = -g t and y = -1 - g t^2 / 2 at t = 0.5 s.
+        near(bob.getVelocity().y, -5, 1e-3, "slack rope fall speed");
+        near(bob.getPosition().y, -1 - 0.5 * 10 * 0.25, 0.1, "slack rope fall height");
+        near(bob.getPosition().x, 0, 1e-6, "slack rope sideways drift");
+        for (let i = 0; i < 180; ++i) ropeEngine.step(1 / 60);
+        assert.ok(rope.getCurrentLength() <= 5.05, "a taut rope holds its maximum length");
+        assert.ok(rope.getCurrentLength() > 4.9, "the bob hangs from the taut rope");
+        ropeEngine.removeJoint(rope);
+        rope.delete();
+        assert.throws(() => rope.getLength(), "a deleted handle is unusable");
+        ropeEngine.clearBodies(); anchor.delete(); bob.delete(); ropeEngine.delete();
+
+        // Mouse joint.
+        const flat = new physics.Engine();
+        const ground = addTo(flat, -5, -5, true), dragged = addTo(flat, 0, 0, false, 1);
+        const mouse = physics.createMouseJoint(ground, dragged, {x: 0.25, y: 0}, {x: 3, y: 1}, 5, 0.7, 1000);
+        assert.deepEqual(mouse.getTarget(), {x: 3, y: 1});
+        assert.deepEqual(mouse.getLocalAnchor(), {x: 0.25, y: 0});
+        assert.equal(mouse.getFrequency(), 5);
+        near(mouse.getDampingRatio(), 0.7, 1e-6, "mouse damping ratio");
+        assert.equal(mouse.getMaxForce(), 1000);
+        assert.equal(mouse.getCollideConnected(), true, "mouse joints default to colliding");
+        assert.deepEqual(mouse.getReactionForce(), zero);
+        mouse.setTarget({x: 3, y: 0}); assert.deepEqual(mouse.getTarget(), {x: 3, y: 0});
+        mouse.setSpring(6, 0.4);
+        assert.equal(mouse.getFrequency(), 6);
+        near(mouse.getDampingRatio(), 0.4, 1e-6, "mouse damping ratio after setSpring");
+        mouse.setMaxForce(500); assert.equal(mouse.getMaxForce(), 500);
+        assert.throws(() => mouse.setTarget({x: NaN, y: 0}));
+        assert.throws(() => mouse.setTarget({x: 0, y: Infinity}));
+        assert.throws(() => mouse.setSpring(0, 0.5));
+        assert.throws(() => mouse.setSpring(5, -1));
+        assert.throws(() => mouse.setMaxForce(-1));
+        assert.throws(() => mouse.setMaxForce(NaN));
+        assert.equal(mouse.getFrequency(), 6);
+        assert.equal(mouse.getMaxForce(), 500);
+        assert.deepEqual(mouse.getTarget(), {x: 3, y: 0});
+        assert.throws(() => physics.createMouseJoint(ground, dragged, zero, zero, 0, 0.5, 100));
+        assert.throws(() => physics.createMouseJoint(ground, dragged, zero, {x: NaN, y: 0}, 5, 0.5, 100));
+        assert.throws(() => physics.createMouseJoint(ground, dragged, zero, zero, 5, 0.5, -1));
+        assert.throws(() => physics.createMouseJoint(dragged, ground, zero, zero, 5, 0.5, 100)); // dynamic ground
+        flat.addJoint(mouse);
+        const startX = dragged.getPosition().x;
+        for (let i = 0; i < 30; ++i) flat.step(1 / 60);
+        assert.ok(dragged.getPosition().x > startX + 0.5, "the mouse joint pulls the body toward its target");
+        assert.ok(mouse.getReactionForce().x > 0, "the reaction force points toward the target");
+        assert.ok(Math.hypot(mouse.getReactionForce().x, mouse.getReactionForce().y) <= 500 + 1e-3);
+        for (let i = 0; i < 240; ++i) flat.step(1 / 60);
+        near(dragged.getPosition().x + 0.25, 3, 0.02, "the grabbed anchor reaches the target");
+        near(dragged.getPosition().y, 0, 0.02, "the grabbed anchor reaches the target height");
+        flat.removeJoint(mouse);
+        mouse.delete();
+        assert.throws(() => mouse.getTarget(), "a deleted handle is unusable");
+
+        // Weld joint: two dynamic bodies keep their relative pose while spinning.
+        flat.clearBodies(); ground.delete(); dragged.delete();
+        const left = addTo(flat, 0, 0, false, 1), right = addTo(flat, 2, 0, false, 1);
+        right.setOrientation(0.3);
+        const weld = physics.createWeldJoint(left, right, {x: 1, y: 0}, {x: -1, y: 0});
+        near(weld.getReferenceAngle(), 0.3, 1e-6, "weld reference angle");
+        near(weld.getAngle(), 0, 1e-6, "weld angle at construction");
+        assert.equal(weld.getLinearFrequency(), 0);
+        assert.equal(weld.getLinearDampingRatio(), 0);
+        assert.equal(weld.getAngularFrequency(), 0);
+        assert.equal(weld.getAngularDampingRatio(), 0);
+        assert.equal(weld.getCollideConnected(), false);
+        weld.setLinearSpring(4, 0.3); weld.setAngularSpring(2, 0.6);
+        near(weld.getLinearFrequency(), 4, 1e-6, "weld linear frequency");
+        near(weld.getLinearDampingRatio(), 0.3, 1e-6, "weld linear damping");
+        near(weld.getAngularFrequency(), 2, 1e-6, "weld angular frequency");
+        near(weld.getAngularDampingRatio(), 0.6, 1e-6, "weld angular damping");
+        assert.throws(() => weld.setLinearSpring(-1, 0));
+        assert.throws(() => weld.setAngularSpring(1, -1));
+        assert.throws(() => weld.setAngularSpring(NaN, 0));
+        assert.equal(weld.getAngularFrequency(), 2);
+        weld.setLinearSpring(0, 0); weld.setAngularSpring(0, 0); // back to rigid
+        assert.throws(() => physics.createWeldJoint(left, left, zero, zero));
+        flat.addJoint(weld);
+        left.setAngularVelocity(2);
+        const orientation = left.getOrientation();
+        for (let i = 0; i < 120; ++i) flat.step(1 / 120);
+        assert.ok(Math.abs(left.getOrientation() - orientation) > 0.2, "the welded pair is rotating");
+        near(weld.getAngle(), 0, 1e-3, "welded relative angle");
+        near(weld.getSeparation(), 0, 1e-3, "welded anchor separation");
+        near(right.getAngularVelocity(), left.getAngularVelocity(), 1e-3, "welded angular velocities match");
+        flat.removeJoint(weld);
+        weld.delete();
+        assert.throws(() => weld.getAngle(), "a deleted handle is unusable");
+
+        // Wheel joint: a motor reaches its speed under the torque cap.
+        flat.clearBodies(); left.delete(); right.delete();
+        const chassis = addTo(flat, 0, 0, true), wheel = addTo(flat, 0, 0, false, 2);
+        const suspension = physics.createWheelJoint(chassis, wheel, {x: 0, y: 2}, zero, zero);
+        near(suspension.getLocalAxis().x, 0, 1e-6, "wheel local axis x");
+        near(suspension.getLocalAxis().y, 1, 1e-6, "wheel local axis y (normalised)");
+        near(suspension.getAxis().y, 1, 1e-6, "wheel world axis");
+        assert.equal(suspension.getSpringFrequency(), 0);
+        assert.equal(suspension.getSpringDampingRatio(), 0);
+        assert.equal(suspension.isMotorEnabled(), false);
+        assert.equal(suspension.areLimitsEnabled(), false);
+        assert.equal(suspension.getCollideConnected(), false);
+        near(suspension.getTranslation(), 0, 1e-6, "wheel translation at construction");
+        suspension.setSpring(3, 0.2);
+        near(suspension.getSpringFrequency(), 3, 1e-6, "wheel spring frequency");
+        near(suspension.getSpringDampingRatio(), 0.2, 1e-6, "wheel spring damping");
+        suspension.setSpring(0, 0);
+        suspension.setLimits(true, -0.5, 0.25);
+        assert.equal(suspension.areLimitsEnabled(), true);
+        assert.equal(suspension.getLowerLimit(), -0.5);
+        assert.equal(suspension.getUpperLimit(), 0.25);
+        suspension.setLimits(false, -0.5, 0.25);
+        assert.equal(suspension.areLimitsEnabled(), false);
+        assert.throws(() => suspension.setLimits(true, 2, 1));
+        assert.throws(() => suspension.setLimits(true, NaN, 1));
+        assert.throws(() => suspension.setSpring(-1, 0));
+        assert.throws(() => suspension.setSpring(1, -1));
+        assert.throws(() => suspension.setMotor(true, 1, -1));
+        assert.throws(() => suspension.setMotor(true, NaN, 1));
+        assert.throws(() => physics.createWheelJoint(chassis, wheel, zero, zero, zero)); // zero axis
+        assert.equal(suspension.isMotorEnabled(), false);
+        suspension.setMotor(true, 1, 2);
+        assert.equal(suspension.isMotorEnabled(), true);
+        assert.equal(suspension.getMotorSpeed(), 1);
+        assert.equal(suspension.getMaxMotorTorque(), 2);
+        flat.addJoint(suspension);
+        flat.step(0.25);
+        // The disk's inertia is 1, so the capped torque of 2 gives 0.5 rad/s after a quarter second.
+        near(suspension.getAngularSpeed(), 0.5, 1e-6, "motor speed under the torque cap");
+        near(suspension.getMotorTorque(), 2, 1e-6, "motor torque at the cap");
+        for (let i = 0; i < 120; ++i) flat.step(1 / 60);
+        near(suspension.getAngularSpeed(), 1, 1e-4, "motor reaches its target speed");
+        assert.ok(Math.abs(suspension.getMotorTorque()) <= 2 + 1e-6, "motor torque stays within the cap");
+        near(suspension.getTransverseError(), 0, 1e-6, "wheel transverse error");
+        near(suspension.getTranslation(), 0, 1e-6, "wheel translation without load");
+        near(suspension.getTranslationSpeed(), 0, 1e-6, "wheel translation speed without load");
+        assert.equal(suspension.getSpringForce(), 0);
+        flat.removeJoint(suspension);
+        suspension.delete();
+        assert.throws(() => suspension.getAxis(), "a deleted handle is unusable");
+
+        // The engine keeps a joint and its bodies alive after every JS handle is deleted.
+        flat.clearBodies(); chassis.delete(); wheel.delete();
+        const pivot = addTo(flat, 0, 0, true), arm = addTo(flat, 1, 0, false, 1);
+        const kept = physics.createWeldJoint(pivot, arm, zero, {x: -1, y: 0});
+        flat.addJoint(kept);
+        kept.delete(); pivot.delete(); arm.delete();
+        for (let i = 0; i < 10; ++i) flat.step(1 / 60);
+        assert.equal(JSON.parse(flat.exportJson(1)).bodies.length, 2);
+        flat.clearBodies();
+        flat.delete(); ballShape.delete();
+    }
     engine.delete();
     particles.delete();
     {
