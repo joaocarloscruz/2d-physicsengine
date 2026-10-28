@@ -4,11 +4,20 @@
 #include "../trig_cache.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 
 namespace PhysicsEngine {
 namespace {
+// Out-of-line throws keep the hot checked arithmetic small.
+#if defined(__GNUC__) || defined(__clang__)
+#define PHYSICS_COLD_NOINLINE __attribute__((noinline, cold))
+#else
+#define PHYSICS_COLD_NOINLINE
+#endif
+[[noreturn]] PHYSICS_COLD_NOINLINE void ThrowOverflow(const char* message) { throw std::overflow_error(message); }
+[[noreturn]] PHYSICS_COLD_NOINLINE void ThrowInvalid(const char* message) { throw std::invalid_argument(message); }
 struct DVector {
     double x = 0, y = 0;
     DVector() = default;
@@ -20,22 +29,24 @@ struct DVector {
     double dot(DVector v) const { return x * v.x + y * v.y; }
     double cross(DVector v) const { return x * v.y - y * v.x; }
 };
+// abs(v) <= max is false exactly for NaN and infinities (and, for floats,
+// for out-of-range values): one compare instead of isfinite plus a range test.
 double Checked(double value) {
-    if (!std::isfinite(value))
-        throw std::overflow_error("Contact arithmetic exceeds finite double range");
+    if (!(std::abs(value) <= std::numeric_limits<double>::max()))
+        ThrowOverflow("Contact arithmetic exceeds finite double range");
     return value;
 }
 float CheckedFloat(double value) {
-    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
-        throw std::overflow_error("Contact result exceeds finite float state range");
+    if (!(std::abs(value) <= std::numeric_limits<float>::max()))
+        ThrowOverflow("Contact result exceeds finite float state range");
     return static_cast<float>(value);
 }
 Vector2 CheckedVector(DVector v) {
     return {CheckedFloat(v.x), CheckedFloat(v.y)};
 }
 void ValidateFinite(double value) {
-    if (!std::isfinite(value))
-        throw std::invalid_argument("Contact input must be finite");
+    if (!(std::abs(value) <= std::numeric_limits<double>::max()))
+        ThrowInvalid("Contact input must be finite");
 }
 void ValidateFinite(Vector2 v) {
     ValidateFinite(v.x);
@@ -54,13 +65,13 @@ void ValidateBody(const RigidBody &body) {
     ValidateFinite(body.inverseInertia);
     if (body.IsStatic() ? (body.inverseMass != 0 || body.inverseInertia != 0)
                         : (body.inverseMass <= 0 || body.inverseInertia <= 0))
-        throw std::invalid_argument("Contact inverse mass/inertia are invalid for the body type");
+        ThrowInvalid("Contact inverse mass/inertia are invalid for the body type");
     const auto &m = body.material;
     ValidateFinite(m.restitution);
     ValidateFinite(m.staticFriction);
     ValidateFinite(m.dynamicFriction);
     if (m.restitution < 0 || m.restitution > 1 || m.staticFriction < 0 || m.dynamicFriction < 0)
-        throw std::invalid_argument("Contact restitution/friction are invalid");
+        ThrowInvalid("Contact restitution/friction are invalid");
 }
 Vector2 ContactTangent(Vector2 normal) {
     return {-normal.y, normal.x};
@@ -76,11 +87,11 @@ void ValidateManifold(const CollisionManifold &m) {
     ValidateBody(*m.A);
     ValidateBody(*m.B);
     if (m.A == m.B)
-        throw std::invalid_argument("Contact requires distinct endpoints");
+        ThrowInvalid("Contact requires distinct endpoints");
     ValidateFinite(m.normal);
     ValidateFinite(m.penetration);
     if (m.normal.x == 0 && m.normal.y == 0)
-        throw std::invalid_argument("Contact normal must be nonzero");
+        ThrowInvalid("Contact normal must be nonzero");
     // Generated normals are unit vectors subject to float rounding. Preserve
     // that contract without introducing an arbitrary additional norm tolerance.
     for (std::uint8_t i = 0; i < EffectiveContactCount(m); ++i) {
@@ -104,6 +115,38 @@ DVector ToWorldPoint(const RigidBody *body, Vector2 point) {
 DVector ConstraintPointPosition(const ContactConstraint &c, const ContactConstraintPoint &p) {
     return (ToWorldPoint(c.bodyA, p.localAnchorA) + ToWorldPoint(c.bodyB, p.localAnchorB)) * 0.5;
 }
+// ConstraintPointPosition for each point, reusing the constraint's cached
+// positions while the bodies, their poses and the anchors are bit-for-bit
+// those they were computed from.
+void PointPositions(ContactConstraint &c, DVector (&points)[2]) {
+    const std::uint8_t count = std::min<std::uint8_t>(c.pointCount, 2);
+    auto &cache = c.pointPositions;
+    const float poses[6]{c.bodyA->position.x, c.bodyA->position.y, c.bodyA->orientation,
+                         c.bodyB->position.x, c.bodyB->position.y, c.bodyB->orientation};
+    float anchors[8]{};
+    for (std::uint8_t i = 0; i < count; ++i) {
+        anchors[4 * i] = c.points[i].localAnchorA.x; anchors[4 * i + 1] = c.points[i].localAnchorA.y;
+        anchors[4 * i + 2] = c.points[i].localAnchorB.x; anchors[4 * i + 3] = c.points[i].localAnchorB.y;
+    }
+    if (cache.valid && cache.bodyA == c.bodyA && cache.bodyB == c.bodyB && cache.count == count
+        && std::memcmp(cache.poses, poses, sizeof poses) == 0
+        && std::memcmp(cache.anchors, anchors, sizeof anchors) == 0) {
+        for (std::uint8_t i = 0; i < count; ++i)
+            points[i] = {cache.positions[i][0], cache.positions[i][1]};
+        return;
+    }
+    for (std::uint8_t i = 0; i < count; ++i) {
+        points[i] = ConstraintPointPosition(c, c.points[i]);
+        cache.positions[i][0] = points[i].x;
+        cache.positions[i][1] = points[i].y;
+    }
+    cache.bodyA = c.bodyA;
+    cache.bodyB = c.bodyB;
+    std::memcpy(cache.poses, poses, sizeof poses);
+    std::memcpy(cache.anchors, anchors, sizeof anchors);
+    cache.count = count;
+    cache.valid = true;
+}
 DVector PointVelocity(const RigidBody *body, DVector point) {
     const auto r = point - DVector(body->position);
     return DVector(body->velocity) +
@@ -118,7 +161,7 @@ double EffectiveMass(const RigidBody *a, const RigidBody *b, DVector ra, DVector
 }
 void SynchronizeCache(const CollisionManifold &m, ContactImpulseCache &cache) {
     if (cache.contactCount > 2)
-        throw std::invalid_argument("Contact cache count exceeds its capacity");
+        ThrowInvalid("Contact cache count exceeds its capacity");
     for (std::uint8_t i = 0; i < cache.contactCount; ++i)
         ValidateImpulse(cache.contacts[i].impulse);
     const auto previous = cache;
@@ -363,8 +406,7 @@ void CollisionResolver::SolveVelocity(ContactConstraint &c) {
     // Poses do not change during the velocity solve, so each point position
     // is computed once here and shared with the normal block.
     DVector points[2];
-    for (std::uint8_t i = 0; i < c.pointCount && i < 2; ++i)
-        points[i] = ConstraintPointPosition(c, c.points[i]);
+    PointPositions(c, points);
     const bool block = SolveNormalBlock(c, points);
     // After the first validated impulse in this call the bodies change only
     // through checked velocity updates, so later impulses skip revalidation.

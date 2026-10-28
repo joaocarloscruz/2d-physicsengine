@@ -47,6 +47,19 @@ namespace PhysicsEngine {
         float maxPositionCorrection = 0.0f;
         float velocityTolerance = 0.0f;
         ContactImpulseCache* cache = nullptr;
+
+        // Solver scratch, not contact state: the points' world positions for
+        // the recorded bodies, poses and anchors. Velocity iterations leave
+        // poses unchanged, so the positions are reused until any input differs.
+        struct PointPositionCache {
+            const RigidBody* bodyA = nullptr;
+            const RigidBody* bodyB = nullptr;
+            float poses[6]{};
+            float anchors[8]{};
+            std::uint8_t count = 0;
+            bool valid = false;
+            double positions[2][2]{};
+        } pointPositions;
     };
 
     class CollisionResolver {
