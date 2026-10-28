@@ -24,7 +24,10 @@ position correction visits each point separately. See the [contact solver](conta
 for active sets, conditioning and fallback behavior.
 
 For compatibility, `CollisionManifold::contactPoint` is the first clipped point
-and `CollisionManifold::penetration` is the maximum point penetration. New code
+and `CollisionManifold::penetration` is the maximum point penetration, except
+for capsule pairs: there it is the exact minimum translation distance, which
+can exceed every clipped point's depth when the deepest end of a spine lies
+past the reference face (see [capsules](capsules.md)). New code
 should use `contactCount` and `contacts`. Circle-circle and circle-polygon
 collisions expose one contact through the same representation.
 
