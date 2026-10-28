@@ -270,6 +270,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ccd.cpp
         ${TESTS_SRC_DIR}/test_ccd_numerics.cpp
         ${TESTS_SRC_DIR}/test_speculative_contacts.cpp
+        ${TESTS_SRC_DIR}/test_concurrent_worlds.cpp
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
         ${TESTS_SRC_DIR}/test_contact_load_projection.cpp
         ${TESTS_SRC_DIR}/test_planar_contact_interval.cpp
@@ -334,7 +335,8 @@ elseif(BUILD_TESTING)
     )
 
     set_target_properties(engine_tests_runner PROPERTIES OUTPUT_NAME run_tests)
-    target_link_libraries(engine_tests_runner PRIVATE Engine)
+    find_package(Threads REQUIRED)
+    target_link_libraries(engine_tests_runner PRIVATE Engine Threads::Threads)
     target_include_directories(engine_tests_runner PRIVATE ${TESTS_SRC_DIR})
 
     add_executable(numerical_validation
