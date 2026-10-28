@@ -290,14 +290,22 @@ CollisionManifold ComputeCanonicalManifold(RigidBody* a, RigidBody* b, double ma
     // Separated speculative pairs: face separation is only a lower bound on
     // the distance, and a closest vertex beyond the reference face is clipped
     // away. When the true gap exceeds the face separation the approach is
-    // vertex to vertex and gets one point along the true gap.
+    // vertex to vertex and gets one point along the true gap. The clipped
+    // vertex can also sit just past the side plane, with the true gap within
+    // the allowance of the face separation, while the clip point that
+    // replaces it lies far up a steep incident edge and overstates the gap
+    // without bound as the edge turns toward the side plane. The face points
+    // are only kept when the nearest of them reports the true gap.
     Closest closest;
     const double faceGap = std::max(separationA.separation, separationB.separation);
     const bool separated = margin > 0 && faceGap > 0;
     if (separated) {
         closest = FindClosest(geometryA, geometryB);
         if (closest.distance >= margin) return manifold;
-        if (closest.vertexVertex && closest.distance > faceGap + allowance)
+        double nearestFace = std::numeric_limits<double>::infinity();
+        for (std::uint8_t i = 0; i < count; ++i) nearestFace = std::min(nearestFace, normal.dot(second[i]));
+        if (closest.vertexVertex
+            && (closest.distance > faceGap + allowance || (count > 0 && nearestFace > closest.distance + allowance)))
             return VertexManifold(a, b, geometryA, closest);
     }
     std::sort(second.begin(), second.begin() + count, [&](Point left, Point right) {

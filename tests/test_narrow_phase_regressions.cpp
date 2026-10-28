@@ -126,3 +126,28 @@ TEST_CASE("Capsule face ties against disjoint cores place the contact between th
     CHECK(std::abs(double(q.penetration) - Penetration(capsules.ga, capsules.gb).penetration) <= 1e-5);
     RequireMidpointContacts(q, capsules, 1e-5);
 }
+
+TEST_CASE("Separated polygons report the true gap when the closest vertex is clipped",
+          "[polygon][narrow-phase][regression]") {
+    // The closest vertex of A sits just past the side plane of B's reference
+    // face, so the vertex-to-vertex distance is within the allowance of the
+    // face separation and the face points were kept. The clip point that
+    // replaced the vertex lies up A's steep edge, and the speculative point
+    // reported a gap of 0.292679 for a true gap of 0.292603. The error grows
+    // without bound as that edge turns toward the side plane.
+    const Pair pair({PolygonSpec({{-0x1.2f3486p+0f, 0x1.254adep-2f}, {-0x1.adbccap-3f, -0x1.c66528p-3f},
+                                  {-0x1.ba44bap-2f, -0x1.2738bcp-2f}, {-0x1.368c9ap+0f, -0x1.1a5f54p-7f}}),
+                     {0, 0}, 0x1.216454p-2f},
+                    {PolygonSpec({{-0x1.1ed7b8p-5f, -0x1.62b29p-6f}, {-0x1.f7fbfcp-5f, -0x1.dbff0cp-6f},
+                                  {0x1.4fc82cp-6f, 0x1.1f070cp-6f}, {0x1.7c5510p-4f, 0x1.33ab30p-5f},
+                                  {0x1.b644dcp-3f, 0x1.0ad8aep-4f}, {0x1.b93ce6p-3f, 0x1.ed0bc4p-5f}}),
+                     {0, 0}, 0x1.ecfeb4p+0f});
+    const double gap = -Penetration(pair.ga, pair.gb).penetration;
+    for (const bool reverse : {false, true}) {
+        const auto m = reverse ? CheckCollision(pair.b.get(), pair.a.get(), 0x1.db3264p-2f)
+                               : CheckCollision(pair.a.get(), pair.b.get(), 0x1.db3264p-2f);
+        REQUIRE(m.hasCollision);
+        CHECK(std::abs(-double(m.penetration) - gap) <= 1e-6);
+        for (int i = 0; i < m.contactCount; ++i) CHECK(-double(m.contacts[i].penetration) <= gap + 1e-6);
+    }
+}
