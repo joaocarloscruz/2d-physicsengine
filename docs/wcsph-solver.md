@@ -26,6 +26,15 @@ pass at their original thresholds. Each piece answers a measured defect:
 | `hydrostaticInitialization` | `RestDensityParticles` | See [hydrostatic initialization](#hydrostatic-initialization-and-wall-completion): `prepare(particles, boundaryParticles)` seeds wall-supported fluid at rest density. |
 | `wallConsistency` | `ConstantPressureCompletion` | Makes a uniform pressure exert no net wall force where wall samples nearly complete the stencil, so the floor force balance converges with spacing. |
 
+The kernel rates come from `benchmarks/wcsph_lattice_stability.py`, which
+linearizes the pressurized lattice without walls, damping or shifting. It also
+predicts transverse growth for Wendland C2 at `h = 2.5dx` (13.8 1/s) and `3dx`
+(3.7 1/s), so the kernel alone is unconditionally stable only at the `h = 2dx`
+resolution the column targets use; elsewhere shifting and the solver's other
+dissipation have to hold those modes. The continuity hydrostatic test at
+`h = 2.5dx` stays quiet over its 0.5 s run with the defaults, but longer or
+larger `h/dx` runs are not yet validated.
+
 The previous behaviour remains available explicitly:
 `densityMode = Summation`, `kernelFamily = Poly6Spiky`,
 `timeIntegration = ExplicitDensity`, `acousticDamping = 0`,
