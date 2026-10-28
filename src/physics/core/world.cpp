@@ -667,7 +667,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
     struct Entry { ContactKey key; CollisionManifold manifold; RigidBodyPtr bodyA, bodyB; };
     std::vector<Entry> entries;
     std::vector<ContactConstraint> constraints;
-    std::vector<char> touchingStart;
+    std::vector<char> touchingStart, closing;
     std::vector<std::array<double, 2>> bounces; // target separating speed per point
     constraints.reserve(potentialCollisions.size());
     const auto ccdSweeps = [&](const RigidBody& a, const RigidBody& b) {
@@ -699,6 +699,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
         constraints.push_back(CollisionResolver::PrepareConstraint(manifold, contact->second, config));
         auto& c = constraints.back();
         std::array<double, 2> bounce{0.0, 0.0};
+        bool closes = false;
         for (std::uint8_t i = 0; deltaTime > 0 && i < c.pointCount; ++i) {
             auto& p = c.points[i];
             if (p.penetration >= 0) continue;
@@ -713,6 +714,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
             const DPoint vA = pointVelocity(c.bodyA, rA), vB = pointVelocity(c.bodyB, rB);
             const double normalVelocity = (vB.x - vA.x) * c.normal.x + (vB.y - vA.y) * c.normal.y;
             if (normalVelocity < speculative) {
+                closes = true;
                 // Bounce off the speed at the moment of contact, not the
                 // end-of-step prediction: that one includes the load for the
                 // part of the step after contact, and e = 1 would gain energy.
@@ -736,6 +738,20 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
         bounces.push_back(bounce);
         entries.push_back({key, manifold, pair.first, pair.second});
         touchingStart.push_back(manifold.penetration >= -touchTolerance);
+        closing.push_back(closes);
+    }
+
+    // An awake body about to reach a sleeping one this step wakes it now.
+    // Waiting for the touching contact would let the gap close unopposed and
+    // the mover sink up to v * dt into the sleeper.
+    if (config.enableSleeping) {
+        for (std::size_t j = 0; j < constraints.size(); ++j) {
+            RigidBody* a = constraints[j].bodyA;
+            RigidBody* b = constraints[j].bodyB;
+            if (touchingStart[j] || !closing[j] || a->IsStatic() || b->IsStatic() || a->IsAwake() == b->IsAwake())
+                continue;
+            (a->IsAwake() ? b : a)->Wake();
+        }
     }
 
     // Islands (sleeping, waking, statistics) only follow touching contacts.
@@ -746,6 +762,14 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics, C
     for (std::size_t k = 0; k < islands.size(); ++k) {
         wakeIsland(islands[k]);
         for (auto* body : islands[k].bodies) islandOf[body] = k;
+    }
+    // Bodies woken above join this step with their (zero) sleeping velocity,
+    // so the solver's velocity change still moves them.
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        if (integrated[i] || !bodies[i]->IsAwake()) continue;
+        ++statistics.integratedBodyCount;
+        start[i] = bodies[i]->IntegrateVelocity(deltaTime, config);
+        integrated[i] = 1;
     }
     std::vector<char> awakeIsland(islands.size(), 0), solved(constraints.size(), 0);
     for (std::size_t k = 0; k < islands.size(); ++k) {

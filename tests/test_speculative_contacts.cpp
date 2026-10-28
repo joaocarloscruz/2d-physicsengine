@@ -298,3 +298,27 @@ TEST_CASE("Restitution bounces off the speed at contact, not the end-of-step pre
         REQUIRE(apex == Approx(double(e) * e).epsilon(0.02));
     }
 }
+
+TEST_CASE("A body about to hit a sleeping body wakes it in time", "[speculative][sleeping]") {
+    auto config = SimulationConfig{};
+    config.enableSleeping = true;
+    World world(config);
+    world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+    auto sleeper = Body(Polygon::MakeBox(1, 1), {0, 0.5f});
+    world.addBody(sleeper);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+    for (int i = 0; i < 120; ++i) world.step();
+    REQUIRE_FALSE(sleeper->IsAwake());
+    auto ball = Body(Circle(0.2f), {-3, 0.5f}, false, {2, 0});
+    ball->SetVelocity({12, 0});
+    world.addBody(ball);
+    double peak = 0;
+    for (int i = 0; i < 30; ++i) {
+        world.step();
+        peak = std::max(peak, double(CheckCollision(ball.get(), sleeper.get()).penetration));
+    }
+    // Without the early wake the ball sinks up to v * dt = 0.2 m before the
+    // touching contact wakes the box.
+    REQUIRE(peak < 0.01);
+    REQUIRE(sleeper->position.x > 0.05f);
+}

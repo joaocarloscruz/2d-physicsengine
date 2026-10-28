@@ -21,7 +21,9 @@ in the Box2D order with speculative contacts:
 3. Warm-start joints and contacts, then iterate their velocity constraints
    together (joints first in each pass). A speculative point with gap `s`
    enforces `v_n >= -s/dt`: the gap may close this step, no further.
-   Overlapping points keep the restitution bias and Coulomb friction.
+   Overlapping points keep the restitution bias and Coulomb friction. An awake
+   body predicted to close its gap to a sleeping body this step wakes that
+   body's island first, so the sleeper takes part in this solve.
 4. Integrate positions. A body whose solver velocity change is no larger than
    its applied load per step (support, friction) moves by half of that change,
    the trapezoid rule that matches the constant-load integrator, so resting
@@ -41,8 +43,9 @@ in the Box2D order with speculative contacts:
    pairs within `0.25 * penetrationSlop` counted as touching.
 
 Islands for sleeping and waking only follow touching contacts. A speculative
-pair joins awake islands for the solve, and is skipped when either body
-sleeps, so it never wakes a body. Pairs that CCD sweeps (a CCD-enabled circle)
+pair joins awake islands for the solve. A speculative pair with a sleeping
+body is skipped unless the awake body will close the gap this step, in which
+case the sleeper wakes (step 3); a body merely passing close by never wakes it. Pairs that CCD sweeps (a CCD-enabled circle)
 get only the fixed margin and keep their exact time-of-impact handling.
 
 With `enableSpeculativeContacts = false` the legacy order runs: integrate
