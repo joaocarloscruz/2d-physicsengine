@@ -32,7 +32,7 @@ The defaults preserve the behavior that predates this configuration API:
 | Solver iterations | `10` |
 | Position correction factor | `0.8` |
 | Penetration slop | `0.005` |
-| Warm-start factor | `0.8` |
+| Warm-start factor | `1.0` |
 | Restitution velocity threshold | `1.0` |
 | Velocity tolerance | `0.0001` |
 | Maximum position correction | `0.2` |

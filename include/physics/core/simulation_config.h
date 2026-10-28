@@ -9,7 +9,7 @@ struct SimulationConfig {
     int solverIterations = 10;
     float positionCorrectionFactor = 0.8f;
     float penetrationSlop = 0.005f;
-    float warmStartFactor = 0.8f;
+    float warmStartFactor = 1.0f;
     float restitutionVelocityThreshold = 1.0f;
     float velocityTolerance = 0.0001f;
     float maxPositionCorrection = 0.2f;

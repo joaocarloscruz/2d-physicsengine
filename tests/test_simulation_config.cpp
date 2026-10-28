@@ -33,7 +33,7 @@ TEST_CASE("SimulationConfig preserves the current numerical defaults", "[simulat
     REQUIRE(config.solverIterations == 10);
     REQUIRE(config.positionCorrectionFactor == Catch::Approx(0.8f));
     REQUIRE(config.penetrationSlop == Catch::Approx(0.005f));
-    REQUIRE(config.warmStartFactor == Catch::Approx(0.8f));
+    REQUIRE(config.warmStartFactor == Catch::Approx(1.0f));
     REQUIRE(config.restitutionVelocityThreshold == Catch::Approx(1.0f));
     REQUIRE(config.velocityTolerance == Catch::Approx(0.0001f));
     REQUIRE(config.maxPositionCorrection == Catch::Approx(0.2f));
