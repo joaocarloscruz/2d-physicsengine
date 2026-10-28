@@ -242,6 +242,20 @@ if(EMSCRIPTEN)
         )
         list(APPEND WASM_ASSET_OUTPUTS "${asset_output}")
     endforeach()
+    # The browser playground and its Node test sit next to the module so one
+    # HTTP root serves them and the test can require('./physics_engine.js').
+    foreach(asset IN ITEMS playground.html playground.js scenes.js scenes-test.cjs)
+        set(asset_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/web-playground/${asset}")
+        set(asset_output "${WASM_OUTPUT_DIRECTORY}/${asset}")
+        add_custom_command(OUTPUT "${asset_output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${WASM_OUTPUT_DIRECTORY}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${asset_source}" "${asset_output}"
+            DEPENDS "${asset_source}"
+            COMMENT "Updating WebAssembly asset ${asset}"
+            VERBATIM
+        )
+        list(APPEND WASM_ASSET_OUTPUTS "${asset_output}")
+    endforeach()
     add_custom_target(physics_wasm_assets DEPENDS ${WASM_ASSET_OUTPUTS})
     add_dependencies(physics_engine_wasm physics_wasm_assets)
 elseif(BUILD_TESTING)
