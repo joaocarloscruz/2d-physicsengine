@@ -1,5 +1,6 @@
 #include "physics/core/collisions/narrow_phase/collision_circle_polygon.h"
 #include "physics/core/shape.h"
+#include "../../trig_cache.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -36,7 +37,8 @@ CollisionManifold CollisionCirclePolygon(RigidBody* a, RigidBody* b, float margi
 
     const auto& local = polygon->getVertices();
     if (local.size()<3) throw std::invalid_argument("Polygon requires at least three vertices.");
-    const double c=std::cos(double(polygonBody->orientation)), s=std::sin(double(polygonBody->orientation));
+    const Detail::CosSin rotation = Detail::CachedCosSin(double(polygonBody->orientation));
+    const double c = rotation.cosine, s = rotation.sine;
     const D2 translation{double(polygonBody->position.x)-circleBody->position.x,
                          double(polygonBody->position.y)-circleBody->position.y};
     std::vector<D2> relative;

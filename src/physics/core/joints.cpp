@@ -1,4 +1,5 @@
 #include "physics/core/joints.h"
+#include "trig_cache.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -51,7 +52,8 @@ void ValidateCorrection(float tolerance, float maximum) {
         throw std::invalid_argument("Joint correction bounds must be finite and non-negative.");
 }
 D2 Rotate(Vector2 v, double angle) {
-    const double c = std::cos(angle), s = std::sin(angle);
+    const Detail::CosSin rotation = Detail::CachedCosSin(angle);
+    const double c = rotation.cosine, s = rotation.sine;
     return {c * v.x - s * v.y, s * v.x + c * v.y};
 }
 struct Geometry {

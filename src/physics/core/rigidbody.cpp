@@ -1,5 +1,6 @@
 #include "physics/core/rigidbody.h"
 #include "physics/core/shape.h"
+#include "trig_cache.h"
 #include "physics/math/vector2.h"
 #include <stdexcept>
 #include <cmath>
@@ -334,7 +335,8 @@ namespace PhysicsEngine {
             if (!polygon || polygon->getVertices().size() < 3)
                 throw std::invalid_argument("RigidBody bounds require a valid polygon.");
             ValidateFinite(orientation);
-            const double cosine = std::cos(double(orientation)), sine = std::sin(double(orientation));
+            const Detail::CosSin rotation = Detail::CachedCosSin(double(orientation));
+            const double cosine = rotation.cosine, sine = rotation.sine;
             double minX = std::numeric_limits<double>::infinity(), minY = minX;
             double maxX = -minX, maxY = -minY;
             for (const auto& vertex : polygon->getVertices()) {
@@ -357,7 +359,8 @@ namespace PhysicsEngine {
             ValidateFinite(orientation);
             // Spine endpoints +/-h(cos, sin), each rounded outward, then the
             // radius added with directed sums.
-            const double cosine = std::cos(double(orientation)), sine = std::sin(double(orientation));
+            const Detail::CosSin rotation = Detail::CachedCosSin(double(orientation));
+            const double cosine = rotation.cosine, sine = rotation.sine;
             const auto extentX = ProductBounds(std::abs(cosine), halfLength);
             const auto extentY = ProductBounds(std::abs(sine), halfLength);
             const double reachX = DirectedSum(extentX.upper, radius, true);
