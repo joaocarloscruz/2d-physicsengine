@@ -321,6 +321,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_fluid_boundaries.cpp
         ${TESTS_SRC_DIR}/test_fluid_rigid_coupling.cpp
         ${TESTS_SRC_DIR}/test_coupled_fluid_simulation.cpp
+        ${TESTS_SRC_DIR}/test_fluid_capsule.cpp
         ${TESTS_SRC_DIR}/test_fluid_physics_validation.cpp
         ${TESTS_SRC_DIR}/test_fluid_consistency_diagnostic.cpp
         ${TESTS_SRC_DIR}/test_fluid_disorder.cpp
