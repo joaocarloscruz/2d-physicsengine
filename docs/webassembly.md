@@ -1031,6 +1031,39 @@ their setting getters, `getMotorForce`, `getTranslation`, `getTranslationSpeed`,
 Translation uses signed world distance along A's axis; limits do not subtract
 the construction translation. See [slider constraints and controls](prismatic-joints.md).
 
+`createDistanceJoint` returns a `DistanceJoint` handle, still accepted by
+`engine.addJoint`/`removeJoint`. It adds `getLength`, `setSpring(frequency,
+dampingRatio)`, `setLengthRange(minLength, maxLength)` (`0 <= min <= length <= max`;
+`setLengthRange(0, length)` makes a rope that is free while slack), their getters
+`getSpringFrequency`, `getSpringDampingRatio`, `getMinLength` and `getMaxLength`,
+and `getCurrentLength()`. A spring frequency of 0 keeps the joint rigid.
+
+Three more factories return handles extending `Joint`. Each is accepted by
+`engine.addJoint`/`removeJoint` and deleted once like the others. Invalid arguments
+throw before changing the joint. The native rules are in
+[mouse, weld and wheel joints](joints-mouse-weld-wheel.md).
+
+- `createMouseJoint(ground, body, localAnchor, target, frequency, dampingRatio, maxForce)`
+  returns a `MouseJoint`. `ground` must be a static body already in the engine; its pose
+  is ignored. The handle has `setTarget`/`getTarget` (world coordinates),
+  `getLocalAnchor`, `setSpring(frequency, dampingRatio)` with `getFrequency` and
+  `getDampingRatio`, `setMaxForce`/`getMaxForce` and `getReactionForce()`.
+  Unlike other joints, `getCollideConnected()` starts `true`.
+- `createWeldJoint(a, b, localAnchorA, localAnchorB)` returns a `WeldJoint`, rigid until
+  `setLinearSpring(frequency, dampingRatio)` or `setAngularSpring(frequency,
+  dampingRatio)` softens a part. Read them back with `getLinearFrequency`,
+  `getLinearDampingRatio`, `getAngularFrequency` and `getAngularDampingRatio`;
+  `getAngle()` is the drift from `getReferenceAngle()` and `getSeparation()` the
+  anchor distance.
+- `createWheelJoint(a, b, localAxisA, localAnchorA, localAnchorB)` returns a
+  `WheelJoint` (A is the chassis, B the wheel) with `getAxis`, `getLocalAxis`,
+  `getTranslation`, `getTranslationSpeed`, `getTransverseError`, `getAngularSpeed`,
+  `setSpring(frequency, dampingRatio)` with `getSpringFrequency`,
+  `getSpringDampingRatio` and `getSpringForce`, `setMotor(enabled, speed, maxTorque)`
+  with `isMotorEnabled`, `getMotorSpeed`, `getMaxMotorTorque` and `getMotorTorque`, and
+  `setLimits(enabled, lower, upper)` with `areLimitsEnabled`, `getLowerLimit` and
+  `getUpperLimit`. The spring is off until a nonzero frequency is set.
+
 `ChargedParticle` independently integrates a test charge in prescribed uniform
 fields. Use either its default neutral constructor or all four explicit arguments:
 
