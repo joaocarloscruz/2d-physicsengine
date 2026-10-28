@@ -80,22 +80,25 @@ struct ShapeSpec {
     }
 };
 
-inline std::vector<Vector2> RandomOutline(Rng& rng) {
+// degenerate=false keeps aspect ratios at or above 1/20 and drops the
+// near-coincident vertex, for scenes that must avoid documented limits.
+inline std::vector<Vector2> RandomOutline(Rng& rng, bool degenerate = true) {
     for (;;) {
         std::vector<Vector2> result;
         if (rng.Chance(0.15)) {
-            const double w = rng.LogRange(0.02, 4), h = rng.Chance(0.3) ? w * rng.LogRange(1e-3, 0.05) : rng.LogRange(0.02, 4);
+            const double w = rng.LogRange(0.02, 4), h = rng.Chance(0.3) ? w * rng.LogRange(degenerate ? 1e-3 : 0.05, 0.05) : rng.LogRange(0.02, 4);
             result = {{float(-w / 2), float(-h / 2)}, {float(w / 2), float(-h / 2)}, {float(w / 2), float(h / 2)}, {float(-w / 2), float(h / 2)}};
         } else {
             const int n = rng.Integer(3, 8);
             const double scale = rng.LogRange(0.05, 3);
             // A quarter of the outlines are thin slivers down to 1/1000 aspect.
-            const double aspect = rng.Chance(0.25) ? rng.LogRange(1e-3, 0.1) : rng.Range(0.3, 1.0);
+            double aspect = rng.Chance(0.25) ? rng.LogRange(1e-3, 0.1) : rng.Range(0.3, 1.0);
+            if (!degenerate) aspect = std::max(aspect, 0.05);
             std::vector<double> angles(n);
             for (double& a : angles) a = rng.Range(0, 2 * Pi);
             std::sort(angles.begin(), angles.end());
             // Near-degenerate but valid: one vertex almost on top of a neighbour.
-            if (n > 3 && rng.Chance(0.2)) {
+            if (n > 3 && rng.Chance(0.2) && degenerate) {
                 const int k = rng.Integer(1, n - 1);
                 angles[k] = angles[k - 1] + rng.LogRange(1e-4, 1e-2);
                 std::sort(angles.begin(), angles.end());
@@ -118,7 +121,28 @@ inline std::vector<Vector2> RandomOutline(Rng& rng) {
     }
 }
 
-inline ShapeSpec RandomShape(Rng& rng, ShapeType type) {
+// Well-conditioned outlines: 3-8 vertices at jittered even angles on an
+// ellipse of aspect 0.3-1, either winding. Rotating them into float world
+// coordinates cannot break strict convexity at scene scales.
+inline std::vector<Vector2> RegularOutline(Rng& rng) {
+    for (;;) {
+        const int n = rng.Integer(3, 8);
+        const double aspect = rng.Range(0.3, 1.0), start = rng.Range(-Pi, Pi), step = 2 * Pi / n;
+        std::vector<Vector2> result;
+        for (int k = 0; k < n; ++k) {
+            const double a = start + step * (k + rng.Range(-0.25, 0.25));
+            result.push_back({float(std::cos(a)), float(aspect * std::sin(a))});
+        }
+        if (rng.Chance(0.5)) std::reverse(result.begin(), result.end());
+        try {
+            Polygon::ValidateOutline(result);
+            return result;
+        } catch (const std::invalid_argument&) {
+        }
+    }
+}
+
+inline ShapeSpec RandomShape(Rng& rng, ShapeType type, bool degenerate = true) {
     ShapeSpec spec;
     spec.type = type;
     if (type == ShapeType::CIRCLE) {
@@ -127,7 +151,7 @@ inline ShapeSpec RandomShape(Rng& rng, ShapeType type) {
         spec.halfLength = rng.Chance(0.2) ? 0.0f : float(rng.LogRange(0.01, 3));
         spec.radius = float(rng.LogRange(0.05, 2));
     } else {
-        spec.vertices = RandomOutline(rng);
+        spec.vertices = RandomOutline(rng, degenerate);
     }
     return spec;
 }
