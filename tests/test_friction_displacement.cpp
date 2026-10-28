@@ -16,6 +16,8 @@ SimulationConfig Config(bool correction, int iterations = 10, float warm = 0.8f)
     c.enableAngularVelocityLimit = false;
     c.restitutionVelocityThreshold = 0;
     c.enableFrictionDisplacementCorrection = correction;
+    // The correction is a workaround inside the legacy step order.
+    c.enableSpeculativeContacts = false;
     return c;
 }
 struct Incline {

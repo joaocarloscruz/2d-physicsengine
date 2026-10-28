@@ -298,7 +298,8 @@ ContactConstraint CollisionResolver::PrepareConstraint(const CollisionManifold &
         auto &p = c.points[i];
         p.localAnchorA = ToLocalPoint(m.A, contact.position);
         p.localAnchorB = ToLocalPoint(m.B, contact.position);
-        p.penetration = contact.penetration > 0 ? contact.penetration : m.penetration;
+        // Negative point penetration is a speculative gap and is kept as is.
+        p.penetration = contact.penetration != 0 ? contact.penetration : std::max(m.penetration, 0.0f);
         p.featureId = contact.featureId;
         p.impulse = cache.contacts[i].impulse;
         const auto ra = DVector(contact.position) - DVector(m.A->position),

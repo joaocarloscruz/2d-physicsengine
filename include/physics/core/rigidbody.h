@@ -84,6 +84,19 @@ namespace PhysicsEngine {
 
         void Integrate(float deltaTime, const SimulationConfig& config);
 
+        // Split form of Integrate for the speculative-contact step, which solves
+        // contacts between the velocity and position updates.
+        struct StepStart {
+            Vector2 velocity; float angularVelocity = 0;
+            double ax = 0, ay = 0, alpha = 0;   // applied-load accelerations
+            Vector2 predictedVelocity; float predictedAngularVelocity = 0;
+        };
+        StepStart IntegrateVelocity(float deltaTime, const SimulationConfig& config);
+        // Moves along the constant-load trajectory of `start`, plus
+        // contactVelocity * deltaTime for the solver's velocity change.
+        void IntegratePosition(float deltaTime, const StepStart& start,
+                               double contactVx, double contactVy, double contactOmega);
+
         static std::atomic<std::uint64_t> nextId;
         const std::uint64_t id;
         bool isStatic;

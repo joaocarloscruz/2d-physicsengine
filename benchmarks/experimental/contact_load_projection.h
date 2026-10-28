@@ -93,6 +93,8 @@ class World : public PhysicsEngine::World {
         const auto &c = getSimulationConfig();
         if (getBodies().size() > 32 || c.solverIterations > 64)
             return "budget";
+        if (c.enableSpeculativeContacts)
+            return "speculative_order";
         if (c.enableSleeping)
             return "sleeping";
         if (c.enableLinearVelocityLimit || c.enableAngularVelocityLimit)
@@ -167,7 +169,14 @@ class World : public PhysicsEngine::World {
     }
 
   public:
-    using PhysicsEngine::World::World;
+    // The projection is a pre-step pose correction for the legacy
+    // integrate-then-detect order; the speculative order needs none.
+    static SimulationConfig LegacyOrder(SimulationConfig config) {
+        config.enableSpeculativeContacts = false;
+        return config;
+    }
+    World() : World(SimulationConfig{}) {}
+    explicit World(const SimulationConfig &config) : PhysicsEngine::World(LegacyOrder(config)) {}
     const Report &lastExperiment() const { return report; }
     void step() { step(getSimulationConfig().fixedTimeStep); }
     void step(float dt) {

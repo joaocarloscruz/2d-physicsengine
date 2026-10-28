@@ -714,7 +714,19 @@ TEST_CASE("Capsule CCD sweeps circles against static capsules only", "[capsule][
                 REQUIRE(bullet->velocity.x <= 0);
                 REQUIRE(world.getLastStepStatistics().ccdImpactCount == 1);
             } else {
-                REQUIRE(bullet->position.x > 0);
+                // The speculative contact stops the bullet at the capsule
+                // surface; only the legacy step order lets it tunnel.
+                REQUIRE(bullet->position.x == Approx(-0.15f).margin(1e-4));
+                REQUIRE(world.getLastStepStatistics().ccdImpactCount == 0);
+                auto legacy = config;
+                legacy.enableSpeculativeContacts = false;
+                World legacyWorld(legacy);
+                auto legacyWall = Make(Capsule(5, 0.05f), {0, 0}, static_cast<float>(Pi / 2), true);
+                auto legacyBullet = Make(Circle(0.1f), {-5, 0});
+                legacyBullet->SetVelocity({600, 0});
+                legacyWorld.addBody(legacyWall); legacyWorld.addBody(legacyBullet);
+                legacyWorld.step(1.0f / 60);
+                REQUIRE(legacyBullet->position.x > 0);
             }
         }
     }

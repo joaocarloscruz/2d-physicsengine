@@ -13,6 +13,8 @@ SimulationConfig LoadConfig() {
     c.enableLinearVelocityLimit = false;
     c.enableAngularVelocityLimit = false;
     c.restitutionVelocityThreshold = 0;
+    // The experiment corrects the legacy order; baselines must use it too.
+    c.enableSpeculativeContacts = false;
     return c;
 }
 template <class W> std::pair<RigidBodyPtr, RigidBodyPtr> Floor(W &world, float friction = 1) {

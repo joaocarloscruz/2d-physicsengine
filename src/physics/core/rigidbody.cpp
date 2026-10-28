@@ -196,6 +196,63 @@ namespace PhysicsEngine {
         force = Vector2(0.0f, 0.0f);
         torque = 0.0f;
     }
+
+    RigidBody::StepStart RigidBody::IntegrateVelocity(float deltaTime, const SimulationConfig& config) {
+        if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
+            throw std::invalid_argument("RigidBody delta time must be finite and non-negative.");
+        }
+        StepStart start;
+        start.velocity = velocity;
+        start.angularVelocity = angularVelocity;
+        start.predictedVelocity = velocity;
+        start.predictedAngularVelocity = angularVelocity;
+        if (isStatic) return start;
+        ValidateFinite(position); ValidateFinite(orientation);
+        ValidateFinite(velocity); ValidateFinite(angularVelocity);
+        ValidateFinite(force); ValidateFinite(torque);
+        ValidateInverseProperties(*this);
+        const double dt = deltaTime;
+        start.ax = static_cast<double>(force.x) * inverseMass;
+        start.ay = static_cast<double>(force.y) * inverseMass;
+        start.alpha = static_cast<double>(torque) * inverseInertia;
+        double vx = velocity.x + start.ax * dt;
+        double vy = velocity.y + start.ay * dt;
+        double omega = angularVelocity + start.alpha * dt;
+        if (config.enableLinearVelocityLimit) {
+            const double speed = std::hypot(vx, vy);
+            if (speed > config.maxLinearSpeed) {
+                const double scale = config.maxLinearSpeed / speed;
+                vx *= scale;
+                vy *= scale;
+            }
+        }
+        if (config.enableAngularVelocityLimit) {
+            omega = std::clamp(omega, -static_cast<double>(config.maxAngularSpeed),
+                               static_cast<double>(config.maxAngularSpeed));
+        }
+        velocity = CheckedVector(vx, vy);
+        angularVelocity = CheckedFloat(omega);
+        start.predictedVelocity = velocity;
+        start.predictedAngularVelocity = angularVelocity;
+        force = Vector2(0.0f, 0.0f);
+        torque = 0.0f;
+        return start;
+    }
+
+    void RigidBody::IntegratePosition(float deltaTime, const StepStart& start,
+                                      double contactVx, double contactVy, double contactOmega) {
+        if (isStatic) return;
+        // Same expression order as Integrate, so a body without contact
+        // impulses lands on bit-identical free-flight positions.
+        const double dt = deltaTime;
+        const Vector2 nextPosition = CheckedVector(
+            position.x + start.velocity.x * dt + 0.5 * start.ax * dt * dt + contactVx * dt,
+            position.y + start.velocity.y * dt + 0.5 * start.ay * dt * dt + contactVy * dt);
+        const float nextOrientation = CheckedFloat(orientation + start.angularVelocity * dt
+            + 0.5 * start.alpha * dt * dt + contactOmega * dt);
+        position = nextPosition;
+        orientation = nextOrientation;
+    }
     // ---- Setters ----
 
     void RigidBody::SetVelocity(const Vector2& v) {

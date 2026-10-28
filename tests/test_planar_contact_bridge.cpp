@@ -438,6 +438,9 @@ TEST_CASE("Planar bridge range rejection follows the complete ordinary exception
     REQUIRE_FALSE(e.lastExperiment().selected);
     REQUIRE(e.lastExperiment().eligibility == "derived_range");
     Equal(*eb, *bb);
-    REQUIRE(eb->position == Vector2{.0078125f, .4375f});
+    // Contacts are detected at the start-of-step pose, so the overflow is
+    // raised after the load is consumed but before the position advances.
+    REQUIRE(eb->position == Vector2{0, .5f});
+    REQUIRE(eb->velocity == Vector2{.125f, -1});
     REQUIRE(eb->force == Vector2{});
 }

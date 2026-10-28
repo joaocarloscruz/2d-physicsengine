@@ -46,6 +46,17 @@ TEST_CASE("Fast circles bounce off thin walls without tunneling", "[ccd]") {
         REQUIRE(world.getLastStepStatistics().ccdImpactCount == 1);
     }
     SECTION("disabled") {
+        // Without CCD the speculative contact still stops the ball at the wall
+        // face (x = -0.05 - 0.1) and restitution sends it back.
+        world.step(0.1f);
+        REQUIRE(ball->position.x == Catch::Approx(-0.15f).margin(0.001f));
+        REQUIRE(ball->velocity.x == Catch::Approx(-100));
+        REQUIRE(world.getLastStepStatistics().ccdImpactCount == 0);
+    }
+    SECTION("disabled in the legacy step order") {
+        auto legacy = world.getSimulationConfig();
+        legacy.enableSpeculativeContacts = false;
+        world.setSimulationConfig(legacy);
         world.step(0.1f);
         REQUIRE(ball->position.x == Catch::Approx(5));
         REQUIRE(world.getLastStepStatistics().ccdImpactCount == 0);

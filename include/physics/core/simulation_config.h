@@ -26,7 +26,16 @@ struct SimulationConfig {
     // by half of that velocity change times the step, matching the constant-load
     // position integration and removing static-friction creep. Normal settling
     // keeps the penetration-slop behavior. Not applied with CCD impacts.
+    // Only used by the legacy step order (enableSpeculativeContacts = false);
+    // the speculative step already integrates positions after the solve.
     bool enableFrictionDisplacementCorrection = false;
+    // Step order. true: detect contacts at the start-of-step poses, including
+    // speculative contacts closer than a margin (4 * penetrationSlop plus the
+    // distance the bodies can cover this step), solve velocities, then
+    // integrate positions and run position correction. false: the legacy order
+    // (integrate, detect at the new poses, solve), which lets fast bodies sink
+    // up to v * dt before their contact is seen.
+    bool enableSpeculativeContacts = true;
 
     void Validate() const;
 };

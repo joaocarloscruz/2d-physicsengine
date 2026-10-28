@@ -5,6 +5,7 @@
 #include <memory>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include "rigidbody.h"
 #include "force_generator.h"
 #include "particles/particle_system.h"
@@ -87,7 +88,14 @@ private:
         std::vector<ContactConstraint*> contacts;
         std::vector<JointPtr> joints;
     };
-    std::vector<Island> buildIslands(std::vector<ContactConstraint>& constraints, bool previousContacts = false);
+    // connects, when given, selects the constraints that link and join islands.
+    std::vector<Island> buildIslands(std::vector<ContactConstraint>& constraints, bool previousContacts = false,
+        const std::vector<char>* connects = nullptr);
+    using ContactKeySet = std::unordered_set<ContactKey, ContactKeyHash>;
+    // Speculative-contact step after loads are applied. Fills the touching
+    // (event) keys, the cache keys to keep and the swept CCD impacts.
+    void stepSpeculative(float deltaTime, SimulationStatistics& statistics, ContactKeySet& touching,
+        ContactKeySet& cached, std::vector<CollisionManifold>& impacts);
     void wakeIsland(Island& island);
     std::vector<JointPtr> joints;
     enum class EventPhase { Begin, Persist, End };
@@ -118,6 +126,9 @@ private:
     SimulationStatistics lastStepStatistics;
     std::unique_ptr<IBroadPhase> broadPhase;
     std::unordered_map<ContactKey, ContactImpulseCache, ContactKeyHash> contactCache;
+    // Cached pairs that are actually touching; speculative-only cache entries
+    // are excluded from the persistent contact count.
+    ContactKeySet touchingContacts;
 };
 
 }

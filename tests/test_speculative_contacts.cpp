@@ -9,8 +9,32 @@ using namespace PhysicsEngine;
 using Catch::Approx;
 
 namespace {
+constexpr double G = double(9.81f);
 RigidBodyPtr Body(const Shape& shape, Vector2 position, bool fixed = false, Material material = {1, 0}) {
     return std::make_shared<RigidBody>(shape, material, position, fixed);
+}
+SimulationConfig Order(bool speculative) {
+    SimulationConfig c;
+    c.enableSpeculativeContacts = speculative;
+    return c;
+}
+struct Counter : ICollisionListener {
+    int begins = 0, persists = 0, ends = 0;
+    void onCollisionBegin(const CollisionEvent& e) override { ++begins; REQUIRE(e.penetration >= 0); }
+    void onCollisionPersist(const CollisionEvent& e) override { ++persists; REQUIRE(e.penetration >= 0); }
+    void onCollisionEnd(const CollisionEvent&) override { ++ends; }
+};
+double PeakPenetration(World& world, int steps, float dt = 1.0f / 60) {
+    double peak = 0;
+    for (int i = 0; i < steps; ++i) {
+        world.step(dt);
+        const auto& b = world.getBodies();
+        for (std::size_t j = 0; j < b.size(); ++j)
+            for (std::size_t k = j + 1; k < b.size(); ++k)
+                if (!(b[j]->IsStatic() && b[k]->IsStatic()))
+                    peak = std::max(peak, double(CheckCollision(b[j].get(), b[k].get()).penetration));
+    }
+    return peak;
 }
 }
 
@@ -76,4 +100,181 @@ TEST_CASE("Broad phases grow bounds by each body's margin", "[speculative][Broad
         REQUIRE(phase->FindSpeculativeCollisions(bodies, {0.3f, 0.3f}).size() == 1);
         REQUIRE_THROWS_AS(phase->FindSpeculativeCollisions(bodies, {0.3f}), std::invalid_argument);
     }
+}
+
+TEST_CASE("A fast box is stopped at the surface instead of sinking into it", "[speculative][world]") {
+    {
+        World world;
+        world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+        world.addBody(Body(Polygon::MakeBox(1, 1), {0, 0.5f}));
+        // Five steps leave the falling box 1 cm above the resting one; the
+        // sixth covers 0.217 m.
+        auto box = Body(Polygon::MakeBox(1, 1), {0, 1.51f + 5 * 13.0f / 60});
+        box->SetVelocity({0, -13});
+        world.addBody(box);
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        // The legacy order sinks by up to v * dt = 0.22 m before seeing the
+        // contact. What remains here is the resting slop under the impact load.
+        REQUIRE(PeakPenetration(world, 60) < 1.5 * world.getSimulationConfig().penetrationSlop);
+        REQUIRE(box->velocity.magnitude() < 1e-3f);
+    }
+}
+
+TEST_CASE("Resting and sliding contacts follow the constant-load path", "[speculative][world][friction]") {
+    const auto incline = [](double theta, float mu, int steps, float dt) {
+        World world(SimulationConfig{});
+        const Vector2 normal{float(-std::sin(theta)), float(std::cos(theta))};
+        const Vector2 down{float(-std::cos(theta)), float(-std::sin(theta))};
+        const Material material{1, 0, mu, mu};
+        auto floor = Body(Polygon::MakeBox(60, 1), normal * -0.5f, true, material);
+        floor->SetOrientation(float(theta));
+        auto box = Body(Polygon::MakeBox(1, 1), normal * 0.5f, false, material);
+        box->SetOrientation(float(theta));
+        world.addBody(floor);
+        world.addBody(box);
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        for (int i = 0; i < steps; ++i) world.step(dt);
+        return std::pair<double, double>{double((box->position - normal * 0.5f).dot(down)),
+                                         double(box->velocity.dot(down))};
+    };
+    const double pi = 3.14159265358979323846;
+    SECTION("static friction holds without creep") {
+        for (const float dt : {1.0f / 60, 1.0f / 240}) {
+            const auto [distance, speed] = incline(pi / 12, 0.8f, int(std::lround(2 / dt)), dt);
+            // The legacy order creeps g sin(theta) dt / 2 per second (0.021 m at 60 Hz).
+            REQUIRE(std::abs(distance) < 1e-4);
+            REQUIRE(std::abs(speed) < 1e-3);
+        }
+    }
+    SECTION("kinetic friction integrates s = a t^2 / 2") {
+        const double theta = 28 * pi / 180;
+        const double acceleration = G * (std::sin(theta) - double(0.4f) * std::cos(theta));
+        const auto [distance, speed] = incline(theta, 0.4f, 120, 1.0f / 60);
+        REQUIRE(speed == Approx(acceleration * 2).epsilon(1e-4));
+        REQUIRE(distance == Approx(acceleration * 2).epsilon(1e-4)); // 0.5 * a * 2^2
+    }
+}
+
+TEST_CASE("A body resting on the ground has no velocity and no overlap", "[speculative][world]") {
+    World world;
+    world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+    auto box = Body(Polygon::MakeBox(1, 1), {0, 0.5f});
+    world.addBody(box);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+    for (int i = 0; i < 120; ++i) world.step();
+    REQUIRE(box->velocity.magnitude() < 1e-6f);
+    REQUIRE(box->position.y == Approx(0.5f).margin(1e-5));
+    REQUIRE(world.getPersistentContactCount() == 1);
+}
+
+TEST_CASE("Free flight and joint-only systems step exactly as in the legacy order", "[speculative][world][joints]") {
+    World speculative(Order(true)), legacy(Order(false));
+    std::vector<RigidBodyPtr> bodies[2];
+    for (int w = 0; w < 2; ++w) {
+        World& world = w == 0 ? speculative : legacy;
+        auto anchor = Body(Circle(0.1f), {0, 5}, true), bob = Body(Circle(0.2f), {2, 5});
+        auto projectile = Body(Circle(0.3f), {-20, 0});
+        projectile->SetVelocity({3, 7});
+        bob->SetVelocity({0, 1});
+        world.addBody(anchor); world.addBody(bob); world.addBody(projectile);
+        world.addJoint(std::make_shared<DistanceJoint>(anchor, bob, 2.0f));
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        bodies[w] = {bob, projectile};
+    }
+    for (int i = 0; i < 90; ++i) {
+        speculative.step(1.0f / 60);
+        legacy.step(1.0f / 60);
+        for (int k = 0; k < 2; ++k) {
+            REQUIRE(bodies[0][k]->position == bodies[1][k]->position);
+            REQUIRE(bodies[0][k]->velocity == bodies[1][k]->velocity);
+            REQUIRE(bodies[0][k]->orientation == bodies[1][k]->orientation);
+        }
+    }
+}
+
+TEST_CASE("Speculative-only pairs raise no events, statistics or wake-ups", "[speculative][world][events]") {
+    SECTION("a body passing close by") {
+        World world;
+        Counter counter;
+        world.addCollisionListener(&counter);
+        world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+        // Gliding 5 mm above the floor, inside the speculative margin, with no load.
+        auto glider = Body(Polygon::MakeBox(1, 1), {-5, 0.505f});
+        glider->SetVelocity({2, 0});
+        world.addBody(glider);
+        for (int i = 0; i < 60; ++i) {
+            world.step();
+            REQUIRE(world.getLastStepStatistics().activeContactCount == 0);
+            REQUIRE(world.getLastStepStatistics().resolvedContactCount == 0);
+            REQUIRE(world.getLastStepStatistics().solvedConstraintCount == 0);
+            REQUIRE(world.getPersistentContactCount() == 0);
+        }
+        REQUIRE(counter.begins == 0);
+        REQUIRE(glider->position.y == 0.505f);
+        REQUIRE(glider->velocity == Vector2{2, 0});
+    }
+    SECTION("a sleeping body next to a moving one stays asleep") {
+        auto config = SimulationConfig{};
+        config.enableSleeping = true;
+        World world(config);
+        world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+        auto sleeper = Body(Polygon::MakeBox(1, 1), {0, 0.5f});
+        world.addBody(sleeper);
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+        for (int i = 0; i < 120; ++i) world.step();
+        REQUIRE_FALSE(sleeper->IsAwake());
+        // A body gliding past 1 cm from the sleeper's side, inside its margin.
+        auto passer = Body(Polygon::MakeBox(1, 1), {1.01f, 3});
+        passer->SetVelocity({0, -1});
+        world.addBody(passer);
+        Counter counter;
+        world.addCollisionListener(&counter);
+        world.step();
+        REQUIRE_FALSE(sleeper->IsAwake());
+        REQUIRE(counter.begins == 0);
+    }
+}
+
+TEST_CASE("A landing body begins touching on its landing step and never flickers", "[speculative][world][events]") {
+    World world;
+    Counter counter;
+    world.addCollisionListener(&counter);
+    world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true));
+    auto ball = Body(Circle(0.5f), {0, 0.5f + 0.4f});
+    world.addBody(ball);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -float(G)}));
+    int landed = -1;
+    for (int i = 0; i < 180; ++i) {
+        world.step();
+        if (landed < 0 && counter.begins == 1) {
+            landed = i;
+            // The ball reached the floor, within the touching tolerance, in
+            // this very step.
+            REQUIRE(ball->position.y == Approx(0.5f).margin(0.25 * world.getSimulationConfig().penetrationSlop));
+        }
+    }
+    REQUIRE(landed > 0);
+    // At rest the overlap stays well inside the slop the legacy order sinks to.
+    REQUIRE(ball->position.y == Approx(0.5f).margin(0.25 * world.getSimulationConfig().penetrationSlop));
+    REQUIRE(counter.begins == 1);
+    REQUIRE(counter.ends == 0);
+    REQUIRE(counter.persists == 179 - landed);
+}
+
+TEST_CASE("Restitution reflects a speculative impact at the surface", "[speculative][world]") {
+    World world;
+    world.addBody(Body(Polygon::MakeBox(20, 1), {0, -0.5f}, true, Material{1, 1}));
+    auto ball = Body(Circle(0.25f), {0, 2}, false, Material{1, 1});
+    ball->SetVelocity({0, -10});
+    world.addBody(ball);
+    float lowest = 2, impactSpeed = 0, reboundSpeed = 0;
+    for (int i = 0; i < 30; ++i) {
+        const float before = ball->velocity.y;
+        world.step();
+        lowest = std::min(lowest, ball->position.y);
+        if (before < 0 && ball->velocity.y > 0) { impactSpeed = -before; reboundSpeed = ball->velocity.y; }
+    }
+    REQUIRE(impactSpeed == Approx(10));
+    REQUIRE(reboundSpeed == Approx(10));
+    REQUIRE(lowest >= 0.25f - 1e-4f);
 }
