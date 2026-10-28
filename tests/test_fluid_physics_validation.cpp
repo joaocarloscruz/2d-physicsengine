@@ -215,7 +215,7 @@ float MeanDensityRatio(
 
 } // namespace
 
-TEST_CASE("Uniform SPH lattice has translation-invariant interior density", "[fluid][validation][consistency][!mayfail]") {
+TEST_CASE("Uniform SPH lattice has translation-invariant interior density", "[fluid][validation][consistency]") {
     constexpr int size = 21;
     constexpr float spacing = 0.1f;
     constexpr float smoothingLength = 0.2f;
@@ -323,7 +323,7 @@ TEST_CASE("Compressed SPH pair produces equal repulsive pressure forces", "[flui
         == Catch::Approx(-particles[1].force.y).margin(1e-6f));
 }
 
-TEST_CASE("Nominal zero-gravity fluid block remains at rest", "[fluid][validation][equilibrium][!mayfail]") {
+TEST_CASE("Nominal zero-gravity fluid block remains at rest", "[fluid][validation][equilibrium]") {
     const RestStateMetrics result = SimulateRestState(1.0f, 1.0f / 240.0f);
     INFO("maximum speed: " << result.maximumSpeed);
     INFO("maximum displacement: " << result.maximumDisplacement);
@@ -353,7 +353,7 @@ TEST_CASE("Density-calibrated particle mass improves rest equilibrium", "[fluid]
 // This target assumes particle regularization toward the original labeled
 // lattice. Continuum-fluid equilibrium alone does not require that return;
 // see docs/fluid-disorder-diagnostic.md for the checkerboard null-mode audit.
-TEST_CASE("Calibrated lattice heals small positional disorder", "[fluid][validation][equilibrium][disorder][!mayfail]") {
+TEST_CASE("Calibrated lattice heals small positional disorder", "[fluid][validation][equilibrium][disorder]") {
     constexpr int size = 21;
     constexpr float spacing = 0.1f;
     constexpr float massScale = 1.0f / 1.014612675f;
@@ -740,7 +740,7 @@ TEST_CASE("Wall friction is invariant to boundary correction frequency", "[fluid
         == Catch::Approx(oneCorrection.velocity.x).margin(1e-5f));
 }
 
-TEST_CASE("Resting column is initialized with hydrostatic pressure support", "[fluid][validation][hydrostatic][initialization][!mayfail]") {
+TEST_CASE("Resting column is initialized with hydrostatic pressure support", "[fluid][validation][hydrostatic][initialization]") {
     constexpr int columns = 19;
     constexpr int rows = 15;
     constexpr float spacing = 0.1f;
@@ -806,7 +806,7 @@ TEST_CASE("Resting column is initialized with hydrostatic pressure support", "[f
     REQUIRE(accelerationRms < 1.0f);
 }
 
-TEST_CASE("Dummy wall pressure balances quiescent column weight", "[fluid][validation][boundary][force-balance][!mayfail]") {
+TEST_CASE("Dummy wall pressure balances quiescent column weight", "[fluid][validation][boundary][force-balance]") {
     constexpr int columns = 19;
     constexpr int rows = 15;
     constexpr float spacing = 0.1f;
@@ -1012,7 +1012,7 @@ TEST_CASE("Continuity density supplies initialized hydrostatic wall balance", "[
     REQUIRE(maximumDensityError < 0.01f);
 }
 
-TEST_CASE("Dummy wall force balance converges with particle spacing", "[fluid][validation][boundary][force-balance][resolution][!mayfail]") {
+TEST_CASE("Dummy wall force balance converges with particle spacing", "[fluid][validation][boundary][force-balance][resolution]") {
     const auto measureResidual = [](float spacing) {
         const int columns = static_cast<int>(std::round(2.0f / spacing)) - 1;
         const int rows = static_cast<int>(std::round(1.5f / spacing));
@@ -1102,7 +1102,7 @@ TEST_CASE("Dummy wall force balance converges with particle spacing", "[fluid][v
     REQUIRE(extraFine.first < 0.1f);
 }
 
-TEST_CASE("Sampled-wall hydrostatic column remains quiet and weakly compressible", "[fluid][validation][boundary][hydrostatic][!mayfail]") {
+TEST_CASE("Sampled-wall hydrostatic column remains quiet and weakly compressible", "[fluid][validation][boundary][hydrostatic]") {
     constexpr int columns = 19;
     constexpr int rows = 15;
     constexpr float spacing = 0.1f;
@@ -1166,7 +1166,7 @@ TEST_CASE("Sampled-wall hydrostatic column remains quiet and weakly compressible
     REQUIRE(maximumSpeed < 0.2f);
 }
 
-TEST_CASE("Calibrated sampled-wall hydrostatic column remains bounded", "[fluid][validation][boundary][hydrostatic][calibration][!mayfail]") {
+TEST_CASE("Calibrated sampled-wall hydrostatic column remains bounded", "[fluid][validation][boundary][hydrostatic][calibration]") {
     constexpr int columns = 19;
     constexpr int rows = 15;
     constexpr float spacing = 0.1f;
@@ -1272,7 +1272,7 @@ TEST_CASE("Gravity-aware dummy wall pressure suppresses hydrostatic impact", "[f
         < densityOnly.maximumDensityError * 0.6f);
 }
 
-TEST_CASE("Gravity ramp reduces hydrostatic startup impulse", "[fluid][validation][hydrostatic][initialization][ramp][!mayfail]") {
+TEST_CASE("Gravity ramp reduces hydrostatic startup impulse", "[fluid][validation][hydrostatic][initialization][ramp]") {
     const HydrostaticTrace immediate = TraceHydrostaticColumn(
         0.001f, 1.0f, true, 0.0f
     );
