@@ -15,7 +15,9 @@ hanging chain rebuilt its load from zero every step and kept a residual
 velocity and stretch. Position projection corrects drift using the configured
 correction bound and tolerance.
 Distance constraints use scalar effective mass; revolute constraints solve a 2×2
-point-mass system including angular inertia. Compliance is not yet implemented.
+point-mass system including angular inertia. Distance joints are rigid unless
+given a spring or length range (see [distance springs](joints-mouse-weld-wheel.md#distancejoint-spring-and-range));
+revolute and prismatic joints have no compliance.
 Bodies joined by a joint do not collide with each other unless
 `joint->setCollideConnected(true)` is called: neighbors in a chain or ragdoll
 overlap at their shared anchor, and those contacts would fight the joint. The
@@ -113,6 +115,12 @@ does not continuously wake resting bodies. If application code changes a force
 generator in place or directly edits legacy state fields, call `Wake()` explicitly.
 
 Native [prismatic joints](prismatic-joints.md) lock transverse motion and relative orientation while allowing translation along an axis fixed to body A.
+
+[Mouse, weld and wheel joints](joints-mouse-weld-wheel.md) cover dragging,
+welding and car wheels, and the distance joint's optional spring and length
+range. Their springs are soft constraints, so a joint can now be compliant.
+A wheel joint's driving motor prevents sleep like a revolute motor; mouse and
+weld joints never do, and a mouse joint's target change wakes its body.
 
 ## Reduced revolute velocity targets
 

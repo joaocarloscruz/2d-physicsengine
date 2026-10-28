@@ -176,13 +176,18 @@ world.addJoint(std::make_shared<RevoluteJoint>(pivot, bob, Vector2{0, 0}, Vector
 
 | Joint | Keeps | Extras |
 | --- | --- | --- |
-| `DistanceJoint(a, b, length, anchorA, anchorB)` | Anchor distance | |
+| `DistanceJoint(a, b, length, anchorA, anchorB)` | Anchor distance | `setSpring(frequency, damping)`, `setLengthRange(min, max)` (a rope with `min = 0`) |
 | `RevoluteJoint(a, b, anchorA, anchorB)` | Shared anchor point | `setMotor(enabled, speed, maxTorque)`, `setLimits(enabled, lower, upper)` |
 | `PrismaticJoint(a, b, axisA, anchorA, anchorB)` | Sliding along an axis of A, no relative rotation | `setMotor(enabled, speed, maxForce)`, `setLimits(enabled, lower, upper)` |
+| `MouseJoint(ground, body, anchor, target, frequency, damping, maxForce)` | A soft, force-capped pull of the body's anchor toward a world target; `ground` is any static body in the World | `setTarget(target)` (wakes the body), `setSpring(frequency, damping)`, `setMaxForce(force)` |
+| `WeldJoint(a, b, anchorA, anchorB)` | Shared anchor point and relative angle | `setLinearSpring(frequency, damping)`, `setAngularSpring(frequency, damping)` (0 = rigid) |
+| `WheelJoint(a, b, axisA, anchorA, anchorB)` | B slides along an axis of A and spins freely: a car wheel | `setSpring(frequency, damping)`, `setMotor(enabled, speed, maxTorque)`, `setLimits(enabled, lower, upper)` |
 
 Jointed bodies do not collide with each other unless you call
-`joint->setCollideConnected(true)`. See [joints and sleeping](joints-and-sleeping.md)
-and [prismatic joints](prismatic-joints.md).
+`joint->setCollideConnected(true)`; a mouse joint is the exception and starts
+with collision on. See [joints and sleeping](joints-and-sleeping.md),
+[prismatic joints](prismatic-joints.md) and
+[mouse, weld and wheel joints](joints-mouse-weld-wheel.md).
 
 ## Sleeping
 
