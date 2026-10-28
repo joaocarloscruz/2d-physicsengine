@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>2D Physics Engine Playground</title>
+    <style>
+        :root {
+            --bg: #1e1e28;
+            --panel: rgba(15, 15, 22, 0.82);
+            --text: #e8e8f0;
+            --muted: #9a9ab0;
+            --accent: #6496ff;
+            --border: rgba(255, 255, 255, 0.16);
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+            font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+        #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+            touch-action: none; cursor: grab; }
+        #view.dragging { cursor: grabbing; }
+        .panel { position: fixed; background: var(--panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 10px; backdrop-filter: blur(4px); }
+        #hud { top: 8px; left: 8px; margin: 0; font: 12px/1.5 ui-monospace, Consolas, monospace;
+            pointer-events: none; white-space: pre; }
+        #toolbar { top: 8px; right: 8px; max-width: calc(100% - 230px); display: flex; flex-wrap: wrap;
+            gap: 6px; justify-content: flex-end; }
+        #scenes { bottom: 8px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+        button { font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+        button:hover { background: rgba(255, 255, 255, 0.16); }
+        button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+        button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #0b1020; }
+        kbd { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); }
+        #help { top: 56px; right: 8px; max-width: min(380px, calc(100% - 16px)); display: none; }
+        #help.open { display: block; }
+        #help h2 { margin: 0 0 6px; font-size: 14px; }
+        #help ul { margin: 0; padding-left: 18px; }
+        #banner { top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: min(520px, calc(100% - 32px));
+            display: none; border-color: #ff7070; }
+        #banner.open { display: block; }
+        @media (max-width: 640px) {
+            #toolbar { top: auto; bottom: 64px; right: 8px; left: 8px; max-width: none; justify-content: flex-start; }
+            #help { top: 8px; right: 8px; left: 8px; max-width: none; }
+            #hud { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="view" aria-label="Physics simulation"></canvas>
+    <pre id="hud" class="panel" aria-live="off"></pre>
+    <div id="toolbar" class="panel" role="toolbar" aria-label="Simulation controls">
+        <button id="pause" type="button">Pause <kbd>Space</kbd></button>
+        <button id="step" type="button">Step <kbd>N</kbd></button>
+        <button id="reset" type="button">Reset <kbd>R</kbd></button>
+        <button data-spawn="circle" type="button">+ Circle <kbd>C</kbd></button>
+        <button data-spawn="box" type="button">+ Box <kbd>B</kbd></button>
+        <button data-spawn="capsule" type="button">+ Capsule <kbd>K</kbd></button>
+        <button id="helpButton" type="button" aria-expanded="false" aria-controls="help">Help <kbd>H</kbd></button>
+    </div>
+    <div id="scenes" class="panel" role="toolbar" aria-label="Scenes"></div>
+    <div id="help" class="panel" role="region" aria-label="Controls">
+        <h2>Controls</h2>
+        <ul>
+            <li>Drag a body with the left mouse button; drag empty space or use the middle/right button to pan.</li>
+            <li>Mouse wheel zooms at the cursor; arrow keys pan.</li>
+            <li><kbd>1</kbd>-<kbd>8</kbd> pick a scene, <kbd>R</kbd> resets it, <kbd>Space</kbd> pauses, <kbd>N</kbd> single-steps.</li>
+            <li><kbd>C</kbd> <kbd>B</kbd> <kbd>K</kbd> drop a circle, box or capsule at the cursor.</li>
+            <li><kbd>D</kbd> toggles the HUD, <kbd>H</kbd> this panel.</li>
+        </ul>
+    </div>
+    <div id="banner" class="panel" role="alert"></div>
+
+    <noscript>This playground needs JavaScript.</noscript>
+    <script src="physics_engine.js" onerror="window.playgroundLoadFailed = true"></script>
+    <script src="scenes.js"></script>
+    <script src="playground.js"></script>
+</body>
+</html>
