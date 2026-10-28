@@ -1410,6 +1410,52 @@ async function main() {
     slider.delete();
     engine.delete();
     particles.delete();
+    {
+        // Sensors detect overlaps without contacts; user data is an opaque integer.
+        const sensorMaterial = {density: 1, restitution: 0, staticFriction: 0.5, dynamicFriction: 0.5};
+        const fall = (sensor) => {
+            const sensorEngine = new physics.Engine();
+            const config = sensorEngine.getSimulationConfig();
+            config.enableLinearVelocityLimit = false;
+            sensorEngine.setSimulationConfig(config);
+            const boxShape = physics.Polygon.makeBox(4, 1);
+            const ballShape = new physics.Circle(0.25);
+            const floor = physics.createRigidBody(boxShape, sensorMaterial, {x: 0, y: 0}, true);
+            const ball = physics.createRigidBody(ballShape, sensorMaterial, {x: 0, y: 1}, false);
+            boxShape.delete(); ballShape.delete();
+            assert.equal(floor.isSensor(), false);
+            floor.setSensor(sensor);
+            assert.equal(floor.isSensor(), sensor);
+            sensorEngine.addBody(floor); sensorEngine.addBody(ball);
+            ball.setVelocity({x: 0, y: -5}); // no gravity in Engine
+            for (let i = 0; i < 60; ++i) sensorEngine.step(1 / 60);
+            const exported = JSON.parse(sensorEngine.exportJson(1));
+            assert.equal(exported.bodies[0].sensor, sensor);
+            assert.equal(exported.bodies[1].sensor, false);
+            const csv = sensorEngine.exportCsv(1).split("\n");
+            assert.ok(csv[0].endsWith(",sensor"));
+            assert.ok(csv[1].endsWith(sensor ? ",true" : ",false"));
+            assert.equal(sensorEngine.getLastStepStatistics().resolvedContactCount, sensor ? 0 : 1);
+            const y = ball.getPosition().y;
+            floor.delete(); ball.delete(); sensorEngine.delete();
+            return y;
+        };
+        assert.ok(fall(false) > 0.7, "a solid floor holds the ball");
+        assert.ok(fall(true) < -2, "a sensor floor lets the ball through");
+
+        const shape = new physics.Circle(1);
+        const tagged = physics.createRigidBody(shape, sensorMaterial, {x: 0, y: 0}, false);
+        shape.delete();
+        assert.equal(tagged.getUserData(), 0);
+        tagged.setUserData(17);
+        assert.equal(tagged.getUserData(), 17);
+        tagged.setUserData(2 ** 32 - 1);
+        assert.equal(tagged.getUserData(), 2 ** 32 - 1);
+        for (const bad of [-1, 1.5, 2 ** 32, NaN, Infinity])
+            assert.throws(() => tagged.setUserData(bad), `setUserData(${bad}) must throw`);
+        assert.equal(tagged.getUserData(), 2 ** 32 - 1);
+        tagged.delete();
+    }
     require("./handle-lifetime-tests.cjs").smoke(physics);
     console.log("PASS: configuration, stepping, filtering, lifetimes, owned spatial queries, capsules, joint motors/limits, exports, particles, electromagnetic motion, soft-body oscillator/loads, thermal conservation/accounting, N-body gravity, membrane waves, periodic scalar transport, periodic MAC projection/diffusion, periodic incompressible flow, periodic TMz Maxwell fields, elastic waves, static electrostatics and ideal-gas Euler");
 }

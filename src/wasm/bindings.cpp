@@ -190,7 +190,20 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .function("setAngularVelocity", &RigidBody::SetAngularVelocity)
         .function("setMass", &RigidBody::SetMass)
         .function("setCollisionCategoryBits", &RigidBody::SetCollisionCategoryBits)
-        .function("setCollisionMaskBits", &RigidBody::SetCollisionMaskBits);
+        .function("setCollisionMaskBits", &RigidBody::SetCollisionMaskBits)
+        .function("isSensor", &RigidBody::IsSensor)
+        .function("setSensor", &RigidBody::SetSensor)
+        // User data is a JS number: an exact integer in [0, UINTPTR_MAX]
+        // (2^32 - 1 on wasm32), checked before Embind could wrap it.
+        .function("getUserData", optional_override([](const RigidBody& body) {
+            return static_cast<double>(body.GetUserData());
+        }))
+        .function("setUserData", optional_override([](RigidBody& body, double value) {
+            if (!std::isfinite(value) || value < 0 || std::floor(value) != value ||
+                value > static_cast<double>(std::numeric_limits<std::uintptr_t>::max()))
+                throw std::invalid_argument("User data must be an integer from 0 to 2^32 - 1");
+            body.SetUserData(static_cast<std::uintptr_t>(value));
+        }));
 
     function("createRigidBody", &CreateRigidBody, allow_raw_pointers());
     class_<IJoint>("Joint")
