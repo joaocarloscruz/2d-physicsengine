@@ -214,7 +214,8 @@ from `getSimulationConfig()` and pass it back with `setSimulationConfig()`.
 
 The step is single-threaded. On an AMD Ryzen 7 5700X, a settled pile of boxes
 and circles in a walled bin takes about 0.7 ms per 60 Hz step with 250 bodies,
-2 ms with 500, 4.2 ms with 1000 and 9.2 ms with 2000. With sleeping enabled,
+2 ms with 500, 4.2 ms with 1000 and 9.2 ms with 2000 (`rigid_step_benchmark`
+reproduces these). With sleeping enabled,
 settled islands skip integration and the solver, though contact detection
 still runs for them. Statistics for the last step are in
 `world.getLastStepStatistics()`; see [simulation statistics](simulation-statistics.md).
