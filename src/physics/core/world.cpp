@@ -949,11 +949,30 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
                                           config.contactDampingRatio, substep)
         : CollisionResolver::Softness{};
     std::vector<char> groupSubstepped(groups.size(), 0), substepped(bodies.size(), 0);
+    // Each dynamic body's size bound for UpdateRigidSolve, computed on first use.
+    std::vector<double> sizeLimits;
+    std::vector<char> sizeLimitKnown;
+    const bool chooseSolve = substeps > 1 && softness.biasRate > 0;
+    if (chooseSolve) {
+        sizeLimits.resize(bodies.size());
+        sizeLimitKnown.resize(bodies.size(), 0);
+    }
+    const auto sizeLimit = [&](const RigidBody* body) {
+        if (body->IsStatic()) return 0.0;
+        const std::size_t i = bodyIndex(body);
+        if (!sizeLimitKnown[i]) {
+            sizeLimits[i] = CollisionResolver::SagSizeLimit(*body);
+            sizeLimitKnown[i] = 1;
+        }
+        return sizeLimits[i];
+    };
     for (std::size_t g = 0; g < groups.size(); ++g) {
         auto& group = groups[g];
         bool rigid = substeps <= 1 || !group.joints.empty() || group.contacts.empty();
         for (auto* c : group.contacts)
-            rigid = CollisionResolver::UpdateRigidSolve(*c, softness, substeps) || rigid;
+            rigid = (chooseSolve && c->cache
+                ? CollisionResolver::UpdateRigidSolve(*c, softness, substeps, sizeLimit(c->bodyA), sizeLimit(c->bodyB))
+                : CollisionResolver::UpdateRigidSolve(*c, softness, substeps)) || rigid;
         groupSubstepped[g] = !rigid;
         for (auto* c : group.contacts) {
             CollisionResolver::MatchImpulseSubsteps(*c, rigid ? 1 : substeps);

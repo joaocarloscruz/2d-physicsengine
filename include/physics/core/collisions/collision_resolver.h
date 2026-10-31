@@ -145,6 +145,12 @@ namespace PhysicsEngine {
         // min(penetrationSlop, 1% of the manifold's width).
         static bool UpdateRigidSolve(ContactConstraint& constraint, const Softness& softness,
             int substeps);
+        // The same, given SagSizeLimit of each dynamic body (ignored for a
+        // static one), so a caller can compute it once per body.
+        static bool UpdateRigidSolve(ContactConstraint& constraint, const Softness& softness,
+            int substeps, double sizeLimitA, double sizeLimitB);
+        // 1% of the body's size (the square root of its area).
+        static double SagSizeLimit(const RigidBody& body);
         // Rescales the warm-start impulses to impulses per step / substeps.
         static void MatchImpulseSubsteps(ContactConstraint& constraint, int substeps);
         // Applies the accumulated impulses at the prepared levers.

@@ -548,8 +548,18 @@ DVector LeverVelocity(const RigidBody *body, DVector r) {
            DVector{-double(body->angularVelocity) * r.y, double(body->angularVelocity) * r.x};
 }
 } // namespace
+double CollisionResolver::SagSizeLimit(const RigidBody &body) {
+    return 0.01 * std::sqrt(std::max(double(body.shape->GetArea()), 0.0));
+}
 bool CollisionResolver::UpdateRigidSolve(ContactConstraint &c, const Softness &soft,
                                          int substeps) {
+    if (!c.cache || !(soft.biasRate > 0) || substeps <= 1)
+        return c.cache && c.cache->rigidSolve;
+    return UpdateRigidSolve(c, soft, substeps, c.bodyA->IsStatic() ? 0.0 : SagSizeLimit(*c.bodyA),
+                            c.bodyB->IsStatic() ? 0.0 : SagSizeLimit(*c.bodyB));
+}
+bool CollisionResolver::UpdateRigidSolve(ContactConstraint &c, const Softness &soft,
+                                         int substeps, double sizeLimitA, double sizeLimitB) {
     if (!c.cache)
         return false;
     bool &rigid = c.cache->rigidSolve;
@@ -568,9 +578,8 @@ bool CollisionResolver::UpdateRigidSolve(ContactConstraint &c, const Softness &s
     // bodies buckles once it is a sizable part of their size: the bound is
     // also 1% of the smaller body's size (the square root of its area).
     double limit = c.penetrationSlop;
-    for (const RigidBody *body : {c.bodyA, c.bodyB})
-        if (!body->IsStatic())
-            limit = std::min(limit, 0.01 * std::sqrt(std::max(double(body->shape->GetArea()), 0.0)));
+    if (!c.bodyA->IsStatic()) limit = std::min(limit, sizeLimitA);
+    if (!c.bodyB->IsStatic()) limit = std::min(limit, sizeLimitB);
     if (!rigid && sag > 1.25 * limit)
         rigid = true;
     else if (rigid && sag < 0.75 * limit)
