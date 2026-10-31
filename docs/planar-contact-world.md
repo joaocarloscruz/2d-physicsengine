@@ -1,5 +1,16 @@
 # Experimental planar intervals through the World pipeline
 
+> **Measured on `526570c` (2026-10-28), Windows x86_64, Release, Clang 23.1.4,
+> with the default configuration** (speculative step order, `solverSubsteps = 4`).
+> The "ordinary World" in the comparison below is therefore the current default
+> solver. A second ordinary column gives the legacy step order
+> (`enableSpeculativeContacts = false`) for comparison with the earlier numbers of
+> this page; those values come from the unmodified benchmark source compiled with a
+> locally force-included copy of `simulation_config.h` that reads the step order
+> from an environment variable (a measurement harness that is not in the
+> repository). The experimental strategy is unchanged and its numbers match the
+> earlier ones.
+
 `planar_contact_world_benchmark` compares the ordinary World with the internal
 `benchmarks/experimental/planar_contact_bridge.h` strategy. The strategy uses the
 [bounded interval operator](planar-contact-interval.md) inside the actual World
@@ -40,33 +51,51 @@ exceptions after ordinary integration retain the ordinary partial-step behavior.
 
 ## Recorded complete-step comparison
 
-[Raw 52-row output](data/planar-world-d9afeb3-clang23.json) was generated from
-native code at `d9afeb3` with Windows Clang 23.1.1 Release. It covers 13 fixtures,
-dt 1/64 and 1/128, and 4/10 configured solver iterations for two physical seconds:
-19,968 total World calls across both pipelines, with zero execution failures.
-Timings include complete World calls and event dispatch; they are nondeterministic.
+The earlier [raw 52-row output](data/planar-world-d9afeb3-clang23.json) was
+generated from native code at `d9afeb3` (Clang 23.1.1) and is not regenerated here;
+the raw rows for the numbers below were kept outside the repository. The benchmark
+covers 13 fixtures, dt 1/64 and 1/128, and 4/10 configured solver iterations for
+two physical seconds: 52 rows and 19,968 total World calls across both pipelines,
+with zero execution failures, as before (`--quick` runs 13 rows and 832 calls,
+also with zero failures). Timings include complete World calls and event
+dispatch; they are nondeterministic.
 
 Representative dt 1/64, 4-iteration results:
 
-| Fixture | Ordinary World | Experimental World |
-| --- | --- | --- |
-| Rest | final y 0.4945737422; peak penetration 0.0055481586 | y 0.5; zero penetration and spin |
-| Stop from stored 0.2 m/s | final x 0.0117904525, vx 0.0000757064 | x 0.0099999998, vx 0 |
-| Outward release after 1 s | final y 4.4945735931, vy 8 | y 4.5, vy 8; Begin 1 / Persist 63 / End 1 |
-| Opaque force generator | ordinary trajectory | identical trajectory; one generator call per step, zero selected intervals |
+| Fixture | Ordinary World, default | Ordinary World, legacy order | Experimental World |
+| --- | --- | --- | --- |
+| Rest | final y 0.5; zero penetration | final y 0.4947558641; peak penetration 0.0052441359 | y 0.5; zero penetration and spin |
+| Stop from stored 0.2 m/s | final x 0.0098425914, vx -0.0000660014; peak penetration 0.0001255608 | final x 0.0117902160, vx 0.0000755970; peak penetration 0.0052462992 | x 0.0099999998, vx 0 |
+| Outward release after 1 s | final y 4.5, vy 8; Begin 1 / Persist 64 / End 1 | final y 4.4947557450, vy 8; Begin 1 / Persist 65 / End 1 | y 4.5, vy 8; Begin 1 / Persist 63 / End 1 |
+| Opaque force generator | y 0.5; 128 generator calls in 128 steps | y 0.4947558641; 128 generator calls | identical trajectory to the ordinary run; one generator call per step, zero selected intervals |
 
-The rest and stop paths each accept 128 intervals and record Begin 1 / Persist
-127 with no feature changes or iterative impulse reapplication. The stop's
+What changed: the default ordinary World now rests exactly at y 0.5 with no
+penetration and releases at y 4.5, so the experimental strategy no longer has an
+advantage in those two rows; the legacy-order rows reproduce the old pattern
+(sinking to about the penetration slop). The stop row still differs: the legacy
+order stopped at x 0.01179 (18% beyond the stopping distance .01), the default
+stops at x 0.00984 (1.6% short) with a nonzero residual velocity of -6.6e-5, and
+the experimental strategy gives x 0.0099999998 and zero velocity. In the slide
+row the default ordinary World ends at x 0.9999209 while the experimental
+strategy gives x 1. So the interval operator still ends closer to the analytic
+sliding and stopping results, but it is no longer needed to avoid penetration at
+rest.
+
+The rest and stop paths each accept 128 intervals (selected steps 128 of 128) and
+record Begin 1 / Persist 127 with no feature changes or iterative impulse
+reapplication. The stop's
 stored-state work and momentum residuals are zero in this row; its peak reaction
 torque residual is 1.63e-9 from represented contact coordinates. These are measured
 float-state results, separate from the double interval operator's exact formulas.
 
-The original rigid-contact benchmark was compared against immutable `2394015`:
-all 120 quick rows and 432 full rows match exactly after removing elapsed time.
-That preserves the earlier production gains and regressions. The new benchmark
-and `[contact-bridge]` tests cover actual lifecycle/cache/load behavior and
-fallback. A finite run or a passing execution status does not establish a
-general many-body contact solution.
+When the bridge was added, the original rigid-contact benchmark was compared
+against immutable `2394015`: all 120 quick rows and 432 full rows matched exactly
+after removing elapsed time. That comparison was against a much older solver and
+was not repeated for this refresh. The new benchmark and `[contact-bridge]` tests
+cover actual lifecycle/cache/load behavior and fallback; on `526570c` the native
+suite passes in full (813 cases) and the `planar_contact_world_benchmark_smoke`
+CTest entry passes. A finite run or a passing execution status does not establish
+a general many-body contact solution.
 
 ```sh
 cmake --build build --target planar_contact_world_benchmark
