@@ -173,7 +173,25 @@ function stepUntil(scene, limit, done) {
 }
 
 // Car and sensors: the motor drives the car forward, the sensor goal registers
-// the overlap (found with queryCircle), leaving and re-entering counts again.
+// the overlap through the engine's sensor events, leaving and re-entering counts
+// again. A queryCircle cover of the car (the earlier implementation) is kept
+// here as an independent check on those events.
+function carOverlapsGoal(physics, scene) {
+    const {goal} = scene, {chassis, wheels} = goal.car;
+    const hits = (x, y, radius) => {
+        const results = physics.queryCircle(scene.engine, {x, y}, radius);
+        try {
+            for (let i = 0; i < results.size(); ++i) if (results.getBodyId(i) === goal.record.id) return true;
+            return false;
+        } finally { results.delete(); }
+    };
+    const c = Math.cos(chassis.a), sn = Math.sin(chassis.a);
+    if (wheels.some(w => hits(w.x, w.y, 0.45))) return true;
+    // Discs sit inside the 2.4 x 0.6 chassis, so an overlap of any disc is a real one.
+    for (let i = 0; i < 5; ++i) if (hits(chassis.x + c * (-0.8 + 0.4 * i), chassis.y + sn * (-0.8 + 0.4 * i), 0.25)) return true;
+    return false;
+}
+
 function runCar(physics, report) {
     const scene = Playground.createScene(physics, sceneIndexByName('Car and sensors'));
     try {
@@ -192,7 +210,10 @@ function runCar(physics, report) {
         const idleDrift = Math.abs(chassis.x - parkedX);
         assert.ok(idleDrift < 0.3, `idle car rolled ${idleDrift} m`);
         assert.equal(goal.entries, 0);
+        assert.equal(goal.exits, 0);
         assert.equal(goal.inside, false);
+        assert.equal(scene.engine.isCollisionEventsEnabled(), true, 'the goal reads engine sensor events');
+        assert.equal(carOverlapsGoal(physics, scene), false);
 
         // Drive right with the rear motor.
         scene.input.throttle = 1;
@@ -205,6 +226,9 @@ function runCar(physics, report) {
         assert.ok(chassis.x - x0 > 5, `car moved only ${chassis.x - x0} m`);
         assert.ok(maxSpeed > 1, `car top speed ${maxSpeed} m/s`);
         assert.equal(goal.entries, 1, 'entering the goal counts once');
+        assert.equal(goal.exits, 0);
+        for (let i = 0; i < 5; ++i) scene.stepOnce();
+        assert.equal(carOverlapsGoal(physics, scene), true, 'the query cover agrees the car is in the goal');
         assert.ok(joints.every(j => Math.abs(j.joint.getTranslation()) <= 0.31), 'suspension stays within its stroke');
         assert.ok(joints[0].joint.isMotorEnabled() && joints[0].joint.getMotorSpeed() < 0, 'rear motor drives forward');
         assert.ok(wheels.every(w => w.y > -5)); // wheels rest on the terrain
@@ -216,9 +240,12 @@ function runCar(physics, report) {
         scene.input.throttle = -1;
         stepUntil(scene, 900, () => !goal.inside);
         assert.equal(goal.entries, 1);
+        assert.equal(goal.exits, 1, 'leaving the goal is an End event');
+        assert.equal(carOverlapsGoal(physics, scene), false, 'the query cover agrees the car has left');
         scene.input.throttle = 1;
         stepUntil(scene, 900, () => goal.inside);
         assert.equal(goal.entries, 2, 're-entering counts again');
+        assert.equal(goal.exits, 1);
         assert.ok(scene.status().includes('goal entries 2'), scene.status());
         assertFinitePoses(scene, 'car');
 

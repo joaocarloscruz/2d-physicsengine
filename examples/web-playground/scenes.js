@@ -48,7 +48,8 @@
             this.controllers = [];       // (scene, sceneTime) called before every step
             this.input = {throttle: 0};  // vehicle throttle in [-1, 1], set by the page
             this.status = null;          // optional () => string with extra HUD lines
-            this.goal = null;            // car scene: {record, inside, entries}
+            this.goal = null;            // car scene: {record, inside, entries, exits}
+            this.eventHandlers = [];     // called with each collision event after a step
             this.sceneTime = 0;
             this.stepMilliseconds = 0;   // smoothed wall-clock cost of one fixed step
             this.drag = null;
@@ -199,6 +200,7 @@
             this.beforeStep();
             this.capturePrevious();
             this.timed(() => this.engine.stepFixed());
+            this.pumpEvents();
             this.readPoses();
         }
 
@@ -228,6 +230,7 @@
                 const result = this.timed(() => this.engine.advance(need));
                 remaining -= need;
                 steps += result.stepsPerformed;
+                this.pumpEvents();
             }
             if (!ranFinal) alpha = Math.min(this.engine.getAccumulatedTime() / dt, 1);
             if (steps > 0) this.readPoses();
@@ -264,15 +267,28 @@
             throw new Error('Unknown shape kind: ' + kind);
         }
 
-        // Whether any body in `ids` overlaps the disc (x, y, radius), through the
-        // bound queryCircle. The result is an owned collection, deleted here.
-        overlapsDisc(x, y, radius, id) {
-            const results = this.physics.queryCircle(this.engine, {x, y}, radius);
+        // Registers a handler for the engine's collision events and turns
+        // recording on. The handler gets plain values (phase, ids, sensor flag);
+        // events are pulled once per step, so nothing calls back into JS while
+        // the engine is stepping.
+        onCollisionEvent(handler) {
+            this.engine.enableCollisionEvents(true);
+            this.eventHandlers.push(handler);
+        }
+
+        // Drains the engine's event buffer into the handlers. The list is an
+        // owned collection and is deleted here, even if a handler throws.
+        pumpEvents() {
+            if (this.eventHandlers.length === 0) return;
+            const list = this.engine.takeCollisionEvents();
             try {
-                for (let i = 0; i < results.size(); ++i) if (results.getBodyId(i) === id) return true;
-                return false;
+                for (let i = 0; i < list.size(); ++i) {
+                    const event = list.getEvent(i);
+                    for (const handler of this.eventHandlers) handler(event);
+                }
+                if (list.overflowed()) throw new Error('Collision event buffer overflowed');
             } finally {
-                results.delete();
+                list.delete();
             }
         }
 
@@ -568,9 +584,8 @@
     }
 
     // A car on two wheel-joint suspensions with a rear-wheel motor, bumpy
-    // terrain and a static sensor goal. JavaScript has no collision listeners,
-    // so overlap is found by querying: the wheels are discs, and the chassis is
-    // covered by five discs along its length (queryCircle against the goal).
+    // terrain and a static sensor goal. The goal counts entries from the
+    // engine's own sensor Begin/End events for the chassis and both wheels.
     // The page sets scene.input.throttle; the controller below applies it.
     function buildCar(s) {
         s.arena();
@@ -600,20 +615,26 @@
             if (side < 0) rear = suspension;
         }
 
-        s.goal = {record: goal, inside: false, entries: 0, car: {chassis, wheels}};
+        s.goal = {record: goal, inside: false, entries: 0, exits: 0, car: {chassis, wheels}};
+        // A car part is "in" from its sensor Begin to its sensor End; the car
+        // enters when its first part does and leaves when its last part does.
+        const carIds = new Set([chassis.id, ...wheels.map(w => w.id)]);
+        const touching = new Set();
+        s.onCollisionEvent(event => {
+            if (!event.sensor) return;
+            const other = event.bodyAId === goal.id ? event.bodyBId : event.bodyBId === goal.id ? event.bodyAId : null;
+            if (other === null || !carIds.has(other)) return;
+            const before = touching.size;
+            if (event.phase === s.physics.CollisionPhase.End) touching.delete(other);
+            else touching.add(other);
+            if (before === 0 && touching.size > 0) ++s.goal.entries;
+            if (before > 0 && touching.size === 0) ++s.goal.exits;
+            s.goal.inside = touching.size > 0;
+        });
         s.controllers.push(scene => {
             const throttle = scene.input.throttle;
             if (throttle !== 0) chassis.body.wake();
             rear.setMotor(true, -throttle * CAR_TOP_SPEED, throttle !== 0 ? CAR_DRIVE_TORQUE : CAR_IDLE_TORQUE);
-
-            const c = Math.cos(chassis.a), sn = Math.sin(chassis.a);
-            let inside = wheels.some(w => scene.overlapsDisc(w.x, w.y, 0.45, goal.id));
-            for (let i = 0; !inside && i < 5; ++i) {
-                const along = -1 + 0.5 * i;
-                inside = scene.overlapsDisc(chassis.x + c * along, chassis.y + sn * along, 0.3, goal.id);
-            }
-            if (inside && !scene.goal.inside) ++scene.goal.entries;
-            scene.goal.inside = inside;
         });
         s.status = () => `goal entries ${s.goal.entries}${s.goal.inside ? '  [CAR IN GOAL]' : ''}` +
             `   speed ${chassis.body.getVelocity().x.toFixed(1)} m/s`;
