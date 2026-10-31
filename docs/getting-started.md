@@ -261,6 +261,9 @@ still runs for them. Statistics for the last step are in
   0.998 m on its first bounce, then keeps that height.
 - Dynamic polygons rotate about their shape origin, so build them centered (see
   [polygon centering](polygon-centering.md)).
+- Keep jointed mass ratios under about 1:10 and put at most one joint on a
+  pair of bodies. Larger ratios and redundant joints can gain energy, most of
+  all in the legacy step order (see [joints](joints-and-sleeping.md)).
 
 The [rigid-contact benchmark](rigid-contact-benchmark.md) measures stacking,
 friction and impact accuracy against physical oracles, and the

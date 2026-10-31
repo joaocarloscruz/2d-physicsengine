@@ -502,6 +502,11 @@ TEST_CASE("Random scenes with CCD bullets of every shape stay sealed (long)", "[
     // Speculative order only, like the other harder variants above: in the
     // legacy order seed 7 launched a non-CCD capsule at 177 m/s in a collision
     // with another non-CCD body (bullets are filtered from both), and seed 4
-    // with bullets hitting bodies blew up in a pile (cause not isolated).
+    // with bullets hitting bodies blew up in a pile. Both started at jointed
+    // pairs with mass ratios of 1:40 and 1:350 that also had a second joint
+    // (revolute plus prismatic, prismatic plus distance); see the mass-ratio
+    // note in joints-and-sleeping.md. Allowing one joint per pair changed the
+    // default seed 20261029 enough to fail in the legacy order too, so the
+    // generator keeps its duplicates.
     CheckAnyShapeBullets(1, 8, 64, {true});
 }

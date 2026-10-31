@@ -23,6 +23,17 @@ Bodies joined by a joint do not collide with each other unless
 overlap at their shared anchor, and those contacts would fight the joint. The
 tests include analytical momentum transfer and 3,000-step pendulums.
 
+Keep the mass ratio of jointed bodies under about 1:10 where you can, and put at
+most one joint on a pair (a `WeldJoint` locks a pair completely). Two joints
+on one pair can ask for the same thing twice (a revolute and a prismatic joint
+both fix the relative rotation), which an iterative solver cannot satisfy
+exactly. In the legacy step order (`enableSpeculativeContacts = false`) the
+World fuzz, whose jointed pairs reach 1:350, gains energy in piles: two
+every-shape seeds threw bodies out at up to 180 m/s, both from pairs of 1:40
+and 1:350 that also had a second joint, and a scene without redundant joints
+still exceeded its energy budget by 15%. The default step order passes the
+same scenes.
+
 Distance and revolute solvers compute rotated levers, point velocities, effective
 masses, and impulses in double precision. No physical mass or nonzero distance is
 clamped to an arbitrary minimum; only exactly coincident distance anchors use the
