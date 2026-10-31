@@ -85,6 +85,13 @@ namespace PhysicsEngine {
             bool blockReady = false;
             double ca[2]{}, cb[2]{};
             double k11 = 0, k12 = 0, k22 = 0, rigidDeterminant = 0;
+            // Diagonal and determinant of K plus the soft rows' compliance,
+            // by soft rows (bit 0: point 0, bit 1: point 1), for softness
+            // {massScale, impulseScale}.
+            bool softReady = false;
+            double softness[2]{};
+            double diagonal[4][2]{};
+            double determinants[4]{};
             // Each point's separation at the recorded poses.
             bool separationsValid = false;
             float poses[6]{};

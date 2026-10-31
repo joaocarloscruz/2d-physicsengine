@@ -666,7 +666,7 @@ void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep
         cache.separationsValid = true;
     }
     double biases[2]{}, massScales[2]{1, 1}, impulseScales[2]{}, normalVelocities[2]{};
-    bool skip[2]{};
+    bool skip[2]{}, softRows[2]{};
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         const double separation = cache.separations[i];
         if (separation > 0) {
@@ -678,6 +678,7 @@ void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep
             biases[i] = std::max(soft.biasRate * separation, -maxPushSpeed);
             massScales[i] = soft.massScale;
             impulseScales[i] = soft.impulseScale;
+            softRows[i] = true;
         }
     }
     if (c.pointCount == 2 && !skip[0] && !skip[1]) {
@@ -707,14 +708,29 @@ void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep
         }
         const double *ca = cache.ca, *cb = cache.cb;
         const double k11 = cache.k11, k22 = cache.k22, k12 = cache.k12;
-        gamma[0] = k11 * impulseScales[0] / massScales[0];
-        gamma[1] = k22 * impulseScales[1] / massScales[1];
-        const double a11 = k11 + gamma[0], a22 = k22 + gamma[1];
+        // The diagonal and determinant of K + G for each choice of soft rows,
+        // for this softness (constant through a step).
+        if (!cache.softReady || std::memcmp(cache.softness, &soft.massScale, sizeof(double)) != 0
+            || std::memcmp(cache.softness + 1, &soft.impulseScale, sizeof(double)) != 0) {
+            for (int combo = 0; combo < 4; ++combo) {
+                const bool soft0 = combo & 1, soft1 = combo & 2;
+                gamma[0] = k11 * (soft0 ? soft.impulseScale : 0.0) / (soft0 ? soft.massScale : 1.0);
+                gamma[1] = k22 * (soft1 ? soft.impulseScale : 0.0) / (soft1 ? soft.massScale : 1.0);
+                cache.diagonal[combo][0] = k11 + gamma[0];
+                cache.diagonal[combo][1] = k22 + gamma[1];
+                cache.determinants[combo] = cache.rigidDeterminant
+                    + gamma[0] * k22 + gamma[1] * k11 + gamma[0] * gamma[1];
+            }
+            cache.softness[0] = soft.massScale;
+            cache.softness[1] = soft.impulseScale;
+            cache.softReady = true;
+        }
+        const int combo = (softRows[0] ? 1 : 0) | (softRows[1] ? 2 : 0);
+        const double a11 = cache.diagonal[combo][0], a22 = cache.diagonal[combo][1];
         for (int i = 0; i < 2; ++i) q[i] = normalVelocities[i] + biases[i];
         q[0] = Checked(q[0] - (k11 * old[0] + k12 * old[1]));
         q[1] = Checked(q[1] - (k12 * old[0] + k22 * old[1]));
-        const double determinant = Checked(cache.rigidDeterminant
-            + gamma[0] * k22 + gamma[1] * k11 + gamma[0] * gamma[1]);
+        const double determinant = Checked(cache.determinants[combo]);
         double x[2]{};
         bool solved = false;
         if (determinant > 1e-12 * a11 * a22) {
