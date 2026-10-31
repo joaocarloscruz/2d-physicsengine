@@ -49,7 +49,7 @@ take the rigid solve. Other groups of contacts take substeps instead; see
 Islands for sleeping and waking only follow touching contacts. A speculative
 pair joins awake islands for the solve. A speculative pair with a sleeping
 body is skipped unless the awake body will close the gap this step, in which
-case the sleeper wakes (step 3); a body merely passing close by never wakes it. Pairs that CCD sweeps (a CCD-enabled circle)
+case the sleeper wakes (step 3); a body merely passing close by never wakes it. Pairs that CCD sweeps (any pair with a CCD-enabled body)
 get only the fixed margin and keep their exact time-of-impact handling.
 
 With `enableSpeculativeContacts = false` the legacy order runs: integrate

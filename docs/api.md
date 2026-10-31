@@ -55,8 +55,8 @@ roundoff-only neutrality correction, copied snapshots, stored Gauss/energy audit
 and bounded transactional work. It advances no clock and has no particle coupling.
 
 Shapes are `Circle`, strictly convex `Polygon` and [`Capsule`](capsules.md), a
-rounded centered spine. Capsules collide with every shape and support queries;
-continuous collision accepts them only as static targets of circles.
+rounded centered spine. Capsules collide with every shape, support queries and
+take part in continuous collision like the other shapes.
 
 See [native spatial queries](spatial-queries.md) for boundary/inside semantics,
 finite segment hits, deterministic ordering, collision filters and retained handles.

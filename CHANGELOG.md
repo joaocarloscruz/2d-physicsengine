@@ -23,6 +23,12 @@ simulation modules beside it. Measured limits are listed in
 - New joints: `MouseJoint`, `WeldJoint` and `WheelJoint`. `DistanceJoint` gains
   a spring and a length range (rope). Jointed bodies no longer collide with each
   other unless `setCollideConnected(true)`.
+- CCD covers every shape pair (circles, polygons and capsules, static or
+  moving) and sweeps rotation: thin boxes, capsule bullets and spinning
+  polygons no longer pass through thin walls at up to the speed and spin
+  limits, and capsule pairs no longer make the step throw. A body pressed into
+  another past its allowed depth is stopped for the rest of the step instead of
+  being let through.
 - CCD also sweeps position correction against static walls, and CCD bodies may
   share a world with sensor capsules. Fixes found by seeded World fuzzing: a
   valid polygon no longer makes the step throw after float rounding, resting or

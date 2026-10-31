@@ -928,9 +928,8 @@ The module exposes `Engine`, `Circle`, `Polygon`, `Capsule`, `RigidBody`,
 `new Capsule(halfLength, radius)` takes half the spine length, not of the
 tip-to-tip extent, and exposes `getHalfLength`, `getRadius` and `getArea`. Bodies
 copy it, so the shape handle may be deleted after `createRigidBody`. Capsule
-bodies collide, export and answer every scene query like the native API; capsule
-CCD is limited to circles against static capsules, and other requested capsule
-CCD pairs make `step` throw before any state changes. See [capsules](capsules.md).
+bodies collide, export, answer every scene query and take part in CCD like the
+native API. See [capsules](capsules.md).
 
 ```javascript
 const physics = await createPhysicsEngineModule();

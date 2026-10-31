@@ -78,22 +78,23 @@ local `+y` side, then `-y`, then the `-x` cap, then the `+x` cap.
 
 ## Continuous collision
 
-| Moving body | Target | Support |
-| --- | --- | --- |
-| Circle | Static capsule | Supported; translating sweep against the rounded spine |
-| Circle | Dynamic capsule | Rejected |
-| Capsule (any CCD flag) | Any body | Rejected |
-| Polygon | Capsule | Rejected |
+World CCD sweeps every pair that involves a capsule, with the capsule's
+rotation:
 
-A CCD-relevant pair has at least one CCD-enabled body, at least one dynamic
-body, and passes collision filtering. `World::step` throws
-`std::invalid_argument` for an unsupported capsule pair **before** stepping
-particles, applying loads or moving any body, so an unsupported cast is never
-treated as a miss. Filter a CCD body away from dynamic capsules when both are
-present. Zero-duration steps perform no sweep and are not rejected.
+| Pair | Method |
+| --- | --- |
+| Circle and a capsule that does not turn this step (static or moving) | Exact translating sweep against the rounded spine (`SweepCircleCapsule`) |
+| Circle and a turning capsule | Conservative advancement with rotation |
+| Capsule and polygon, capsule and capsule | Conservative advancement with rotation |
+
+A CCD capsule (a capsule bullet) is swept like any other CCD body. The pairs
+that used to make `World::step` throw `std::invalid_argument` (a CCD circle
+against a dynamic capsule, any CCD capsule, a CCD polygon against a capsule)
+are now swept; see
+[collision lifecycle and CCD](collision-lifecycle-and-ccd.md#world-ccd).
 
 `SweepCircleCapsule` also accepts a prescribed translation of the capsule for
-standalone relative-motion sweeps. No capsule rotates during a sweep.
+standalone relative-motion sweeps; it does not rotate the capsule.
 
 ## Other modules
 
@@ -113,11 +114,11 @@ standalone relative-motion sweeps. No capsule rotates during a sweep.
   `ContainsPoint`.
 - **Browser.** WebAssembly exposes `new Capsule(halfLength, radius)` with
   `getHalfLength`, `getRadius` and `getArea`. Capsule bodies use the same
-  owned-copy, query, export and CCD-rejection behavior; the smoke test covers
-  queries, resting contact, export, CCD rejection and a filtered CCD circle.
+  owned-copy, query, export and CCD behavior; the smoke test covers
+  queries, resting contact, export, a CCD capsule and a filtered CCD circle.
 
-Compound shapes, segment chains, concave shapes and rotating-shape CCD remain
-separate formulations.
+Compound shapes, segment chains and concave shapes remain separate
+formulations.
 
 `examples/capsule_pile.cpp` is a bounded smoke scene: six capsules drop onto a
 box and a static capsule ramp while a filtered CCD circle hits the ramp. It

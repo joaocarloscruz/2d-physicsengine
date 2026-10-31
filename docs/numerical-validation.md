@@ -179,6 +179,20 @@ World bugs these runs found, all fixed:
 - Joint and contact impulses could carry a body past the velocity limits; a
   stiff MouseJoint drag reached thousands of m/s. The limits are now applied
   again after the solve.
+- With CCD bullets of every shape (polygons and capsules too) that hit bodies,
+  the first version of every-shape CCD ran out of impact budget on 5
+  consecutive steps: in piles, the two contacts of a pressed body took turns
+  at impulses. A pair now gets at most two impulses per step before it is
+  frozen, frozen bodies stay frozen, and freezes do not use the budget.
+
+A further case (`Random scenes with CCD bullets of every shape stay sealed`)
+fires CCD circles, polygons and capsules, with and without hitting bodies, in
+both step orders; its long version runs 8 seeds in the speculative order with
+a budget of 64 impacts, since up to about 40 bullets fired at once into a pile
+need more than 32 for several steps. In the legacy order two of those seeds
+fail the energy check: in one a non-CCD capsule is launched at 177 m/s by a
+collision with another non-CCD body (both are filtered from every CCD body),
+in the other a pile that bullets hit blows up (cause not isolated).
 
 The long run passes on all 12 seeds. The default `[fuzz][world]` case takes
 about 4 s and the long World run 50 to 90 s (machine load) in a Release

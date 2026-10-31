@@ -33,7 +33,7 @@ Integration assumes constant force over each step: position advances by
 Verlet solver for position-dependent forces. Contact and joint iterations are
 approximate. Prefer small fixed timesteps and monitor constraint error; increasing
 iterations cannot repair arbitrary large-step trajectories. Friction and restitution
-are contact approximations. CCD sweeps the integrated linear displacement; it does
+are contact approximations. CCD sweeps the integrated displacement and rotation; it does
 not analytically integrate curved trajectories under changing forces.
 
 ## Fluids and particles
@@ -167,8 +167,8 @@ The engine has no arbitrary mesh collision, implicit rigid integrator or
 multithreaded solver. Revolute joints support torque-limited motors and principal
 angle stops; large angular displacements still require small timesteps. Soft bodies
 currently have no self-contact, solid/fluid coupling, area constraint or fracture.
-CCD supports circle/circle and translating
-circle/polygon pairs; rotating polygons and polygon/polygon sweeps remain discrete.
+CCD covers every shape pair with translation and rotation, modelling each step
+as straight-line motion with a constant spin.
 DFSPH has no boundary or rigid coupling implementation yet. Free surfaces can be
 underdense; diagnostics distinguish this from volume compression.
 

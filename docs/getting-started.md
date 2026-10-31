@@ -117,11 +117,12 @@ one step. Enable continuous collision detection on them:
 bullet->SetCcdEnabled(true);
 ```
 
-CCD sweeps a translating circle against circles, polygons and static
-capsules. Polygon pairs and rotation are not swept, so give fast polygons a
-smaller `fixedTimeStep` instead. A CCD body touching a capsule in any other
-combination makes `step` throw before it changes the world; filter those pairs
-apart. See [collision events and CCD](collision-lifecycle-and-ccd.md).
+CCD works for every shape: circles, polygons and capsules, against static or
+moving bodies, spinning or not. A thin box, capsule or spinning polygon fired
+at a 5 cm wall at up to the 200 m/s speed limit and 30 rad/s spin limit stops
+at its face. CCD costs nothing while no body has it enabled; with it on, every
+pair that includes a CCD body is checked each step, so enable it only on the
+fast bodies. See [collision events and CCD](collision-lifecycle-and-ccd.md).
 
 ## Collision events and filtering
 
@@ -225,7 +226,7 @@ mask rule as collisions. See [spatial queries](spatial-queries.md).
 | Symptom | Try |
 | --- | --- |
 | Towers taller than about 20 boxes lean or fall over | `solverSubsteps = 8` and `contactHertz = 120` (stiffer soft contacts, about twice the contact cost) |
-| Small fast bodies pass through walls | `SetCcdEnabled(true)` on those bodies |
+| Fast bodies (bullets, thrown boxes, spinning blades) pass through walls | `SetCcdEnabled(true)` on those bodies |
 | Bodies jitter or look floaty | Check the scale: moving bodies should be 0.1 m to 10 m across |
 | A body stops accelerating at 200 m/s, or stops spinning up at 30 rad/s | Disable or raise the velocity limits |
 | Settled piles keep using CPU | `enableSleeping = true` |
