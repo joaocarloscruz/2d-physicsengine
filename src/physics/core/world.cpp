@@ -1179,9 +1179,15 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         const RigidBody* dynamic = a->IsAwake() ? a : b;
         const RigidBody* other = dynamic == a ? b : a;
         if (!other->IsStatic() && !other->IsAwake()) continue; // Woken next step via its Begin event.
+        // A CCD impact can wake a sleeping body after the solve groups were
+        // formed; its island has no group, so it joins its partner's group,
+        // or (both woken that way) is left to next step's solve.
+        std::size_t group = groupOfRoot[root(islandOf(dynamic))];
+        if (group == none && !other->IsStatic()) group = groupOfRoot[root(islandOf(other))];
+        if (group == none) continue;
         endCaches.emplace_back();
         endConstraints.push_back(CollisionResolver::PrepareConstraint(manifold, endCaches.back(), config, true));
-        positionContacts[groupOf(root(islandOf(dynamic)))].push_back(&endConstraints.back());
+        positionContacts[group].push_back(&endConstraints.back());
     }
 
     for (std::size_t g = 0; g < groups.size(); ++g) {
