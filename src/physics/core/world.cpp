@@ -1313,9 +1313,14 @@ void World::validateCcdSupport() const {
 namespace {
 // Translational sweep of one pair from the bodies' current poses; the normal
 // points from a to b. Pairs without a circle (pure polygons) are not swept.
-SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 db, bool capsuleSupported) {
+// core < 1 sweeps each circle's core, a circle of core times its radius.
+SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 db, bool capsuleSupported,
+    float core = 1) {
     SweepHit hit;
     const auto typeA = a.shape->type, typeB = b.shape->type;
+    const auto radius = [core](const RigidBody& circle) {
+        return core == 1 ? circle.shape->GetRadius() : core * circle.shape->GetRadius();
+    };
     if (typeA == ShapeType::CAPSULE || typeB == ShapeType::CAPSULE) {
         const bool firstCircle = typeA == ShapeType::CIRCLE;
         const RigidBody& circle = firstCircle ? a : b;
@@ -1324,13 +1329,13 @@ SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 d
         if (!capsuleSupported || !capsule)
             throw std::logic_error("Unsupported capsule continuous collision reached the sweep.");
         const Vector2 axis = Matrix2x2::rotation(capsuleBody.orientation) * Vector2{1, 0};
-        hit = SweepCircleCapsule(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
+        hit = SweepCircleCapsule(circle.position, firstCircle ? da : db, radius(circle),
             capsuleBody.position - axis*capsule->GetHalfLength(),
             capsuleBody.position + axis*capsule->GetHalfLength(), capsule->GetRadius(),
             firstCircle ? db : da);
         if (!firstCircle) hit.normal = hit.normal*-1.0f;
     } else if (typeA == ShapeType::CIRCLE && typeB == ShapeType::CIRCLE) {
-        hit = SweepCircleCircle(a.position, da, a.shape->GetRadius(), b.position, db, b.shape->GetRadius());
+        hit = SweepCircleCircle(a.position, da, radius(a), b.position, db, radius(b));
     } else if (typeA == ShapeType::CIRCLE || typeB == ShapeType::CIRCLE) {
         const bool firstCircle = typeA == ShapeType::CIRCLE;
         const RigidBody& circle = firstCircle ? a : b;
@@ -1341,7 +1346,7 @@ SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 d
             vertices.push_back(polygon.position + rotation*v);
         // The local outline was validated when the Polygon was built; the
         // rounded world copy may not pass that check again (it is swept as is).
-        hit = Detail::SweepCirclePolygonRounded(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
+        hit = Detail::SweepCirclePolygonRounded(circle.position, firstCircle ? da : db, radius(circle),
             vertices, firstCircle ? db : da);
         if (!firstCircle) hit.normal = hit.normal*-1.0f;
     }
@@ -1368,6 +1373,11 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
         bodies[i]->position = starts[i];
     }
     std::vector<CollisionManifold> impacts;
+    // Pairs given an impulse so far this step, by body index.
+    std::vector<std::pair<std::size_t, std::size_t>> impulsed;
+    // A pair this close (or closer) to contact is touching, the same
+    // tolerance at which the step's contacts count as touching.
+    const float touchTolerance = std::max(0.25f * simulationConfig.penetrationSlop, 1e-6f);
     float remaining = deltaTime;
     for (int iteration=0; iteration<simulationConfig.maximumCcdImpacts; ++iteration) {
         SweepHit earliest;
@@ -1377,11 +1387,34 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
                 const auto& a = bodies[i]; const auto& b = bodies[j];
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
                     (a->IsStatic() && b->IsStatic()) || !pairCollides({a, b})) continue;
-                const SweepHit hit = SweepPair(*a, motion[i]*remaining, *b, motion[j]*remaining,
-                    SupportsCapsuleCcd(*a, *b));
-                // Ignore resting/separating pairs, including initial overlap.
-                if (hit.hit && (motion[j]-motion[i]).dot(hit.normal) < -1e-6f &&
-                    (!earliest.hit || hit.fraction < earliest.fraction)) {
+                const Vector2 da = motion[i]*remaining, db = motion[j]*remaining;
+                const bool capsule = SupportsCapsuleCcd(*a, *b);
+                SweepHit hit = SweepPair(*a, da, *b, db, capsule);
+                // Ignore separating pairs and pairs resting in contact.
+                const Vector2 relative = motion[j]-motion[i];
+                if (!hit.hit || relative.dot(hit.normal) >= -1e-6f) continue;
+                // A pair that still approaches while touching after its own
+                // impulse is held by a neighbour: a body pressed between two
+                // others, or resting in a stack. Pairwise impulses only pass
+                // the approach back and forth between such contacts (each
+                // round removes a share set by the mass ratio), so they would
+                // spend the whole budget without advancing time. The step's
+                // contact solve, which sees all of them together, owns that
+                // approach; here only the circles' cores (a quarter of their
+                // radius) are swept, so the pair cannot pass through each
+                // other unnoticed. A pair whose cores touch as well is left
+                // to that solve: an impulse there has already failed to stop
+                // the approach (the impulse acts at the contact point, where
+                // the bodies' spin may already separate them, while the sweep
+                // only sees the centres' motion), so repeating it would loop.
+                const double travel = (db-da).magnitude();
+                if (hit.fraction * travel <= touchTolerance &&
+                    std::find(impulsed.begin(), impulsed.end(), std::make_pair(i, j)) != impulsed.end()) {
+                    hit = SweepPair(*a, da, *b, db, capsule, 0.25f);
+                    if (!hit.hit || relative.dot(hit.normal) >= -1e-6f || hit.fraction * travel <= touchTolerance)
+                        continue;
+                }
+                if (!earliest.hit || hit.fraction < earliest.fraction) {
                     earliest = hit; hitA = i; hitB = j;
                 }
             }
@@ -1404,6 +1437,8 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
         for (int i=0; i<simulationConfig.solverIterations; ++i)
             CollisionResolver::SolveVelocity(constraint);
         impacts.push_back(manifold);
+        if (std::find(impulsed.begin(), impulsed.end(), std::make_pair(hitA, hitB)) == impulsed.end())
+            impulsed.emplace_back(hitA, hitB);
         ++statistics.ccdImpactCount;
         motion[hitA] = bodies[hitA]->IsStatic() ? Vector2{} : bodies[hitA]->velocity;
         motion[hitB] = bodies[hitB]->IsStatic() ? Vector2{} : bodies[hitB]->velocity;
