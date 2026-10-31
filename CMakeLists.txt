@@ -452,7 +452,12 @@ elseif(BUILD_TESTING)
     target_link_libraries(planar_reflected_diagnostic PRIVATE Engine)
 
     enable_testing()
-    add_test(NAME engine_tests COMMAND engine_tests_runner)
+    # Four Catch2 shards, so `ctest -j` runs the suite in parallel; under the
+    # sanitizers one serial run no longer fits the CI time limit.
+    foreach(shard RANGE 3)
+        add_test(NAME engine_tests_shard${shard}
+            COMMAND engine_tests_runner --shard-count 4 --shard-index ${shard})
+    endforeach()
     add_test(
         NAME numerical_validation_fast
         COMMAND numerical_validation
