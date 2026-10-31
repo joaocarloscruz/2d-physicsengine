@@ -1,5 +1,16 @@
 # Numerical validation and scalar precision
 
+> **Rigid-body rows re-measured on `526570c` (2026-10-28), Windows x86_64,
+> Release, Clang 23.1.4,** with `numerical_validation --mode fast` and
+> `--mode extended` on the default configuration (speculative step order,
+> `solverSubsteps = 4`). Both profiles pass. The rows that changed from the
+> previously printed values are the free-fall position at 10 s and the three
+> free-fall timestep rows; every other measured value, including the
+> elastic-collision momentum and energy, the oscillator rows, the 100,000-step
+> run, the float/double comparison and the extended profile's `1.1307` and
+> `0.9921%`, is unchanged to the digits printed. The sections on module precision
+> that follow do not depend on the rigid-contact solver and were not re-measured.
+
 Precision is module-specific. Rigid bodies, ordinary particles and SPH use
 `float` state and geometry; the fixed-step wall-clock accumulator uses `double`.
 Soft-body positions/velocities also use float `Vector2`, with double masses,
@@ -41,13 +52,13 @@ relative.
 
 | Scenario | Expected | Fast tolerance | Measured locally |
 | --- | ---: | ---: | ---: |
-| Free-fall position after 10 s | `-440.5` | `0.01` | `0.0036011` error |
+| Free-fall position after 10 s | `-440.5` | `0.01` | `0.0012817` error |
 | Free-fall velocity after 10 s | `-94.1` | `0.002` | `0.0006271` error |
 | Elastic-collision momentum | `3.0` | `0.0001` | `4.77e-7` error |
 | Elastic-collision energy | `18.5` | `0.001` | `2.38e-7` error |
-| Free-fall position, dt `1/30` | analytical | `0.001` | `7.16e-6` error |
-| Free-fall position, dt `1/60` | analytical | `0.001` | `1.43e-5` error |
-| Free-fall position, dt `1/240` | analytical | `0.001` | `4.21e-5` error |
+| Free-fall position, dt `1/30` | analytical | `0.001` | `5.13e-6` error |
+| Free-fall position, dt `1/60` | analytical | `0.001` | `7.10e-7` error |
+| Free-fall position, dt `1/240` | analytical | `0.001` | `1.97e-5` error |
 | Oscillator position, dt `0.1` | `cos(10)` | `0.25` | `0.2284` error |
 | Oscillator position, dt `0.05` | `cos(10)` | `0.125` | `0.1057` error |
 | Oscillator position, dt `0.025` | `cos(10)` | `0.0625` | `0.05091` error |
@@ -56,8 +67,9 @@ relative.
 | Float/double position difference | `0%` | `0.5%` relative | `0.2724%` |
 
 The finer constant-acceleration runs expose a useful limitation: truncation
-error is already negligible, so accumulated float roundoff grows as the step
-gets smaller. The oscillator case exercises changing acceleration and confirms
+error is already negligible, so accumulated float roundoff does not shrink as the
+step gets smaller (`7.10e-7` at `1/60`, `1.97e-5` at `1/240`; the fast profile's
+fine-minus-coarse roundoff check measured `1.45e-5`). The oscillator case exercises changing acceleration and confirms
 real timestep convergence: reducing the step from `0.1` to `0.025` reduces the
 position error by more than a factor of four.
 
