@@ -131,6 +131,11 @@ The benchmarks need tests enabled. Programs marked "CTest" run in the smoke chec
 | Program | What it does |
 |---------|--------------|
 | `getting_started` | The getting-started scene: box stack, sensor, pendulum, sleeping and a ray cast. Exits nonzero if it misbehaves. CTest. |
+| `platformer_character` | A box character with a sensor foot: jumps only when grounded, cannot double-jump, collects a one-time pickup. See the [cookbook](docs/cookbook.md). CTest. |
+| `ragdoll` | A capsule ragdoll on limited revolute joints falling down stairs and going to sleep. Checks limits and joint separation. CTest. |
+| `vehicle` | A car on suspended, motorized wheel joints over bumps and a ramp, then braking. Checks travel limits and chassis clearance. CTest. |
+| `destructible_wall` | A wall of welded boxes shot by a CCD ball; welds are removed from an impulse estimate taken from collision events. CTest. |
+| `trigger_zones` | Bodies crossing filtered sensor zones, with an event log and exact entry and exit counts. CTest. |
 | `capsule_pile` | Six capsules dropped onto a ground box and a static capsule ramp, with a CCD circle fired at the ramp. CTest. |
 | `softbody_rope` | A pinned ten-link rope with gravity and axial damping. Prints energy, strain and substep diagnostics. CTest. |
 | `replay_experiment [prefix]` | A fixed 240-step bouncing-ball run. Writes `<prefix>.csv` and `<prefix>.json`, identical on every run of the same build. CTest. |

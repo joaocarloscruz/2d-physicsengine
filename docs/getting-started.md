@@ -7,6 +7,8 @@ guide's scene as one program: a box stack, a bouncing ball with a collision
 listener, a sensor zone, a pendulum, sleeping and a ray cast. CTest runs it as
 `getting_started_smoke` and fails if the scene stops behaving as described.
 
+For short programs of common game patterns (platformer, ragdoll, vehicle, destructible wall, trigger zones), see the [cookbook](cookbook.md).
+
 See the [README](../README.md) for building and linking the library.
 
 ## A first world
