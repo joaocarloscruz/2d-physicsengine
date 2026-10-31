@@ -149,7 +149,7 @@ The benchmarks need tests enabled. Programs marked "CTest" run in the smoke chec
 | `rigid_step_benchmark [--quick]` | Step time for 100 to 2000 boxes and circles settled in a walled bin. [Reference timings](docs/getting-started.md#performance). CTest with `--quick`. |
 | `collision_quality_benchmark` | Resting overlap, stack and pyramid drift, and impact penetration at 60 Hz, each with a pass threshold. CTest. |
 | `physics_scenarios [--verbose]` | Headless rigid-body scenarios, each with a stated expectation and threshold. Exits nonzero if a gated row fails. CTest. |
-| `rigid_contact_benchmark --quick` | Resting contacts, stacks, friction and impacts against physical oracles. Its output shows substantial stack drift in difficult configurations. See [rigid-contact benchmark](docs/rigid-contact-benchmark.md). |
+| `rigid_contact_benchmark --quick` | Resting contacts, stacks, friction and impacts against physical oracles. Its output shows the remaining motion: stacks move at most 7 mm for six boxes in the quick matrix (3 cm for twelve boxes in the full matrix) and keep a small residual speed without warm starting. See [rigid-contact benchmark](docs/rigid-contact-benchmark.md). |
 | `broad_phase_benchmark` | One dense broad-phase call over 500 bodies. No wall-clock pass target. CTest. |
 | `fluid_solver_comparison [output.csv]` | WCSPH against DFSPH at two resolutions and two DFSPH tolerances. A free-surface compressing patch, not a general ranking. See [DFSPH](docs/dfsph-solver.md). |
 | `fluid_benchmark` | WCSPH update time and render-data preparation. See [fluid performance](docs/fluid-performance.md). CTest. |
