@@ -4,6 +4,7 @@
 #include "physics/core/collisions/collision_resolver.h"
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include "physics/core/collisions/continuous_collision.h"
+#include "collisions/continuous_collision_detail.h"
 #include "physics/math/matrix2x2.h"
 #include <utility>
 #include <algorithm>
@@ -1332,7 +1333,9 @@ SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 d
         const auto rotation = Matrix2x2::rotation(polygon.orientation);
         for (const auto& v : static_cast<const Polygon*>(polygon.shape.get())->getVertices())
             vertices.push_back(polygon.position + rotation*v);
-        hit = SweepCirclePolygon(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
+        // The local outline was validated when the Polygon was built; the
+        // rounded world copy may not pass that check again (it is swept as is).
+        hit = Detail::SweepCirclePolygonRounded(circle.position, firstCircle ? da : db, circle.shape->GetRadius(),
             vertices, firstCircle ? db : da);
         if (!firstCircle) hit.normal = hit.normal*-1.0f;
     }

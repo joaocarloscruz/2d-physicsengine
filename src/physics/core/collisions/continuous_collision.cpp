@@ -1,4 +1,5 @@
 #include "physics/core/collisions/continuous_collision.h"
+#include "continuous_collision_detail.h"
 #include "physics/core/shape.h"
 #include <algorithm>
 #include <cmath>
@@ -112,19 +113,36 @@ SweepHit SweepCircleCircle(Vector2 a, Vector2 da, float ra,
     return {true,static_cast<float>(line.fraction(hit->projection)),Store(hit->outward*(-1)),Store(point)};
 }
 
-SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
-    const std::vector<Vector2>& vertices, Vector2 polygonDisplacement) {
-    Validate(center); Validate(displacement); Validate(polygonDisplacement);
-    ValidateRadius(radius);
-    Polygon validated(vertices);
+namespace {
+// rounded: the outline comes from a validated Polygon through float rounding
+// (Detail::SweepCirclePolygonRounded); otherwise it has been validated.
+SweepHit SweepCirclePolygonImpl(Vector2 center, Vector2 displacement, float radius,
+    const std::vector<Vector2>& vertices, Vector2 polygonDisplacement, bool rounded) {
     const DVector motion=Double(displacement)-Double(polygonDisplacement);
-    const double winding=Cross(Double(vertices[1])-Double(vertices[0]),Double(vertices[2])-Double(vertices[0]))>0?1:-1;
-    bool inside = true;
+    double winding;
+    if (!rounded) {
+        winding=Cross(Double(vertices[1])-Double(vertices[0]),Double(vertices[2])-Double(vertices[0]))>0?1:-1;
+    } else {
+        // The first three vertices may be (nearly) coincident after rounding;
+        // the signed area is not. A zero area leaves only the vertex disks.
+        double area=0;
+        for (std::size_t i=0; i<vertices.size(); ++i)
+            area+=Cross(Double(vertices[i]),Double(vertices[(i+1)%vertices.size()]));
+        winding=area>0?1:area<0?-1:0;
+    }
+    bool inside = winding != 0;
     double closestDistance = std::numeric_limits<double>::infinity();
     DVector closestPoint{};
     for (std::size_t i=0; i<vertices.size(); ++i) {
         const DVector v=Double(vertices[i]),edge=Double(vertices[(i+1)%vertices.size()])-v;
         const double length=std::hypot(edge.x,edge.y);
+        if (length==0) {
+            // Only a rounded outline has coincident vertices.
+            const DVector delta=v-Double(center);
+            const double distanceToVertex=std::hypot(delta.x,delta.y);
+            if (distanceToVertex<closestDistance) {closestDistance=distanceToVertex;closestPoint=v;}
+            continue;
+        }
         const DVector tangent=edge*(1/length),outward=DVector{tangent.y,-tangent.x}*winding;
         const double distance=Dot(Double(center)-v,outward);
         inside = inside && distance <= 0;
@@ -149,8 +167,8 @@ SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
     for (std::size_t i=0;i<vertices.size();++i) {
         const DVector v=Double(vertices[i]),edge=Double(vertices[(i+1)%vertices.size()])-v;
         const double length=std::hypot(edge.x,edge.y);
-        const DVector tangent=edge*(1/length),outward=DVector{tangent.y,-tangent.x}*winding;
-        if (Dot(outward,line.direction)<0
+        const DVector tangent=length>0?edge*(1/length):DVector{0,0},outward=DVector{tangent.y,-tangent.x}*winding;
+        if (length>0&&winding!=0&&Dot(outward,line.direction)<0
             && Dot(Double(center)-v,outward)>=radius
             && Dot(line.endpointRelativeTo(v),outward)<=radius) {
             const DVector offset=v+outward*radius;
@@ -170,6 +188,24 @@ SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
     if (!best) return {};
     return {true,static_cast<float>(line.fraction(best->projection)),Store(best->normal),
         Store(line.translated(best->point,best->offset,best->baseProjection,best->localProjection))};
+}
+}
+
+SweepHit SweepCirclePolygon(Vector2 center, Vector2 displacement, float radius,
+    const std::vector<Vector2>& vertices, Vector2 polygonDisplacement) {
+    Validate(center); Validate(displacement); Validate(polygonDisplacement);
+    ValidateRadius(radius);
+    Polygon validated(vertices);
+    return SweepCirclePolygonImpl(center,displacement,radius,vertices,polygonDisplacement,false);
+}
+
+SweepHit Detail::SweepCirclePolygonRounded(Vector2 center, Vector2 displacement, float radius,
+    const std::vector<Vector2>& vertices, Vector2 polygonDisplacement) {
+    Validate(center); Validate(displacement); Validate(polygonDisplacement);
+    ValidateRadius(radius);
+    if (vertices.size()<3) throw std::invalid_argument("Polygon requires at least three vertices.");
+    for (const Vector2& vertex : vertices) Validate(vertex);
+    return SweepCirclePolygonImpl(center,displacement,radius,vertices,polygonDisplacement,true);
 }
 
 SweepHit SweepCircleCapsule(Vector2 center, Vector2 displacement, float radius,
