@@ -1021,7 +1021,8 @@ single-pass solve.
 `physics.addGravity(engine, {x, y})` adds a uniform acceleration to every dynamic
 body. Calls stack and cannot be removed from an engine.
 `engine.exportJson(time)` and `engine.exportCsv(time)` return state/statistics text.
-Fluid solvers and collision listener subclasses currently have native C++ APIs only.
+Fluid solvers currently have native C++ APIs only. Collision listener subclasses cannot be
+written in JavaScript; use the pull-based [collision events](#collision-events) instead.
 
 The revolute factory returns a `RevoluteJoint` handle extending `Joint` with
 `setMotor(enabled, speed, maxTorque)`, `setLimits(enabled, lower, upper)`,
@@ -1088,6 +1089,66 @@ double-precision coordinates. `setState(position, velocity)` validates both valu
 Supply the field argument on every `step` call; zero fields give free motion.
 The object is independent of `Engine` and owns no borrowed handles. See
 [the physical scope, units and numerical limits](electromagnetic-particles.md).
+
+## Collision events
+
+`ICollisionListener` subclasses cannot be written in JavaScript, and a step never
+calls back into JavaScript. Collision events are pulled instead: the bindings own a
+native listener that copies every Begin, Persist and End event the World delivers
+into a buffer, and JavaScript reads the buffer after stepping. Recording is off
+until you enable it.
+
+```javascript
+engine.enableCollisionEvents(true);
+engine.advance(elapsed);
+const events = engine.takeCollisionEvents();      // reads and empties the buffer
+for (let i = 0; i < events.size(); ++i) {
+    const e = events.getEvent(i);
+    if (e.phase === physics.CollisionPhase.Begin && e.sensor) collected.add(e.bodyBId);
+}
+if (events.overflowed()) console.warn(`${events.getDroppedCount()} events were dropped`);
+events.delete();                                   // required: the list is owned by JavaScript
+```
+
+| Engine method | Behaviour |
+| --- | --- |
+| `enableCollisionEvents(enabled)` | Starts or stops recording. Repeating the same value does nothing. Stopping keeps what is already buffered. |
+| `isCollisionEventsEnabled()` | The current state. A new engine records nothing. |
+| `getCollisionEvents()` | Returns a `CollisionEventList` snapshot of the buffer and leaves the buffer unchanged. |
+| `takeCollisionEvents()` | Returns the same snapshot and clears the buffer and its overflow state in one call. |
+| `clearCollisionEvents()` | Empties the buffer and resets the overflow flag and dropped count. |
+| `setCollisionEventCapacity(n)` / `getCollisionEventCapacity()` | The buffer holds at most `n` events, from 1 to 1048576. The default is 1024. A count that is not an exactly representable integer in that range throws. |
+
+A `CollisionEventList` has `size()`, `getEvent(index)`, `overflowed()` and
+`getDroppedCount()`. `getEvent` returns a plain value with `phase`
+(`physics.CollisionPhase.Begin`, `.Persist` or `.End`), `bodyAId` and `bodyBId`
+(`BigInt`, `bodyAId` is the lower id), `normal`, `penetration`, `contactCount`
+(0, 1 or 2), `point0` and `point1` (the contact points; only the first
+`contactCount` are meaningful) and `sensor`. An out-of-range index throws.
+
+**Ownership.** The list returned by `getCollisionEvents()` and
+`takeCollisionEvents()` is a new native object and the caller must call `delete()`
+on it, like the query results. The event values are copies, so they stay valid
+after the list, either body or the engine is deleted. Events hold ids, not body
+handles. The recorder belongs to the engine handle: deleting the engine, removing
+bodies or calling `clearBodies()` leaves no listener registered anywhere else.
+Removing a body or clearing the world raises End events for its pairs straight
+away; they are recorded like any other.
+
+**Buffer semantics.** Events accumulate in World delivery order across every
+substep of `advance()`, and across calls, until you clear or take them. The buffer
+is bounded: when it is full, further events are dropped, the oldest are kept so the
+buffer is always an unbroken prefix of the stream, `overflowed()` turns true and
+`getDroppedCount()` counts the loss. Take events once per frame to stay far from
+the limit. Lowering the capacity below the current size truncates the buffer the
+same way. The order and meaning of events are those of the native World: Begin on the
+first step a pair touches, Persist on every later step, End when it separates
+or a body is removed, End carrying the last contact geometry, and sensor overlaps
+reported with `sensor` set and no impulse. See
+[collision lifecycle](collision-lifecycle-and-ccd.md) and
+[sensors](sensors.md#event-order) for the order within a step. Enabling
+recording while a pair already touches starts that pair's stream with a Persist,
+without its Begin.
 
 ## Owned soft-body simulations
 

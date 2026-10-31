@@ -46,8 +46,9 @@ Two scene tests go further:
 
 - **Car and sensors:** with no throttle the car does not roll (the idle brake holds
   it), with full throttle the rear motor drives it forward over the bumps into the
-  goal, the goal registers the overlap and counts one entry, staying inside does not
-  count again, reversing out and driving back in counts a second entry, the
+  goal, the engine's sensor Begin event counts one entry, staying inside does not
+  count again, reversing out raises the End event, driving back in counts a second
+  entry, a `queryCircle` cover of the car agrees with the events on both sides, the
   suspension stays inside its stroke, and dragging the chassis leaves the body and
   joint counts alone.
 - **Joints gallery:** the weld segments stay together (separation under 10 cm
@@ -115,17 +116,15 @@ asleep wakes it.
 Scene 9 and scene 10 use the joints and sensors added after the original eight
 scenes. Their layout mirrors the native scenes.
 
-JavaScript has no collision listeners, so the browser version finds sensor overlaps
-by querying. The goal is a static body with `setSensor(true)` (and a user data tag).
-Before every fixed step the scene runs `queryCircle(engine, center, radius)` for the
-car and checks whether the goal's body ID is in the result: one disc of the wheel
-radius for each wheel, and five discs of radius 0.3 spaced 0.5 m along the chassis,
-which together cover the chassis box except its corners. If any query reports the
-goal, the car is inside; the scene counts a change from outside to inside as one
-entry. This is an approximation of the engine's sensor events (the native demo uses
-a real `ICollisionListener`), and it tests the overlap once per step before the step
-runs, so it lags the engine's own event by one step. Each query result is an owned
-collection and is deleted straight away.
+The goal is a static body with `setSensor(true)` (and a user data tag). The scene
+turns on the engine's [collision events](webassembly.md#collision-events) and, after
+every fixed step, takes the buffer with `takeCollisionEvents()` and passes each event to
+its handlers. The goal handler keeps the set of car parts (the chassis and the two
+wheels) that are inside: a sensor Begin or Persist event between the goal and a car part
+adds it, a sensor End removes it. The first part in is one entry, and the last part out
+is one exit. These are the same events a native `ICollisionListener` sees. The list is
+an owned collection and is deleted in a `finally` block after every step. A buffer
+overflow throws instead of silently losing an entry.
 
 The car's chassis and wheels are joined by `createWheelJoint` with a spring
 (3 Hz, damping ratio 0.7) and a 0.3 m stroke limit. The rear wheel's motor runs at
@@ -155,8 +154,6 @@ their handle is deleted.
 
 - Rendering, mouse and keyboard handling have only been run against a stubbed DOM
   in Node, not checked visually in a browser.
-- The car's sensor goal is found by `queryCircle` once per step, not by engine
-  sensor events, so it is an approximation (see above).
 - There is no pinch zoom; on touch screens one finger drags a body or pans.
 - At most 500 bodies exist at once; further spawns are ignored.
 - Dragging works only while the simulation runs; a paused scene does not move.
