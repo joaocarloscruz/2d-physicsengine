@@ -6,6 +6,7 @@
 #include "fuzz_support.h"
 
 #include "physics/physics.h"
+#include "physics/math/matrix2x2.h"
 
 #include <cstring>
 #include <sstream>
@@ -320,65 +321,136 @@ TEST_CASE("Random mixed scenes stay finite, bounded, sealed and deterministic", 
     CheckScenes(20261028, 2, 600);
 }
 
-// Fails on CCD bullet escapes, a jointed slow body escaping and repeated CCD
-// budget exhaustion; see the known-bug cases below and docs/numerical-validation.md.
+// About a minute in a Release build; see docs/numerical-validation.md.
 TEST_CASE("Random mixed scenes stay finite, bounded, sealed and deterministic (long)", "[.fuzz-long][world]") {
     CheckScenes(1, 12, 1200);
 }
 
-// ---- Known World bugs (outside the narrow phase; reproduced, not fixed) ----
+// ---- Regressions for World bugs the fuzz found (docs/numerical-validation.md) ----
 
-TEST_CASE("Known bug: World CCD rejects a valid polygon whose float world outline is not convex",
-          "[.known-bug][world][ccd]") {
-    // World::advanceCcd rotates the local outline into float world vertices
-    // and passes them to SweepCirclePolygon, which validates strict convexity
-    // again. Rounding can make a valid outline with two close vertices fail,
-    // so step() throws for every CCD circle that can meet this polygon.
+TEST_CASE("World CCD sweeps a valid polygon whose float world outline is not convex", "[world][ccd]") {
+    // World CCD rotates the local outline into float world vertices. Rounding
+    // makes this valid outline (two close vertices) fail the strict convexity
+    // check, which the public SweepCirclePolygon applied again, so step()
+    // threw for every CCD circle that could meet the polygon.
     const Polygon polygon({{-0x1.2922fep-5f, 0x1.9f8e10p-5f}, {-0x1.2d1b12p-5f, 0x1.9e559ap-5f},
                            {-0x1.f179dep-5f, 0x1.60a23ep-5f}, {0x1.eff2f8p-5f, 0x1.467130p-4f},
                            {-0x1.1bd1eap-5f, 0x1.a3a5a0p-5f}});
     const Vector2 at{0x1.caap+2f, -0x1.bf7p+2f};
+    const float orientation = -0x1.5d8b78p-2f;
+    // The case still exercises the rounding: the world outline World CCD
+    // builds is rejected as an input, and the public sweep still rejects it.
+    std::vector<Vector2> worldOutline;
+    for (const auto& v : polygon.getVertices()) worldOutline.push_back(at + Matrix2x2::rotation(orientation) * v);
+    CHECK_THROWS_AS(Polygon::ValidateOutline(worldOutline), std::invalid_argument);
+    CHECK_THROWS_AS(SweepCirclePolygon({at.x, at.y + 3}, {0, -1}, 0.1f, worldOutline), std::invalid_argument);
+
     World world;
     auto target = std::make_shared<RigidBody>(polygon, Material{}, at, true);
-    target->SetOrientation(-0x1.5d8b78p-2f);
+    target->SetOrientation(orientation);
     auto bullet = std::make_shared<RigidBody>(Circle(0.1f), Material{}, Vector2{at.x, at.y + 3});
     bullet->SetCcdEnabled(true);
     bullet->SetVelocity({0, -100});
     world.addBody(target);
     world.addBody(bullet);
-    CHECK_NOTHROW(world.step());
+    std::uint32_t impacts = 0;
+    for (int step = 0; step < 10; ++step) {
+        REQUIRE_NOTHROW(world.step());
+        impacts += world.getLastStepStatistics().ccdImpactCount;
+    }
+    // The bullet (3 m above, 1.67 m per step) hits the polygon and stays above it.
+    CHECK(impacts > 0);
+    CHECK(bullet->position.y > at.y);
 }
 
-TEST_CASE("Known bug: wedged CCD bullets exhaust the impact budget every step and freeze the world",
-          "[.known-bug][world][ccd]") {
-    // From step 61 every step reports 32 CCD impacts and ccdIterationLimitReached.
-    // No body moves, yet gravity keeps integrating velocities: body 62 sits
-    // at (7.666, -6.817) while its velocity grows from -9.8 to -12.1 m/s.
+TEST_CASE("A CCD impact on a sleeping body does not break the speculative step", "[world][ccd]") {
+    // The impact wakes the sleeper after the solve groups are formed; its
+    // end-of-step contact with the ground looked up a group for the sleeping
+    // island and threw "Island has no solve group".
+    SimulationConfig config;
+    config.enableSleeping = true;
+    World world(config);
+    world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -kGravity}));
+    world.addBody(std::make_shared<RigidBody>(Polygon::MakeBox(20, 1), Material{}, Vector2{0, -0.5f}, true));
+    auto box = std::make_shared<RigidBody>(Polygon::MakeBox(1, 1), Material{}, Vector2{0, 0.5f});
+    world.addBody(box);
+    for (int step = 0; step < 600 && box->IsAwake(); ++step) world.step();
+    REQUIRE_FALSE(box->IsAwake());
+    auto bullet = std::make_shared<RigidBody>(Circle(0.1f), Material{}, Vector2{-5, 0.5f});
+    bullet->SetCcdEnabled(true);
+    bullet->SetVelocity({150, 0});
+    world.addBody(bullet);
+    std::uint32_t impacts = 0;
+    for (int step = 0; step < 5; ++step) {
+        REQUIRE_NOTHROW(world.step());
+        impacts += world.getLastStepStatistics().ccdImpactCount;
+    }
+    CHECK(impacts > 0);
+    CHECK(box->IsAwake());
+    CHECK(bullet->position.x < box->position.x);
+}
+
+TEST_CASE("Resting and pressed CCD circles do not spend the CCD impact budget", "[world][ccd]") {
+    // A CCD circle on the ground under a box 500 times heavier (and, as a
+    // control, under one of similar mass). Both contacts keep approaching
+    // slightly under the contact solve. Pairwise CCD impulses only passed
+    // that approach back and forth between the two contacts, each round
+    // removing a share set by the mass ratio, and used all 32 impacts on 164
+    // of the 300 steps, holding every body still. The default fuzz run (seed
+    // 20261028, step 440) hit the same loop with two stacked CCD circles.
+    for (const bool heavyLid : {false, true}) {
+        World world;
+        world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -kGravity}));
+        world.addBody(std::make_shared<RigidBody>(Polygon::MakeBox(20, 1), Material{}, Vector2{0, -0.5f}, true));
+        auto low = std::make_shared<RigidBody>(Circle(0.5f), Material{}, Vector2{0, 0.5f});
+        low->SetCcdEnabled(true);
+        if (heavyLid) low->SetMass(0.01f);
+        auto high = std::make_shared<RigidBody>(Polygon::MakeBox(2, 0.5f),
+                                                Material{heavyLid ? 5.0f : 0.8f, 0, 0.5f, 0.4f}, Vector2{0, 1.25f});
+        world.addBody(low);
+        world.addBody(high);
+        int exhausted = 0;
+        for (int step = 0; step < 300; ++step) {
+            world.step();
+            exhausted += world.getLastStepStatistics().ccdIterationLimitReached ? 1 : 0;
+        }
+        INFO("heavy lid " << heavyLid << ": low at " << low->position.y << ", high at " << high->position.y);
+        CHECK(exhausted == 0);
+        // A 500:1 stack jitters by about 0.1 m under the contact solve with or
+        // without CCD; it must neither sink through the circle nor freeze.
+        CHECK(low->position.y > 0.25f);
+        CHECK(high->position.y > low->position.y + 0.3f);
+        if (!heavyLid) CHECK(std::abs(high->velocity.y) < 0.5f);
+    }
+}
+
+TEST_CASE("Wedged CCD bullets that hit bodies keep the world moving", "[world][ccd]") {
+    // Seed 20261029 with bullets that hit bodies: a light CCD circle under a
+    // falling polygon used all 32 impacts on every step from step 60, no body
+    // moved while gravity kept raising velocities, and energy exceeded the
+    // budget at step 67. Later a spinning polygon pressed into a CCD circle
+    // repeated an impulse that its contact point had already separated.
     SceneOptions options;
     options.seed = 20261029;
     options.speculative = true;
     options.bulletsHitBodies = true;
-    options.steps = 120;
+    options.steps = 600;
     const RunResult result = RunScene(options);
     INFO(result.failures.Summary());
     CHECK(result.failures.total == 0);
 }
 
-TEST_CASE("Known bug: a CCD bullet impact launches a light circle to 1289 m/s",
-          "[.known-bug][world][ccd]") {
-    // Heavy CCD bullets that also hit bodies, random outlines (mode 1). At
-    // step 332 body 113 (Circle 0x1.3fc3a6p-2f, mass 0.076) beside the right
-    // wall goes from (38, -149) m/s to (-1289, -87) m/s and 32462 rad/s, past
-    // the 200 m/s and 30 rad/s limits; mechanical energy jumps from 2.9e4 to
-    // 2.1e6 J. The CCD budget was exhausted on many earlier steps. Every
-    // narrow-phase manifold at the start of that step matches the oracle.
+TEST_CASE("Heavy CCD bullets that hit bodies keep the scene bounded", "[world][ccd]") {
+    // Seed 20261028, random outlines, heavy bullets that hit bodies: repeated
+    // budget exhaustion from step 130 and the sleeping-body exception at
+    // step 205 (once reported as a 1289 m/s launch at step 332).
     SceneOptions options;
     options.seed = 20261028;
     options.speculative = true;
     options.outlines = 1;
     options.lightBullets = false;
     options.bulletsHitBodies = true;
-    options.steps = 333;
+    options.steps = 600;
     const RunResult result = RunScene(options);
     INFO(result.failures.Summary());
     CHECK(result.failures.total == 0);
