@@ -135,6 +135,8 @@ if(NOT EMSCRIPTEN)
         target_link_libraries(vehicle PRIVATE PhysicsEngine::Engine)
         add_executable(trigger_zones examples/trigger_zones.cpp)
         target_link_libraries(trigger_zones PRIVATE PhysicsEngine::Engine)
+        add_executable(destructible_wall examples/destructible_wall.cpp)
+        target_link_libraries(destructible_wall PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_network_demo examples/thermal_network_demo.cpp)
         target_link_libraries(thermal_network_demo PRIVATE PhysicsEngine::Engine)
         add_executable(thermal_radiation_demo examples/thermal_radiation_demo.cpp)
@@ -185,6 +187,7 @@ if(NOT EMSCRIPTEN)
             add_test(NAME ragdoll_smoke COMMAND ragdoll)
             add_test(NAME vehicle_smoke COMMAND vehicle)
             add_test(NAME trigger_zones_smoke COMMAND trigger_zones)
+            add_test(NAME destructible_wall_smoke COMMAND destructible_wall)
             add_test(NAME reproducible_replay COMMAND ${CMAKE_COMMAND}
                 -DPROGRAM=$<TARGET_FILE:replay_experiment>
                 -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
