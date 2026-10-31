@@ -19,6 +19,25 @@
 
 namespace PhysicsEngine {
 
+namespace {
+// The velocity limits are applied when velocities integrate, before the
+// solve; joint and contact impulses (a stiff MouseJoint drag, a CCD impact
+// or bounce) can then push a body past them. Called after those impulses.
+// A velocity inside the limits is left untouched, bit for bit.
+void ReapplyVelocityLimits(RigidBody& body, const SimulationConfig& config) {
+    if (body.IsStatic() || !body.IsAwake()) return;
+    if (config.enableLinearVelocityLimit) {
+        const double speed = std::hypot(double(body.velocity.x), double(body.velocity.y));
+        if (speed > config.maxLinearSpeed) {
+            const double scale = config.maxLinearSpeed / speed;
+            body.velocity = {static_cast<float>(body.velocity.x * scale), static_cast<float>(body.velocity.y * scale)};
+        }
+    }
+    if (config.enableAngularVelocityLimit && std::abs(body.angularVelocity) > config.maxAngularSpeed)
+        body.angularVelocity = std::clamp(body.angularVelocity, -config.maxAngularSpeed, config.maxAngularSpeed);
+}
+}
+
 World::ContactKey World::ContactKey::From(const RigidBody* bodyA, const RigidBody* bodyB) {
     const std::uint64_t idA = bodyA->GetId();
     const std::uint64_t idB = bodyB->GetId();
@@ -570,6 +589,9 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
                     if (constraint != integratedConstraint) CollisionResolver::SolveVelocity(*constraint);
                 for (const auto& joint : island.joints) joint->solveVelocity();
             }
+            // Joint and contact impulses may pass the limits applied when
+            // velocities integrated; the next step moves bodies with these.
+            for (auto* body : island.bodies) ReapplyVelocityLimits(*body, simulationConfig);
             // Experimental integration strategies own their displacement.
             if (!alreadySolved && deltaTime > 0 && !strategy && simulationConfig.enableFrictionDisplacementCorrection)
                 ApplyContactDisplacement(island.contacts, integratedConstraint, deltaTime, ccdImpacted);
@@ -1094,6 +1116,8 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         if (!integrated[i]) continue;
         auto& body = *bodies[i];
         if (!substepped[i]) {
+            // A joint or contact impulse may have passed the velocity limits.
+            ReapplyVelocityLimits(body, config);
             const auto& s = start[i];
             const double dvx = double(body.velocity.x) - s.predictedVelocity.x;
             const double dvy = double(body.velocity.y) - s.predictedVelocity.y;
@@ -1137,6 +1161,10 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     }
 
     if (useCcd) impacts = advanceCcd(starts, deltaTime, statistics);
+    // Bounces, CCD impacts and the substeps' contact impulses come after the
+    // limits as well; the next step starts inside them.
+    for (std::size_t i = 0; i < bodies.size(); ++i)
+        if (integrated[i]) ReapplyVelocityLimits(*bodies[i], config);
 
     // Position correction and the contact lifecycle use the integrated poses,
     // as the legacy order did. The start-of-step manifold has done its job

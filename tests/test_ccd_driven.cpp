@@ -68,8 +68,8 @@ struct WallScene {
 
 TEST_CASE("Mouse-joint drags never carry a CCD circle through a static wall", "[ccd][ccd-driven][mouse]") {
     // The reported setup: 30 Hz, damping 0.7, at Box2D's force scale
-    // (1000 m g, about 163 m/s per step) and at 1e5 N (thousands of m/s: the
-    // joint's impulse is applied after the maxLinearSpeed clamp).
+    // (1000 m g, about 163 m/s per step) and at 1e5 N (thousands of m/s
+    // before the velocity limits were applied again after the joint solve).
     const float mass = 0.25f;
     for (const bool speculative : {true, false})
     for (const float maxForce : {1000 * mass * 9.81f, 1e5f})
@@ -215,5 +215,37 @@ TEST_CASE("A circle dragged along a short wall goes around its end, not through 
         }
         INFO("speculative " << speculative << ", maxForce " << maxForce << ": deepest " << deepest);
         CHECK(deepest <= 0.005);
+    }
+}
+
+TEST_CASE("Joint impulses do not carry a body past the velocity limits", "[ccd-driven][mouse]") {
+    // The limits apply when velocities integrate; a stiff MouseJoint's
+    // impulse comes after that and used to reach about 4400 m/s against the
+    // 200 m/s limit. With and without CCD, in both step orders.
+    for (const bool speculative : {true, false})
+    for (const bool ccd : {false, true}) {
+        World world(Order(speculative));
+        auto ball = std::make_shared<RigidBody>(Circle(0.25f), Material{}, Vector2{});
+        ball->SetMass(0.25f);
+        ball->SetCcdEnabled(ccd);
+        world.addBody(ball);
+        auto ground = DragAnchor();
+        world.addBody(ground);
+        // An off-centre anchor, so the drag also spins the ball.
+        auto drag = std::make_shared<MouseJoint>(ground, ball, Vector2{0.2f, 0.1f}, Vector2{1000, 300}, 30, 0.7f,
+                                                 1e5f);
+        world.addJoint(drag);
+        float peakSpeed = 0, peakSpin = 0;
+        for (int i = 0; i < 120; ++i) {
+            if (i == 60) drag->setTarget({-1000, 0});
+            world.step(Step);
+            peakSpeed = std::max(peakSpeed, ball->velocity.magnitude());
+            peakSpin = std::max(peakSpin, std::abs(ball->angularVelocity));
+        }
+        INFO("speculative " << speculative << ", ccd " << ccd << ": peak speed " << peakSpeed << ", spin "
+                            << peakSpin);
+        CHECK(peakSpeed <= 200.0f + 1e-3f); // the scaled components round to float
+        CHECK(peakSpin <= 30.0f);
+        CHECK(peakSpeed > 199.0f); // the drag does reach the limit
     }
 }
