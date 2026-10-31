@@ -8,10 +8,10 @@
 #include <vector>
 
 // Bounded capsule scene: six capsules drop onto a ground box and a static
-// capsule ramp while a CCD circle is fired at the ramp. Capsule CCD supports
-// only circles against static capsules, so the bullet's category is masked out
-// of the dynamic capsules. After four seconds the example reports the deepest
-// remaining contact and the total kinetic energy.
+// capsule ramp while a CCD circle is fired at the ramp. The bullet's category
+// is masked out of the dynamic capsules so that it reaches the ramp. After
+// four seconds the example reports the deepest remaining contact and the total
+// kinetic energy.
 int main() {
     using namespace PhysicsEngine;
     World world;

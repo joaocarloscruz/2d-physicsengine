@@ -5,6 +5,7 @@
 #include "physics/core/collisions/broad_phase/sweep_and_prune.h"
 #include "physics/core/collisions/continuous_collision.h"
 #include "collisions/continuous_collision_detail.h"
+#include "collisions/time_of_impact.h"
 #include "physics/math/matrix2x2.h"
 #include <utility>
 #include <algorithm>
@@ -115,8 +116,16 @@ struct World::StepScratch {
     std::vector<EndContact> ended;
     // This step's sensor candidates (see SplitCandidates).
     std::vector<CollisionPair> sensorPairs;
-    // Body positions when advanceCcd returned (see sweepCcdCorrections).
+    // Body poses when advanceCcd returned (see sweepCcdCorrections).
     std::vector<Vector2> ccdPositions;
+    std::vector<float> ccdAngles;
+    // Start-of-step poses that advanceCcd sweeps from (see recordCcdStart).
+    std::vector<Vector2> ccdStarts;
+    std::vector<float> ccdStartAngles;
+    // This step's CCD shapes (advanceCcd builds them, sweepCcdCorrections
+    // reuses them); sweepable is false for a shape CCD cannot represent.
+    std::vector<Detail::CcdProxy> ccdProxies;
+    std::vector<char> ccdSweepable;
 };
 
 World::World() : World(SimulationConfig{}) {}
@@ -325,7 +334,6 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         explicit StepGuard(bool& flag) : flag(flag) { flag = true; }
         ~StepGuard() { flag = false; }
     } guard(stepping);
-    if (deltaTime > 0) validateCcdSupport();
     SimulationStatistics statistics;
     potentialCollisions.clear();
     const std::uint64_t stamp = ++stepStamp;
@@ -459,12 +467,9 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
     if (simulationConfig.enableSpeculativeContacts && !integratedPlan) {
         stepSpeculative(deltaTime, statistics, impacts);
     } else {
-        std::vector<Vector2> starts;
         const bool useCcd = deltaTime > 0 && std::any_of(bodies.begin(), bodies.end(),
             [](const RigidBodyPtr& body) { return body->IsCcdEnabled(); });
-        if (useCcd) {
-            for (const auto& body : bodies) starts.push_back(body->position);
-        }
+        if (useCcd) recordCcdStart();
         // Integrate velocities and positions
         for (RigidBodyPtr& body : bodies) {
             if (body->IsAwake()) {
@@ -483,7 +488,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             }
         }
 
-        if (useCcd) impacts = advanceCcd(starts, deltaTime, statistics);
+        if (useCcd) impacts = advanceCcd(deltaTime, statistics);
 
         // Detect contacts once, then solve the prepared constraints in distinct
         // velocity and position phases.
@@ -724,9 +729,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
 
     const bool useCcd = deltaTime > 0 && std::any_of(bodies.begin(), bodies.end(),
         [](const RigidBodyPtr& body) { return body->IsCcdEnabled(); });
-    std::vector<Vector2> starts;
-    if (useCcd)
-        for (const auto& body : bodies) starts.push_back(body->position);
+    if (useCcd) recordCcdStart();
 
     // Velocities first. Positions stay at the start of the step until the
     // solve is done, so detection below still sees the start-of-step poses.
@@ -793,8 +796,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     closing.reserve(potentialCollisions.size());
     bounces.reserve(potentialCollisions.size());
     const auto ccdSweeps = [&](const RigidBody& a, const RigidBody& b) {
-        return useCcd && (a.IsCcdEnabled() || b.IsCcdEnabled()) && !(a.IsStatic() && b.IsStatic())
-            && (a.shape->type == ShapeType::CIRCLE || b.shape->type == ShapeType::CIRCLE);
+        return useCcd && (a.IsCcdEnabled() || b.IsCcdEnabled()) && !(a.IsStatic() && b.IsStatic());
     };
     const auto pointVelocity = [](const RigidBody* body, DPoint r) -> DPoint {
         return {body->velocity.x - double(body->angularVelocity) * r.y,
@@ -1160,7 +1162,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         }
     }
 
-    if (useCcd) impacts = advanceCcd(starts, deltaTime, statistics);
+    if (useCcd) impacts = advanceCcd(deltaTime, statistics);
     // Bounces, CCD impacts and the substeps' contact impulses come after the
     // limits as well; the next step starts inside them.
     for (std::size_t i = 0; i < bodies.size(); ++i)
@@ -1309,41 +1311,12 @@ bool World::publishContact(const ContactKey& key, const CollisionManifold& manif
     return true;
 }
 
-// Capsule CCD covers only translating circles against static capsules; any
-// other requested capsule pair is rejected before a step advances state.
-bool World::SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b) {
-    const auto circleOnStaticCapsule = [](const RigidBody& mover, const RigidBody& target) {
-        return mover.shape->type == ShapeType::CIRCLE && target.shape->type == ShapeType::CAPSULE
-            && target.IsStatic();
-    };
-    return circleOnStaticCapsule(a, b) || circleOnStaticCapsule(b, a);
-}
-
-void World::validateCcdSupport() const {
-    // Only pairs with a CCD body are checked, so scan from each CCD body
-    // (O(ccd bodies * bodies)) rather than over every pair. The test below is
-    // symmetric in a and b; a pair of two CCD bodies is simply seen twice.
-    for (std::size_t i=0; i<bodies.size(); ++i) {
-        if (!bodies[i]->IsCcdEnabled()) continue;
-        for (std::size_t j=0; j<bodies.size(); ++j) {
-            if (j == i) continue;
-            const auto& a = *bodies[i]; const auto& b = *bodies[j];
-            // Sensor pairs are never swept, so any shape pairing is fine.
-            if ((a.IsStatic() && b.IsStatic()) || !a.CanCollideWith(b) || a.IsSensor() || b.IsSensor()) continue;
-            if ((a.shape->type == ShapeType::CAPSULE || b.shape->type == ShapeType::CAPSULE)
-                && !SupportsCapsuleCcd(a, b))
-                throw std::invalid_argument(
-                    "Capsule continuous collision supports only circles against static capsules.");
-        }
-    }
-}
-
 namespace {
-// Translational sweep of one pair from the bodies' current poses; the normal
-// points from a to b. Pairs without a circle (pure polygons) are not swept.
+// Exact translational sweep of a pair that includes a circle, from the bodies'
+// current poses; the normal points from a to b. The other body must not
+// rotate over the sweep (advanceCcd sends rotating pairs to TimeOfImpact).
 // core < 1 sweeps each circle's core, a circle of core times its radius.
-SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 db, bool capsuleSupported,
-    float core = 1) {
+SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 db, float core = 1) {
     SweepHit hit;
     const auto typeA = a.shape->type, typeB = b.shape->type;
     const auto radius = [core](const RigidBody& circle) {
@@ -1353,18 +1326,16 @@ SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 d
         const bool firstCircle = typeA == ShapeType::CIRCLE;
         const RigidBody& circle = firstCircle ? a : b;
         const RigidBody& capsuleBody = firstCircle ? b : a;
-        const auto* capsule = dynamic_cast<const Capsule*>(capsuleBody.shape.get());
-        if (!capsuleSupported || !capsule)
-            throw std::logic_error("Unsupported capsule continuous collision reached the sweep.");
+        const auto& capsule = static_cast<const Capsule&>(*capsuleBody.shape);
         const Vector2 axis = Matrix2x2::rotation(capsuleBody.orientation) * Vector2{1, 0};
         hit = SweepCircleCapsule(circle.position, firstCircle ? da : db, radius(circle),
-            capsuleBody.position - axis*capsule->GetHalfLength(),
-            capsuleBody.position + axis*capsule->GetHalfLength(), capsule->GetRadius(),
+            capsuleBody.position - axis*capsule.GetHalfLength(),
+            capsuleBody.position + axis*capsule.GetHalfLength(), capsule.GetRadius(),
             firstCircle ? db : da);
         if (!firstCircle) hit.normal = hit.normal*-1.0f;
     } else if (typeA == ShapeType::CIRCLE && typeB == ShapeType::CIRCLE) {
         hit = SweepCircleCircle(a.position, da, radius(a), b.position, db, radius(b));
-    } else if (typeA == ShapeType::CIRCLE || typeB == ShapeType::CIRCLE) {
+    } else {
         const bool firstCircle = typeA == ShapeType::CIRCLE;
         const RigidBody& circle = firstCircle ? a : b;
         const RigidBody& polygon = firstCircle ? b : a;
@@ -1380,86 +1351,291 @@ SweepHit SweepPair(const RigidBody& a, Vector2 da, const RigidBody& b, Vector2 d
     }
     return hit;
 }
+
+bool HasCircle(const RigidBody& a, const RigidBody& b) {
+    return a.shape->type == ShapeType::CIRCLE || b.shape->type == ShapeType::CIRCLE;
 }
 
-std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& starts,
-    float deltaTime, SimulationStatistics& statistics) {
+// The distance a touching pair that is not closing may fall to before CCD
+// acts on it (a rotation or a change of motion can close it later in the
+// sweep). A shallow pair may sink to touchTolerance of overlap; a deeper one
+// (held there by the contact solve) only by a small step, so that the
+// allowance cannot add up from step to step.
+// The signed distance a touching pair may fall to before CCD stops it: two
+// slops of overlap, or three quarters of the thinner shape's smallest
+// half-width if that is less, so that it never reaches the far side.
+double AllowedDepth(const Detail::CcdProxy& a, const Detail::CcdProxy& b, double slop) {
+    return -std::min(0.75 * std::min(a.thickness, b.thickness), 2.0 * slop);
+}
+
+double TouchingGoal(double distance, double touchTolerance) {
+    const double step = 0.5 * touchTolerance;
+    return distance > step - touchTolerance ? -touchTolerance : distance - step;
+}
+
+constexpr double kTwoPi = 6.283185307179586;
+}
+
+void World::recordCcdStart() {
     if (!scratch) scratch = std::make_unique<StepScratch>();
+    scratch->ccdStarts.resize(bodies.size());
+    scratch->ccdStartAngles.resize(bodies.size());
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        scratch->ccdStarts[i] = bodies[i]->position;
+        scratch->ccdStartAngles[i] = bodies[i]->orientation;
+    }
+}
+
+std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStatistics& statistics) {
+    if (!scratch) scratch = std::make_unique<StepScratch>();
+    const std::size_t count = bodies.size();
+    const auto& starts = scratch->ccdStarts;
+    const auto& startAngles = scratch->ccdStartAngles;
     // Every return leaves the poses sweepCcdCorrections starts from. Sized
     // here so that the recording itself cannot throw.
-    scratch->ccdPositions.resize(bodies.size());
-    struct RecordPositions {
+    scratch->ccdPositions.resize(count);
+    scratch->ccdAngles.resize(count);
+    // Rotation over the rest of the step. A circle's orientation does not
+    // change its outline and is left as integrated. Another body that turns
+    // this step is swept from its start orientation (turning); unless an
+    // impact or a freeze changes its spin, it ends at its integrated
+    // orientation exactly.
+    std::vector<double> spin(count, 0.0), angle(count, 0.0);
+    std::vector<float> endAngle(count, 0.0f);
+    std::vector<char> turning(count, 0), changed(count, 0);
+    // Likewise a body whose motion no impact or freeze changed ends a
+    // completed sweep at its integrated position exactly, rather than at the
+    // sum of the pieces it was advanced by.
+    std::vector<Vector2> endPosition(count);
+    std::vector<char> moved(count, 0);
+    bool complete = false;
+    struct RecordPoses {
         World& world;
-        ~RecordPositions() {
-            for (std::size_t i = 0; i < world.bodies.size(); ++i)
+        const std::vector<char>& turning;
+        const std::vector<char>& changed;
+        const std::vector<double>& angle;
+        const std::vector<float>& endAngle;
+        const std::vector<Vector2>& endPosition;
+        const std::vector<char>& moved;
+        const bool& complete;
+        ~RecordPoses() {
+            for (std::size_t i = 0; i < world.bodies.size(); ++i) {
+                if (turning[i])
+                    world.bodies[i]->orientation = changed[i]
+                        ? std::remainder(static_cast<float>(angle[i]), 6.283185307179586f) : endAngle[i];
+                if (complete && !moved[i]) world.bodies[i]->position = endPosition[i];
                 world.scratch->ccdPositions[i] = world.bodies[i]->position;
+                world.scratch->ccdAngles[i] = world.bodies[i]->orientation;
+            }
         }
-    } record{*this};
-    std::vector<Vector2> motion;
-    for (std::size_t i=0; i<bodies.size(); ++i) {
-        motion.push_back((bodies[i]->position-starts[i])/deltaTime);
-        bodies[i]->position = starts[i];
+    } record{*this, turning, changed, angle, endAngle, endPosition, moved, complete};
+    auto& proxies = scratch->ccdProxies;
+    auto& sweepable = scratch->ccdSweepable;
+    proxies.resize(count);
+    sweepable.assign(count, 0);
+    std::vector<Vector2> motion(count);
+    for (std::size_t i=0; i<count; ++i) {
+        RigidBody& body = *bodies[i];
+        sweepable[i] = Detail::MakeCcdProxy(*body.shape, proxies[i]);
+        motion[i] = (body.position-starts[i])/deltaTime;
+        endPosition[i] = body.position;
+        body.position = starts[i];
+        if (body.shape->type == ShapeType::CIRCLE) continue;
+        // The integrated turn, on the branch nearest angularVelocity * dt.
+        double turn = std::remainder(double(body.orientation) - startAngles[i], kTwoPi);
+        turn += kTwoPi * std::round((double(body.angularVelocity) * deltaTime - turn) / kTwoPi);
+        if (turn == 0 || !std::isfinite(turn)) continue;
+        turning[i] = 1;
+        spin[i] = turn / deltaTime;
+        angle[i] = startAngles[i];
+        endAngle[i] = body.orientation;
+        body.orientation = startAngles[i];
     }
     std::vector<CollisionManifold> impacts;
-    // Pairs given an impulse so far this step, by body index.
-    std::vector<std::pair<std::size_t, std::size_t>> impulsed;
+    // Pairs given an impulse so far this step, by body index, and those given
+    // a second one (pressed back after their first).
+    std::vector<std::pair<std::size_t, std::size_t>> impulsed, pressed;
     // A pair this close (or closer) to contact is touching, the same
     // tolerance at which the step's contacts count as touching.
     const float touchTolerance = std::max(0.25f * simulationConfig.penetrationSlop, 1e-6f);
+    // TimeOfImpact stops a pair between target and target + tolerance apart,
+    // inside the touching band.
+    const double target = 0.5 * touchTolerance, tolerance = 0.25 * touchTolerance;
+    const auto motionOf = [&](std::size_t i) {
+        const RigidBody& body = *bodies[i];
+        return Detail::CcdMotion{{body.position.x, body.position.y, turning[i] ? angle[i] : double(body.orientation)},
+                                 motion[i].x, motion[i].y, spin[i]};
+    };
+    // Impact: an impulse at the contact. Freeze: a pair pressed together past
+    // its allowed depth stops moving for the rest of the step. Advance: time
+    // moves to a contact that is not closing (nothing to resolve there).
+    enum class Kind { Impact, Freeze, Advance };
     float remaining = deltaTime;
-    for (int iteration=0; iteration<simulationConfig.maximumCcdImpacts; ++iteration) {
-        SweepHit earliest;
+    std::vector<char> frozen(count, 0);
+    // Impacts and advances so far; freezes are free (see below).
+    int used = 0;
+    while (used < simulationConfig.maximumCcdImpacts) {
+        bool found = false, exact = true;
+        float earliest = 1;
+        Kind kind = Kind::Impact;
+        SweepHit exactHit;
+        Detail::CcdSeparation separation;
         std::size_t hitA = 0, hitB = 0;
-        for (std::size_t i=0; i<bodies.size(); ++i) {
-            for (std::size_t j=i+1; j<bodies.size(); ++j) {
+        const auto offer = [&](float fraction, Kind k, std::size_t i, std::size_t j) {
+            if (found && !(fraction < earliest)) return false;
+            found = true; earliest = fraction; kind = k; hitA = i; hitB = j;
+            return true;
+        };
+        for (std::size_t i=0; i<count; ++i) {
+            for (std::size_t j=i+1; j<count; ++j) {
                 const auto& a = bodies[i]; const auto& b = bodies[j];
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
-                    (a->IsStatic() && b->IsStatic()) || !pairCollides({a, b})) continue;
-                const Vector2 da = motion[i]*remaining, db = motion[j]*remaining;
-                const bool capsule = SupportsCapsuleCcd(*a, *b);
-                SweepHit hit = SweepPair(*a, da, *b, db, capsule);
-                // Ignore separating pairs and pairs resting in contact.
-                const Vector2 relative = motion[j]-motion[i];
-                if (!hit.hit || relative.dot(hit.normal) >= -1e-6f) continue;
-                // A pair that still approaches while touching after its own
-                // impulse is held by a neighbour: a body pressed between two
-                // others, or resting in a stack. Pairwise impulses only pass
-                // the approach back and forth between such contacts (each
-                // round removes a share set by the mass ratio), so they would
-                // spend the whole budget without advancing time. The step's
-                // contact solve, which sees all of them together, owns that
-                // approach; here only the circles' cores (a quarter of their
-                // radius) are swept, so the pair cannot pass through each
-                // other unnoticed. A pair whose cores touch as well is left
-                // to that solve: an impulse there has already failed to stop
-                // the approach (the impulse acts at the contact point, where
-                // the bodies' spin may already separate them, while the sweep
-                // only sees the centres' motion), so repeating it would loop.
-                const double travel = (db-da).magnitude();
-                if (hit.fraction * travel <= touchTolerance &&
-                    std::find(impulsed.begin(), impulsed.end(), std::make_pair(i, j)) != impulsed.end()) {
-                    hit = SweepPair(*a, da, *b, db, capsule, 0.25f);
-                    if (!hit.hit || relative.dot(hit.normal) >= -1e-6f || hit.fraction * travel <= touchTolerance)
-                        continue;
+                    (a->IsStatic() && b->IsStatic()) || !sweepable[i] || !sweepable[j] || !pairCollides({a, b})) continue;
+                const auto still = [&](std::size_t k) { return motion[k].x == 0 && motion[k].y == 0 && spin[k] == 0; };
+                if (still(i) && still(j)) continue;
+                const bool impulsedPair =
+                    std::find(impulsed.begin(), impulsed.end(), std::make_pair(i, j)) != impulsed.end();
+                if (HasCircle(*a, *b) && spin[i] == 0 && spin[j] == 0) {
+                    // The exact circle sweeps, where nothing rotates.
+                    const Vector2 da = motion[i]*remaining, db = motion[j]*remaining;
+                    SweepHit hit = SweepPair(*a, da, *b, db);
+                    // Ignore separating pairs and pairs resting in contact.
+                    const Vector2 relative = motion[j]-motion[i];
+                    if (!hit.hit || relative.dot(hit.normal) >= -1e-6f) continue;
+                    // A pair that still approaches while touching after its own
+                    // impulse is held by a neighbour: a body pressed between two
+                    // others, or resting in a stack. Pairwise impulses only pass
+                    // the approach back and forth between such contacts (each
+                    // round removes a share set by the mass ratio), so they would
+                    // spend the whole budget without advancing time. The step's
+                    // contact solve, which sees all of them together, owns that
+                    // approach; here only the circles' cores (a quarter of their
+                    // radius) are swept, so the pair cannot pass through each
+                    // other unnoticed. A pair whose cores touch as well is frozen
+                    // for the rest of the step: an impulse there has already
+                    // failed to stop the approach (it acts at the contact point,
+                    // where the bodies' spin may already separate them, while
+                    // the sweep only sees the centres' motion), so repeating it
+                    // would loop, and letting the pair move on lets it through.
+                    Kind k = Kind::Impact;
+                    const double travel = (db-da).magnitude();
+                    if (hit.fraction * travel <= touchTolerance && impulsedPair) {
+                        hit = SweepPair(*a, da, *b, db, 0.25f);
+                        if (!hit.hit || relative.dot(hit.normal) >= -1e-6f) continue;
+                        if (hit.fraction * travel <= touchTolerance) { k = Kind::Freeze; hit.fraction = 0; }
+                    }
+                    if (offer(hit.fraction, k, i, j)) { exact = true; exactHit = hit; }
+                    continue;
                 }
-                if (!earliest.hit || hit.fraction < earliest.fraction) {
-                    earliest = hit; hitA = i; hitB = j;
+                // Every other pair: conservative advancement on the signed
+                // distance, with rotation.
+                const Detail::CcdMotion ma = motionOf(i), mb = motionOf(j);
+                const Detail::CcdSeparation now = Detail::ComputeSeparation(proxies[i], ma.pose, proxies[j], mb.pose);
+                const bool approaching = Detail::ClosingSpeed(now, ma, ma.pose, mb, mb.pose) < -1e-6;
+                // A touching pair is a contact that the step's contact solve
+                // owns (as in Box2D, CCD guards these against tunnelling only):
+                // it may sink to a set depth before CCD acts, two slops or
+                // three quarters of the thinner shape's half-width if that is
+                // less, so it never reaches the far side. There it gets an
+                // impulse; pressed in again, one more; after that it is frozen
+                // (otherwise two contacts of a wedged body take turns, each
+                // impulse passing part of the approach to the other, and a
+                // pile of resting CCD bodies spends the budget every step).
+                const double deep = AllowedDepth(proxies[i], proxies[j], simulationConfig.penetrationSlop);
+                double goal = target;
+                if (now.distance <= touchTolerance) {
+                    if (approaching) {
+                        // Already that deep and still closing: frozen at once.
+                        if (now.distance <= deep + tolerance
+                            || std::find(pressed.begin(), pressed.end(), std::make_pair(i, j)) != pressed.end()) {
+                            if (offer(0, Kind::Freeze, i, j)) exact = false;
+                            continue;
+                        }
+                        goal = deep;
+                    } else {
+                        // Touching but not closing (resting or sliding): act
+                        // when rotation or the motion closes it further. A
+                        // pair at its set depth after an impulse still gets a
+                        // little room, so that a later closing (a spinning
+                        // body's other end) is caught rather than missed.
+                        goal = TouchingGoal(now.distance, touchTolerance);
+                        if (impulsedPair) goal = std::max(goal, deep);
+                        goal = std::min(goal, now.distance - 2 * tolerance);
+                    }
                 }
+                const Detail::CcdToi toi =
+                    Detail::TimeOfImpact(proxies[i], ma, proxies[j], mb, remaining, goal, tolerance);
+                if (toi.state == Detail::CcdToi::State::Separated) continue;
+                const float fraction = static_cast<float>(std::min(toi.time / remaining, 1.0));
+                const Detail::CcdPose pa = Detail::PoseAt(ma, toi.time), pb = Detail::PoseAt(mb, toi.time);
+                const bool closing = Detail::ClosingSpeed(toi.separation, ma, pa, mb, pb) < -1e-6;
+                Kind k = closing ? Kind::Impact : Kind::Advance;
+                // At or past the set depth the pair is frozen, except for the
+                // first impulse of a pair that has just sunk there: a pair may
+                // not creep deeper by small steps, whether it closes there or
+                // not.
+                if (toi.separation.distance <= deep + tolerance
+                    && !(closing && !impulsedPair && now.distance > deep + tolerance)) k = Kind::Freeze;
+                if (offer(fraction, k, i, j)) { exact = false; separation = toi.separation; }
             }
         }
-        const float advance = remaining*(earliest.hit ? earliest.fraction : 1.0f);
-        for (std::size_t i=0; i<bodies.size(); ++i)
+        const float advance = remaining*(found ? earliest : 1.0f);
+        for (std::size_t i=0; i<count; ++i) {
             bodies[i]->position = bodies[i]->position + motion[i]*advance;
+            if (turning[i]) {
+                angle[i] += spin[i] * advance;
+                bodies[i]->orientation = static_cast<float>(angle[i]);
+            }
+        }
         remaining -= advance;
-        if (!earliest.hit) return impacts;
+        if (!found) { complete = true; return impacts; }
+        if (kind == Kind::Freeze) {
+            // Frozen bodies stay put for the rest of the step. Each freeze
+            // stops at least one moving body, so freezes are bounded by the
+            // body count and do not use the impact budget.
+            for (const std::size_t k : {hitA, hitB}) {
+                if (bodies[k]->IsStatic()) continue;
+                frozen[k] = 1;
+                moved[k] = 1;
+                motion[k] = {};
+                if (turning[k]) { spin[k] = 0; changed[k] = 1; }
+            }
+            if (remaining <= 0) { complete = true; return impacts; }
+            continue;
+        }
+        ++used;
+        if (kind == Kind::Advance) {
+            if (remaining <= 0) { complete = true; return impacts; }
+            continue;
+        }
+        RigidBody* const bodyA = bodies[hitA].get();
+        RigidBody* const bodyB = bodies[hitB].get();
         CollisionManifold manifold;
-        manifold.A = bodies[hitA].get(); manifold.B = bodies[hitB].get();
-        manifold.hasCollision = true;
-        manifold.normal = earliest.normal;
-        manifold.contactPoint = earliest.point;
-        manifold.contactCount = 1;
-        manifold.contacts[0] = {earliest.point, 0, 0x60000001u};
-        bodies[hitA]->Wake(); bodies[hitB]->Wake();
+        if (exact) {
+            manifold.A = bodyA; manifold.B = bodyB;
+            manifold.hasCollision = true;
+            manifold.normal = exactHit.normal;
+            manifold.contactPoint = exactHit.point;
+            manifold.contactCount = 1;
+            manifold.contacts[0] = {exactHit.point, 0, 0x60000001u};
+        } else {
+            // The narrow phase at the impact pose gives a face contact both
+            // of its points; a lone corner falls back to the witness points.
+            manifold = CheckCollision(bodyA, bodyB, 2 * touchTolerance);
+            const Vector2 normal{static_cast<float>(separation.normalX), static_cast<float>(separation.normalY)};
+            if (!manifold.hasCollision || manifold.contactCount == 0 || manifold.normal.dot(normal) <= 0) {
+                const Vector2 point{static_cast<float>(0.5 * (separation.ax + separation.bx)),
+                                    static_cast<float>(0.5 * (separation.ay + separation.by))};
+                manifold = CollisionManifold{};
+                manifold.A = bodyA; manifold.B = bodyB;
+                manifold.hasCollision = true;
+                manifold.normal = normal;
+                manifold.contactPoint = point;
+                manifold.contactCount = 1;
+                manifold.contacts[0] = {point, 0, 0x60000001u};
+            }
+        }
+        bodyA->Wake(); bodyB->Wake();
         ContactImpulseCache cache;
         auto constraint = CollisionResolver::PrepareConstraint(manifold, cache, simulationConfig, true);
         for (int i=0; i<simulationConfig.solverIterations; ++i)
@@ -1467,10 +1643,24 @@ std::vector<CollisionManifold> World::advanceCcd(const std::vector<Vector2>& sta
         impacts.push_back(manifold);
         if (std::find(impulsed.begin(), impulsed.end(), std::make_pair(hitA, hitB)) == impulsed.end())
             impulsed.emplace_back(hitA, hitB);
+        else if (std::find(pressed.begin(), pressed.end(), std::make_pair(hitA, hitB)) == pressed.end())
+            pressed.emplace_back(hitA, hitB);
         ++statistics.ccdImpactCount;
-        motion[hitA] = bodies[hitA]->IsStatic() ? Vector2{} : bodies[hitA]->velocity;
-        motion[hitB] = bodies[hitB]->IsStatic() ? Vector2{} : bodies[hitB]->velocity;
-        if (remaining <= 0) return impacts;
+        for (const std::size_t k : {hitA, hitB}) {
+            RigidBody& body = *bodies[k];
+            moved[k] = 1;
+            // A frozen body's new velocity waits for the next step.
+            motion[k] = body.IsStatic() || frozen[k] ? Vector2{} : body.velocity;
+            if (body.IsStatic() || frozen[k] || body.shape->type == ShapeType::CIRCLE) continue;
+            if (!turning[k]) {
+                if (body.angularVelocity == 0) continue;
+                turning[k] = 1;
+                angle[k] = endAngle[k] = body.orientation;
+            }
+            spin[k] = body.angularVelocity;
+            changed[k] = 1;
+        }
+        if (remaining <= 0) { complete = true; return impacts; }
     }
     // Stay at the last safe time when the work budget is exhausted.
     statistics.ccdIterationLimitReached = true;
@@ -1481,39 +1671,80 @@ void World::sweepCcdCorrections(float deltaTime) {
     // Joint and contact position correction (and the legacy friction
     // displacement) move bodies after advanceCcd has swept the step. A rigid
     // joint pulling toward a body beyond a wall would otherwise carry a CCD
-    // circle through it without any velocity. Each moved body sweeps its
-    // correction against the static bodies of its CCD pairs and stops at the
-    // first one it would enter, as advanceCcd does; corrections that only
-    // separate or slide along a surface pass unchanged.
+    // body through it without any velocity. Each moved body sweeps its
+    // correction (translation and, except for a circle, rotation) against
+    // the static bodies of its CCD pairs and stops at the first one it would
+    // enter, as advanceCcd does; corrections that only separate or slide
+    // along a surface pass unchanged.
     if (!scratch || deltaTime <= 0) return;
     const auto& from = scratch->ccdPositions;
-    if (from.size() != bodies.size()) return;
+    const auto& fromAngles = scratch->ccdAngles;
+    const auto& proxies = scratch->ccdProxies;
+    const auto& sweepable = scratch->ccdSweepable;
+    if (from.size() != bodies.size() || fromAngles.size() != bodies.size() || proxies.size() != bodies.size()
+        || sweepable.size() != bodies.size()) return;
+    const float touchTolerance = std::max(0.25f * simulationConfig.penetrationSlop, 1e-6f);
+    const double target = 0.5 * touchTolerance, tolerance = 0.25 * touchTolerance;
     // A pair is swept only if one side has CCD; without a CCD static body,
     // only CCD bodies need the scan over the statics.
     bool staticCcd = false;
     for (const auto& body : bodies) staticCcd = staticCcd || (body->IsStatic() && body->IsCcdEnabled());
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const auto& body = bodies[i];
-        if (body->IsStatic() || (!staticCcd && !body->IsCcdEnabled())) continue;
+        if (body->IsStatic() || !sweepable[i] || (!staticCcd && !body->IsCcdEnabled())) continue;
         const Vector2 correction = body->position - from[i];
-        if (correction.x == 0 && correction.y == 0) continue;
+        // A circle's orientation does not move its outline.
+        const double turn = body->shape->type == ShapeType::CIRCLE
+            ? 0.0 : std::remainder(double(body->orientation) - fromAngles[i], kTwoPi);
+        if (correction.x == 0 && correction.y == 0 && turn == 0) continue;
         const Vector2 motion = correction/deltaTime;
         bool hit = false;
         float earliest = 1;
         const Vector2 corrected = body->position;
+        const float correctedAngle = body->orientation;
         body->position = from[i];
+        if (turn != 0) body->orientation = fromAngles[i];
         for (std::size_t j = 0; j < bodies.size(); ++j) {
             const auto& other = bodies[j];
-            if (!other->IsStatic() || (!body->IsCcdEnabled() && !other->IsCcdEnabled())
+            if (!other->IsStatic() || !sweepable[j] || (!body->IsCcdEnabled() && !other->IsCcdEnabled())
                 || !pairCollides({body, other})) continue;
-            const SweepHit sweep = SweepPair(*body, correction, *other, {}, SupportsCapsuleCcd(*body, *other));
-            // Same approach test as advanceCcd, with the static body at rest.
-            if (sweep.hit && (motion*-1.0f).dot(sweep.normal) < -1e-6f && sweep.fraction < earliest) {
+            if (HasCircle(*body, *other) && turn == 0) {
+                const SweepHit sweep = SweepPair(*body, correction, *other, {});
+                // Same approach test as advanceCcd, with the static body at rest.
+                if (sweep.hit && (motion*-1.0f).dot(sweep.normal) < -1e-6f && sweep.fraction < earliest) {
+                    hit = true;
+                    earliest = sweep.fraction;
+                }
+                continue;
+            }
+            // Other shapes and turning bodies: the correction over a unit
+            // interval. A touching pair that closes stops at once; one that
+            // does not may sink by the touching tolerance before it stops
+            // (a rotation can close it later).
+            const Detail::CcdMotion ma{{body->position.x, body->position.y, body->orientation},
+                                       correction.x, correction.y, turn};
+            const Detail::CcdMotion mb{{other->position.x, other->position.y, other->orientation}, 0, 0, 0};
+            const Detail::CcdSeparation now = Detail::ComputeSeparation(proxies[i], ma.pose, proxies[j], mb.pose);
+            double goal = target;
+            if (now.distance <= touchTolerance) {
+                if (Detail::ClosingSpeed(now, ma, ma.pose, mb, mb.pose) < -1e-6) {
+                    hit = true;
+                    earliest = 0;
+                    continue;
+                }
+                goal = TouchingGoal(now.distance, touchTolerance);
+            }
+            const auto toi = Detail::TimeOfImpact(proxies[i], ma, proxies[j], mb, 1.0, goal, tolerance);
+            if (toi.state == Detail::CcdToi::State::Separated) continue;
+            const float fraction = static_cast<float>(toi.time);
+            if (fraction < earliest) {
                 hit = true;
-                earliest = sweep.fraction;
+                earliest = fraction;
             }
         }
         body->position = hit ? from[i] + correction*earliest : corrected;
+        body->orientation = !hit || turn == 0 ? correctedAngle
+            : std::remainder(static_cast<float>(fromAngles[i] + turn * earliest), 6.283185307179586f);
     }
 }
 

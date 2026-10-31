@@ -329,9 +329,9 @@ TEST_CASE("Sensors are not swept by CCD", "[sensor]") {
 }
 
 TEST_CASE("A CCD body may share a world with a sensor capsule", "[sensor]") {
-    // Capsule CCD supports only circles against static capsules, but sensor
-    // pairs are never swept, so a dynamic sensor capsule must not make the
-    // step reject the CCD circle.
+    // Sensor pairs are never swept: the CCD circle passes through the
+    // dynamic sensor capsule. Once the capsule is solid the pair is swept
+    // like any other (it once made the step throw).
     const bool speculative = GENERATE(true, false);
     CAPTURE(speculative);
     World world(Config(speculative));
@@ -346,7 +346,7 @@ TEST_CASE("A CCD body may share a world with a sensor capsule", "[sensor]") {
     for (int i = 0; i < 6; ++i) REQUIRE_NOTHROW(world.step(1.0f / 60));
     REQUIRE(ball->position.x > 2);
     zone->SetSensor(false);
-    REQUIRE_THROWS_AS(world.step(1.0f / 60), std::invalid_argument);
+    REQUIRE_NOTHROW(world.step(1.0f / 60));
 }
 
 TEST_CASE("Toggling a sensor ends one lifecycle and begins the other", "[sensor]") {

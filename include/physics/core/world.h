@@ -122,10 +122,11 @@ private:
         std::uint64_t activeStep = 0;
     };
     void dispatchEvents();
-    static bool SupportsCapsuleCcd(const RigidBody& a, const RigidBody& b);
-    void validateCcdSupport() const;
-    std::vector<CollisionManifold> advanceCcd(const std::vector<Vector2>& starts,
-        float deltaTime, SimulationStatistics& statistics);
+    // Records the start-of-step poses that advanceCcd sweeps from.
+    void recordCcdStart();
+    // Sweeps the step from those poses (every shape pair, translation and
+    // rotation) and resolves the impacts in time order.
+    std::vector<CollisionManifold> advanceCcd(float deltaTime, SimulationStatistics& statistics);
     // Position correction runs after advanceCcd and is not part of its sweep.
     // Sweeps each body's correction from its advanceCcd pose and stops it at a
     // static body it would otherwise be moved into (CCD pairs only).

@@ -115,12 +115,11 @@ function testCapsules(physics) {
     for (let i = 0; i < 240; ++i) { drop.applyForce({x: 0, y: -9.81 * drop.getMass()}); engine.step(1 / 60); }
     assert.ok(Math.abs(drop.getPosition().y - 0.75) < 0.02, `capsule rests at ${drop.getPosition().y}`);
 
-    // Capsule CCD supports only circles against static capsules; anything else
-    // is rejected before the step changes state.
+    // A CCD capsule is swept like any other body (it used to make step throw);
+    // the resting capsule stays on the rod.
     drop.setCcdEnabled(true);
-    const before = drop.getPosition();
-    assert.throws(() => engine.step(1 / 60), /capsule/i);
-    assert.deepEqual(drop.getPosition(), before);
+    engine.step(1 / 60);
+    assert.ok(Math.abs(drop.getPosition().y - 0.75) < 0.02, `CCD capsule rests at ${drop.getPosition().y}`);
     drop.setCcdEnabled(false);
     const bulletShape = new physics.Circle(0.1);
     const bullet = physics.createRigidBody(bulletShape, material, {x: 10, y: 3}, false);

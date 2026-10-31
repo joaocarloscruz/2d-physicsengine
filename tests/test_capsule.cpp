@@ -675,7 +675,7 @@ TEST_CASE("Capsules rest, bounce and conserve momentum in a World", "[capsule][w
     }
 }
 
-TEST_CASE("Capsule CCD sweeps circles against static capsules only", "[capsule][ccd]") {
+TEST_CASE("Capsule CCD sweeps every pair that involves a capsule", "[capsule][ccd]") {
     SECTION("standalone sweep geometry") {
         const auto side = SweepCircleCapsule({0, 5}, {0, -10}, 0.5f, {-2, 0}, {2, 0}, 1);
         REQUIRE(side.hit);
@@ -730,27 +730,29 @@ TEST_CASE("Capsule CCD sweeps circles against static capsules only", "[capsule][
             }
         }
     }
-    SECTION("unsupported capsule CCD is rejected before state advances") {
+    SECTION("every capsule CCD pair steps (the old invalid_argument no longer fires)") {
+        // These pairs once made World::step throw std::invalid_argument
+        // before anything advanced. Each is now swept: the bodies meet and
+        // neither passes the other or sinks into it.
         const auto attempt = [](RigidBodyPtr first, RigidBodyPtr second) {
             World world;
             auto particles = std::make_shared<ParticleSystem>();
             particles->addParticle({0, 0}, {1, 0});
             world.addParticleSystem(particles);
-            world.addUniversalForce(std::make_unique<Gravity>(Vector2{0, -9.81f}));
-            first->SetVelocity({1, 2});
+            first->SetVelocity({1, 0});
             second->SetVelocity({-3, 0});
             world.addBody(first); world.addBody(second);
-            const auto p1 = first->position, p2 = second->position;
-            const auto v1 = first->velocity, v2 = second->velocity;
-            REQUIRE_THROWS_AS(world.step(1.0f / 60), std::invalid_argument);
-            REQUIRE(first->position == p1);
-            REQUIRE(second->position == p2);
-            REQUIRE(first->velocity == v1);
-            REQUIRE(second->velocity == v2);
-            REQUIRE(first->force == Vector2{});
-            REQUIRE(particles->getParticles()[0].position == Vector2{});
-            REQUIRE(particles->getParticles()[0].velocity == Vector2{1, 0});
-            REQUIRE_NOTHROW(world.step(0)); // Zero duration runs no sweep.
+            std::uint32_t impacts = 0;
+            for (int i = 0; i < 90; ++i) {
+                REQUIRE_NOTHROW(world.step(1.0f / 60));
+                impacts += world.getLastStepStatistics().ccdImpactCount;
+                REQUIRE(first->position.x < second->position.x);
+                const auto contact = CheckCollision(first.get(), second.get());
+                REQUIRE((!contact.hasCollision || contact.penetration < 0.01f));
+            }
+            REQUIRE(impacts > 0);
+            REQUIRE(particles->getParticles()[0].position.x > 0);
+            REQUIRE_NOTHROW(world.step(0));
         };
         auto dynamicCapsule = Make(Capsule(1, 0.5f), {0, 0});
         dynamicCapsule->SetCcdEnabled(true);
