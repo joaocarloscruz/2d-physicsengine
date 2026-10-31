@@ -73,6 +73,23 @@ namespace PhysicsEngine {
             bool valid = false;
             double positions[2][2]{};
         } pointPositions;
+
+        // Solver scratch of the substepped solve, which keeps the levers,
+        // anchors, masses and impulses' validity fixed through one step.
+        struct SubstepCache {
+            // The first warm start validated both bodies and the impulses;
+            // within the step they change only through checked updates.
+            bool validated = false;
+            // The two-point normal block's matrix terms (they depend only on
+            // the levers and the inverse masses).
+            bool blockReady = false;
+            double ca[2]{}, cb[2]{};
+            double k11 = 0, k12 = 0, k22 = 0, rigidDeterminant = 0;
+            // Each point's separation at the recorded poses.
+            bool separationsValid = false;
+            float poses[6]{};
+            double separations[2]{};
+        } substep;
     };
 
     class CollisionResolver {

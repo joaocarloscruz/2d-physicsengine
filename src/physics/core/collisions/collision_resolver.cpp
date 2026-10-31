@@ -590,8 +590,12 @@ void CollisionResolver::MatchImpulseSubsteps(ContactConstraint &c, int substeps)
 void CollisionResolver::WarmStartSubstep(ContactConstraint &c) {
     if (!c.bodyA || !c.bodyB)
         return;
-    ValidateBody(*c.bodyA);
-    ValidateBody(*c.bodyB);
+    // Only the first warm start of the step validates (SubstepCache::validated).
+    const bool validate = !c.substep.validated;
+    if (validate) {
+        ValidateBody(*c.bodyA);
+        ValidateBody(*c.bodyB);
+    }
     if (c.pointCount == 2) {
         // One combined update, as in WarmStart: applying the two points one
         // after the other rounds differently and tilts a symmetric stack.
@@ -599,24 +603,26 @@ void CollisionResolver::WarmStartSubstep(ContactConstraint &c) {
         double torqueA = 0, torqueB = 0;
         for (std::uint8_t i = 0; i < 2; ++i) {
             const auto &p = c.points[i];
-            ValidateImpulse(p.impulse);
+            if (validate) ValidateImpulse(p.impulse);
             const auto impulse = DVector(c.normal) * p.impulse.normal + DVector(c.tangent) * p.impulse.tangent;
             sum = sum + impulse;
             torqueA += LeverA(p).cross(impulse);
             torqueB += LeverB(p).cross(impulse);
         }
         ApplyCombinedVelocity(c.bodyA, c.bodyB, sum, torqueA, torqueB, false);
+        c.substep.validated = true;
         return;
     }
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
         const auto &p = c.points[i];
-        ValidateImpulse(p.impulse);
+        if (validate) ValidateImpulse(p.impulse);
         if (p.impulse.normal == 0 && p.impulse.tangent == 0)
             continue;
         ApplyPair(c.bodyA, c.bodyB, LeverA(p), LeverB(p),
                   DVector(c.normal) * p.impulse.normal + DVector(c.tangent) * p.impulse.tangent,
                   false, false);
     }
+    c.substep.validated = true;
 }
 void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep,
                                      const Softness &soft, double maxPushSpeed, bool useBias,
@@ -624,18 +630,36 @@ void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep
     if (!c.bodyA || !c.bodyB)
         return;
     RigidBody *a = c.bodyA, *b = c.bodyB;
-    ValidateBody(*a);
-    ValidateBody(*b);
+    auto &cache = c.substep;
+    // After the step's first warm start the bodies and impulses change only
+    // through checked (finite) updates, so the checks below cannot fail.
+    const bool validate = !cache.validated;
+    if (validate) {
+        ValidateBody(*a);
+        ValidateBody(*b);
+    }
     const DVector n = c.normal, t = c.tangent;
+    // Separation at the current poses; the normal stays the prepared one.
+    // Poses change only between velocity passes, so the separations are
+    // reused while both poses are bit-for-bit those they came from.
+    const float poses[6]{a->position.x, a->position.y, a->orientation,
+                         b->position.x, b->position.y, b->orientation};
+    if (validate || !cache.separationsValid || std::memcmp(cache.poses, poses, sizeof poses) != 0) {
+        cache.separationsValid = false;
+        for (std::uint8_t i = 0; i < c.pointCount; ++i) {
+            const auto &p = c.points[i];
+            if (validate) ValidateImpulse(p.impulse);
+            cache.separations[i] = Checked(
+                (ToWorldPoint(b, p.localAnchorB) - ToWorldPoint(a, p.localAnchorA)).dot(n) -
+                p.penetration);
+        }
+        std::memcpy(cache.poses, poses, sizeof poses);
+        cache.separationsValid = true;
+    }
     double biases[2]{}, massScales[2]{1, 1}, impulseScales[2]{}, normalVelocities[2]{};
     bool skip[2]{};
     for (std::uint8_t i = 0; i < c.pointCount; ++i) {
-        auto &p = c.points[i];
-        ValidateImpulse(p.impulse);
-        // Separation at the current poses; the normal stays the prepared one.
-        const double separation = Checked(
-            (ToWorldPoint(b, p.localAnchorB) - ToWorldPoint(a, p.localAnchorA)).dot(n) -
-            p.penetration);
+        const double separation = cache.separations[i];
         if (separation > 0) {
             skip[i] = !gapRows;
             biases[i] = separation * inverseSubstep; // the gap may close this substep, no further
@@ -651,26 +675,36 @@ void CollisionResolver::SolveSubstep(ContactConstraint &c, double inverseSubstep
         // Both normal rows together: the 2x2 LCP x >= 0, w = (K + G) x + q >= 0,
         // x.w = 0, where G holds each soft row's compliance K_ii * impulseScale /
         // massScale and q = v_n + bias - K * accumulated.
-        double ca[2], cb[2], old[2], q[2], gamma[2];
+        double old[2], q[2], gamma[2];
         for (int i = 0; i < 2; ++i) {
             const auto &p = c.points[i];
-            ca[i] = LeverA(p).cross(n);
-            cb[i] = LeverB(p).cross(n);
             old[i] = p.impulse.normal;
             normalVelocities[i] = Checked((LeverVelocity(b, LeverB(p)) - LeverVelocity(a, LeverA(p))).dot(n));
         }
-        const double m = double(a->inverseMass) + b->inverseMass, ia = a->inverseInertia, ib = b->inverseInertia;
-        const double k11 = Checked(m + ia * ca[0] * ca[0] + ib * cb[0] * cb[0]),
-                     k22 = Checked(m + ia * ca[1] * ca[1] + ib * cb[1] * cb[1]),
-                     k12 = Checked(m + ia * ca[0] * ca[1] + ib * cb[0] * cb[1]);
+        // K depends only on the fixed levers and inverse masses.
+        if (!cache.blockReady) {
+            for (int i = 0; i < 2; ++i) {
+                cache.ca[i] = LeverA(c.points[i]).cross(n);
+                cache.cb[i] = LeverB(c.points[i]).cross(n);
+            }
+            const double *ca = cache.ca, *cb = cache.cb;
+            const double m = double(a->inverseMass) + b->inverseMass, ia = a->inverseInertia, ib = b->inverseInertia;
+            cache.k11 = Checked(m + ia * ca[0] * ca[0] + ib * cb[0] * cb[0]);
+            cache.k22 = Checked(m + ia * ca[1] * ca[1] + ib * cb[1] * cb[1]);
+            cache.k12 = Checked(m + ia * ca[0] * ca[1] + ib * cb[0] * cb[1]);
+            const double deltaA = ca[0] - ca[1], deltaB = cb[0] - cb[1], cross = ca[0] * cb[1] - ca[1] * cb[0];
+            cache.rigidDeterminant = m * ia * deltaA * deltaA + m * ib * deltaB * deltaB + ia * ib * cross * cross;
+            cache.blockReady = true;
+        }
+        const double *ca = cache.ca, *cb = cache.cb;
+        const double k11 = cache.k11, k22 = cache.k22, k12 = cache.k12;
         gamma[0] = k11 * impulseScales[0] / massScales[0];
         gamma[1] = k22 * impulseScales[1] / massScales[1];
         const double a11 = k11 + gamma[0], a22 = k22 + gamma[1];
         for (int i = 0; i < 2; ++i) q[i] = normalVelocities[i] + biases[i];
         q[0] = Checked(q[0] - (k11 * old[0] + k12 * old[1]));
         q[1] = Checked(q[1] - (k12 * old[0] + k22 * old[1]));
-        const double deltaA = ca[0] - ca[1], deltaB = cb[0] - cb[1], cross = ca[0] * cb[1] - ca[1] * cb[0];
-        const double determinant = Checked(m * ia * deltaA * deltaA + m * ib * deltaB * deltaB + ia * ib * cross * cross
+        const double determinant = Checked(cache.rigidDeterminant
             + gamma[0] * k22 + gamma[1] * k11 + gamma[0] * gamma[1]);
         double x[2]{};
         bool solved = false;
