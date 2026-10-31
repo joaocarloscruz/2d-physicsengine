@@ -76,6 +76,7 @@ add_library(Engine ${ENGINE_LIBRARY_TYPE}
     ${PHYSICS_SRC_DIR}/core/fluids/coupled_fluid_simulation.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/collision_dispatcher.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/continuous_collision.cpp
+    ${PHYSICS_SRC_DIR}/core/collisions/time_of_impact.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_circle.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_polygon_polygon.cpp
     ${PHYSICS_SRC_DIR}/core/collisions/narrow_phase/collision_circle_polygon.cpp
