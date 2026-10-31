@@ -97,5 +97,7 @@ coin.isSensor();    // true
 coin.getUserData(); // 17
 ```
 
-The JavaScript bindings do not expose collision listeners yet. A JavaScript
-caller can still turn sensors on and read `"sensor"` in `exportJson`.
+JavaScript reads sensor events through the engine's collision event buffer
+(`engine.enableCollisionEvents(true)`, then `takeCollisionEvents()` after a
+step); each event carries the same `sensor` flag. See
+[WebAssembly](webassembly.md). `exportJson` also reports each body's `"sensor"`.
