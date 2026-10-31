@@ -24,7 +24,12 @@ simulation modules beside it. Measured limits are listed in
   a spring and a length range (rope). Jointed bodies no longer collide with each
   other unless `setCollideConnected(true)`.
 - CCD also sweeps position correction against static walls, and CCD bodies may
-  share a world with sensor capsules.
+  share a world with sensor capsules. Fixes found by seeded World fuzzing: a
+  valid polygon no longer makes the step throw after float rounding, resting or
+  wedged CCD bodies no longer exhaust the impact budget and freeze the world,
+  and a CCD impact on a sleeping body no longer breaks the step.
+- The linear and angular velocity limits are applied again after the solve, so
+  joint and contact impulses can no longer push a body past them.
 - Narrow-phase fixes found by seeded property tests: capsule manifolds report
   the exact minimum translation, capsule contacts no longer jump on near ties,
   and polygon speculative gaps are no longer overstated.
