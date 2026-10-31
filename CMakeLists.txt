@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(PhysicsEngine VERSION 0.2.0 LANGUAGES CXX)
+project(PhysicsEngine VERSION 1.0.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CTest)
@@ -104,7 +104,7 @@ configure_package_config_file(cmake/PhysicsEngineConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine)
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfigVersion.cmake
-    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/PhysicsEngineConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/PhysicsEngine)

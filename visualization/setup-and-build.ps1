@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Configure and build the visualizer against installed SFML 3 and PhysicsEngine 0.2.
+Configure and build the visualizer against installed SFML 3 and PhysicsEngine 1.0.
 .DESCRIPTION
 No packages are downloaded and no environment variables are changed. Relative
 package and build paths are resolved against this script's directory. Use the

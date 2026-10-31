@@ -1,7 +1,7 @@
 # Quick start for the visualizer
 
 Use CMake 3.16+, a C++17-capable compiler, **SFML 3** with static Graphics,
-Window and System libraries, and an installed **PhysicsEngine 0.2** package.
+Window and System libraries, and an installed **PhysicsEngine 1.0** package.
 SFML 2 is incompatible. SFML 3.1's source build requires CMake 3.28+.
 Build all packages with the same compiler, architecture and runtime; a prebuilt
 MinGW SFML package cannot be linked into an MSVC application.

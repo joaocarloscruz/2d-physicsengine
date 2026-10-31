@@ -7,7 +7,7 @@ PowerShell helper and hidden `--smoke-test capture.png` render check.
 ## Dependencies
 
 - SFML 3 with static Graphics, Window and System libraries
-- Installed PhysicsEngine 0.2 package
+- Installed PhysicsEngine 1.0 package
 - CMake 3.16+ and a compatible C++ compiler/runtime for both packages
 
 The visualizer consumes the installed engine through `PhysicsEngine::Engine`.
@@ -128,7 +128,7 @@ captures the car sitting in the goal after driving there.
 ## Troubleshooting
 
 - **Package not found:** verify that each prefix contains the installed CMake
-  package. SFML must be version 3 with static libraries; the engine must be 0.2.
+  package. SFML must be version 3 with static libraries; the engine must be 1.x.
 - **Compiler or link errors:** use packages built for the same compiler,
   architecture, configuration and runtime. Use a new build directory when
   changing a compiler or generator.

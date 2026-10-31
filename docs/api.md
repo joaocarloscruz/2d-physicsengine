@@ -160,10 +160,12 @@ changes require explicitly waking affected bodies.
 
 ## Versioning
 
-The CMake package version is 0.2.0. While version zero is under development, a minor
-release may change source APIs or numerical behavior; patch releases preserve the
-documented API. Rebuild all consumers on upgrades; binary ABI compatibility is not
-promised. CMake accepts only the requested minor version. Export schemas are
+The CMake package version is 1.0.0 and follows semantic versioning for the
+documented source API: minor releases add API, patch releases fix behaviour, and
+only a major release removes or changes documented API. Numerical results may
+change in minor releases when the solver improves; the [changelog](../CHANGELOG.md)
+records such changes. Rebuild all consumers on upgrades; binary ABI compatibility
+is not promised. CMake accepts any 1.x package for a 1.0 request. Export schemas are
 versioned independently (`schemaVersion: 1`); readers should ignore new fields.
 Bitwise reproducibility is expected only for identical inputs, builds and platforms.
 

@@ -113,7 +113,7 @@ cmake --install build --config Release --prefix /path/to/physics-install
 Consumers set `CMAKE_PREFIX_PATH` to that prefix, then use:
 
 ```cmake
-find_package(PhysicsEngine 0.2 CONFIG REQUIRED)
+find_package(PhysicsEngine 1.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE PhysicsEngine::Engine)
 ```
 
