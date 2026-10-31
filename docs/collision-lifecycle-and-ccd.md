@@ -73,9 +73,32 @@ notifies at most once per World step even if multiple impacts occur. Transient
 impacts begin a lifecycle even if the bodies have already separated by step end;
 they end on the following step if contact does not recur.
 
+A pair that is touching (within a quarter of `penetrationSlop`) and still
+approaching gets one impulse per step. If it touches and approaches again after
+that impulse, a neighbour is holding it there: a body pressed between two
+others, or resting in a stack. Further pairwise impulses would only pass the
+approach back and forth (each round removes a share set by the mass ratio), so
+the pair is left to the next contact solve, which sees all of those contacts
+together. For the rest of the step only the circles' cores, a quarter of their
+radius, are swept for that pair, so it can overlap by up to three quarters of
+the radius before CCD acts again, and a pair whose cores touch too is not swept
+any further that step. A body wedged and driven inward at that depth is the
+remaining way through; it needs a contact that the solve cannot hold for
+several steps.
+
+The world outline of a polygon is its validated local outline rotated and
+translated in float, which can turn a strictly convex corner by an ulp or make
+two close vertices coincide. World CCD sweeps that outline as it is (skipping
+zero-length edges) instead of validating it again, so a valid polygon never
+makes `step()` throw. The public `SweepCirclePolygon` still rejects such an
+outline as input.
+
 The sweep uses each body's actual displacement over the step, measured after the
 velocity solve, so velocity added by joints, forces, impulses or contacts is
-swept, including speed beyond `maxLinearSpeed` that a joint adds after the clamp.
+swept. The velocity limits (`maxLinearSpeed`, `maxAngularSpeed`) are applied
+when velocities integrate and again after the joint and contact solve and after
+CCD impacts and bounces, so impulses cannot carry a body past them; a velocity
+inside the limits is never changed by the second application.
 Position correction (joint and contact position solves, and the legacy
 friction displacement) runs after the sweep, so it is swept separately: each
 body's correction starts from its swept pose and stops at the first static body
@@ -87,7 +110,8 @@ between two moving bodies are not swept.
 
 `maximumCcdImpacts` bounds per-step work (default 32). Exhaustion sets
 `ccdIterationLimitReached` and conservatively stops position advancement at the
-last safe time. `ccdImpactCount` reports actual resolved impacts. Sweeps currently
+last safe time. A CCD impact may wake a sleeping body; it joins its partner's
+position correction that step. `ccdImpactCount` reports actual resolved impacts. Sweeps currently
 scan all pairs, so reserve CCD for fast bodies. Pure polygon pairs and rotational
 polygon motion are not swept; use small timesteps for those cases. Turning CCD off
 retains the original discrete integration/collision path.

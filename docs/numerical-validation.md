@@ -158,18 +158,31 @@ the repeat run, and no body escaping the box. Escape is only counted for CCD
 bodies and for bodies that never exceeded 60 m/s, half a wall per step, the
 range [getting started](getting-started.md#fast-bodies) covers without CCD.
 
-The default scenes avoid three World bugs that the `[.known-bug]` cases
-reproduce: World CCD rejects a valid polygon whose float-rounded world outline
-is not strictly convex, CCD bullets wedged among bodies exhaust the impact
-budget every step and freeze all positions while velocities keep growing, and
-one such scene ends with a body at 1289 m/s. The default bullets therefore
-hit only walls and each other, are light, and polygons are well-conditioned.
-Even so, the long World run still fails: some CCD bullets and one jointed body
-leave the box, and some scenes exhaust the CCD budget on consecutive steps.
-These are World and solver issues; the narrow-phase manifolds at the start of
-the 1289 m/s step all match the oracle.
+The default bullets hit only walls and each other, are light, and polygons are
+well-conditioned. Regression cases in the same file run the harder variants
+(bullets that hit bodies, heavy bullets, random outlines) for 600 steps. The
+World bugs these runs found, all fixed:
 
-The default `[fuzz]` cases take about 6 s in a Release build.
+- World CCD threw on a valid polygon: its float-rounded world outline was
+  validated again and could fail strict convexity. World CCD now sweeps that
+  outline without revalidating it ([CCD](collision-lifecycle-and-ccd.md)).
+- CCD impacts spent the whole budget on contacts that were already touching
+  and held by a neighbour (two CCD circles stacked on the floor in the default
+  run, a light CCD circle under a falling polygon): pairwise impulses passed
+  the remaining approach back and forth without advancing time, so every body
+  stood still while velocities kept growing. A pair touching again after its
+  own impulse is now left to the contact solve, with only the circles' cores
+  swept. The same rule ends a loop where an impulse at a spinning polygon's
+  contact point could not stop the centres' approach.
+- A CCD impact on a sleeping body made the speculative step throw ("Island
+  has no solve group").
+- Joint and contact impulses could carry a body past the velocity limits; a
+  stiff MouseJoint drag reached thousands of m/s. The limits are now applied
+  again after the solve.
+
+The long run passes on all 12 seeds. The default `[fuzz][world]` case takes
+about 4 s and the long World run 50 to 90 s (machine load) in a Release
+build.
 
 ### Documented limits, not bugs
 
