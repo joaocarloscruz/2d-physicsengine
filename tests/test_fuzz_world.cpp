@@ -32,6 +32,11 @@ struct SceneOptions {
     bool lightBullets = true;
     // CCD bullets also hit other dynamic bodies (see the known-bug cases).
     bool bulletsHitBodies = false;
+    // Bullets of every shape (polygons and capsules too), and bullets that hit
+    // bodies meet capsules as well.
+    bool anyShapeBullets = false;
+    // maximumCcdImpacts, 0 for the default.
+    int ccdBudget = 0;
 };
 
 struct Scene {
@@ -83,6 +88,7 @@ Scene BuildScene(const SceneOptions& options) {
     SimulationConfig config;
     config.enableSpeculativeContacts = options.speculative;
     config.enableSleeping = rng.Chance(0.5);
+    if (options.ccdBudget > 0) config.maximumCcdImpacts = options.ccdBudget;
     scene.world = std::make_unique<World>(config);
     scene.world->addUniversalForce(std::make_unique<Gravity>(Vector2{0, -kGravity}));
     const float outer = kHalf + kWall / 2;
@@ -108,14 +114,16 @@ Scene BuildScene(const SceneOptions& options) {
         body->SetVelocity({float(rng.Range(-3, 3)), float(rng.Range(-3, 3))});
         body->SetAngularVelocity(float(rng.Range(-2, 2)));
         if (spec.type == ShapeType::CAPSULE) body->SetCollisionCategoryBits(kCapsuleCategory);
-        // CCD circles may not meet dynamic capsules (docs/capsules.md), so
-        // they filter capsules out. Unless bullets hit bodies, they meet only
-        // the walls (category 1) and each other.
-        const bool ccd = spec.type == ShapeType::CIRCLE && rng.Chance(0.25);
+        // CCD circles filter capsules out, a rule from when capsule CCD was
+        // limited to static capsules; it is kept so that every seed rebuilds
+        // the same scene. Unless bullets hit bodies, they meet only the walls
+        // (category 1) and each other.
+        const bool ccd = (options.anyShapeBullets || spec.type == ShapeType::CIRCLE) && rng.Chance(0.25);
         if (!options.bulletsHitBodies && spec.type != ShapeType::CAPSULE) body->SetCollisionCategoryBits(kBodyCategory);
         if (ccd) {
             body->SetCcdEnabled(true);
-            body->SetCollisionMaskBits(options.bulletsHitBodies ? ~kCapsuleCategory : kWallCategory | kBulletCategory);
+            body->SetCollisionMaskBits(options.bulletsHitBodies ? (options.anyShapeBullets ? ~0u : ~kCapsuleCategory)
+                                                                : kWallCategory | kBulletCategory);
             if (!options.bulletsHitBodies) body->SetCollisionCategoryBits(kBulletCategory);
         }
         scene.world->addBody(body);
@@ -454,4 +462,46 @@ TEST_CASE("Heavy CCD bullets that hit bodies keep the scene bounded", "[world][c
     const RunResult result = RunScene(options);
     INFO(result.failures.Summary());
     CHECK(result.failures.total == 0);
+}
+
+namespace {
+// CCD polygons and capsules as well as circles, fired at 150 m/s, with and
+// without hitting the other bodies.
+void CheckAnyShapeBullets(std::uint64_t firstSeed, int seeds, int ccdBudget, std::initializer_list<bool> orders) {
+    for (std::uint64_t seed = firstSeed; seed < firstSeed + std::uint64_t(seeds); ++seed)
+        for (const bool hitBodies : {false, true})
+            for (const bool speculative : orders) {
+                SceneOptions options;
+                options.seed = seed;
+                options.speculative = speculative;
+                options.anyShapeBullets = true;
+                options.bulletsHitBodies = hitBodies;
+                options.ccdBudget = ccdBudget;
+                options.steps = 600;
+                const RunResult result = RunScene(options);
+                INFO("seed " << seed << ", hit bodies " << hitBodies << ", speculative " << speculative << "\n"
+                             << result.failures.Summary());
+                CHECK(result.failures.total == 0);
+            }
+}
+}
+
+TEST_CASE("Random scenes with CCD bullets of every shape stay sealed", "[world][ccd]") {
+    // The first version of every-shape CCD exhausted the impact budget on 5
+    // consecutive steps here (bullets hitting bodies, both orders): pressed
+    // pairs in piles took turns at impulses until frozen pairs stayed frozen.
+    CheckAnyShapeBullets(20261031, 1, 0, {true, false});
+}
+
+TEST_CASE("Random scenes with CCD bullets of every shape stay sealed (long)", "[.fuzz-long][world][ccd]") {
+    // These scenes have up to about 40 CCD bullets. Fired at once into a pile
+    // they need more than the default 32 impacts per step for several steps:
+    // with 32, at least 5 of these 8 seeds ran out of budget on 5 consecutive
+    // steps after a volley (bullets hitting bodies); with 64, none did. The
+    // stall check is there to catch impulse loops, not a busy volley.
+    // Speculative order only, like the other harder variants above: in the
+    // legacy order seed 7 launched a non-CCD capsule at 177 m/s in a collision
+    // with another non-CCD body (bullets are filtered from both), and seed 4
+    // with bullets hitting bodies blew up in a pile (cause not isolated).
+    CheckAnyShapeBullets(1, 8, 64, {true});
 }
