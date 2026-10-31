@@ -26,7 +26,7 @@ These are captures of scenes 3, 5, 9 and 10 of the native [SFML visualizer](visu
 - Shapes: circles, convex polygons and [capsules](docs/capsules.md). Bodies copy their shapes. ([getting started](docs/getting-started.md))
 - Contacts: multi-point manifolds, speculative contacts, friction and restitution, and a
   [substepped soft contact solver](docs/contact-solver.md#substepped-soft-contacts). ([manifolds](docs/contact-manifolds.md))
-- [Continuous collision detection](docs/collision-lifecycle-and-ccd.md) for translating circles. Polygon pairs and rotation are not swept.
+- [Continuous collision detection](docs/collision-lifecycle-and-ccd.md) for every shape pair, including rotation.
 - [Sensors and user data](docs/sensors.md): overlap events without contact forces, and an opaque value per body.
 - [Collision filtering](docs/collision-filtering.md) with a category and mask per body.
 - Joints: [distance (spring and length range), revolute (motor and limits), prismatic](docs/joints-and-sleeping.md), [mouse, weld and wheel](docs/joints-mouse-weld-wheel.md).
