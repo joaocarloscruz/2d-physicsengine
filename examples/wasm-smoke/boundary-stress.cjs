@@ -280,6 +280,15 @@ const createModule = require('./physics_engine.js');
         console.log(`PASS: scalar boundary stress; 1000 batches/21000 rejection checks, stack=${scalarStack}, live heap=${scalarBefore.heap}, uncaught=${scalarBefore.uncaught}; unchanged scalar/advector/clock/diagnostics`);
     }
     require("./handle-lifetime-tests.cjs").stress(physics);
+    {
+        const events = require("./collision-event-tests.cjs");
+        for (let i = 0; i < 20; ++i) events.stress(physics);
+        const eventHandles = handles(), eventStats = physics.boundaryTestStats();
+        for (let i = 0; i < 500; ++i) events.stress(physics);
+        assert.equal(handles(), eventHandles);
+        assert.deepEqual(physics.boundaryTestStats(), eventStats);
+        console.log(`PASS: collision event boundary stress; 500 batches, emval handles=${handles()}, live heap=${physics.boundaryTestStats().heap}`);
+    }
     require("./elastic-wave-tests.cjs").stress(physics, probe);
     require("./electrostatic-tests.cjs").stress(physics, probe);
     require("./maxwell-ohmic-tests.cjs").stress(physics, probe);
