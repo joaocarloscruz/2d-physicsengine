@@ -32,7 +32,9 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build native targets
-        run: cmake --build build --config Release --parallel
+        # A bare --parallel is an unbounded make -j on Linux, which the
+        # ubuntu-latest runner killed or stalled in the build step.
+        run: cmake --build build --config Release --parallel 4
 
       - name: Run native tests
         run: ctest --test-dir build -C Release --output-on-failure
