@@ -6,6 +6,11 @@
   every pair with a CCD body on every impact: a 150-body pile hit by 60 CCD
   bullets of mixed shapes takes 2.2 ms per step instead of 30 ms. Results are
   unchanged bit for bit.
+- The legacy step order (`enableSpeculativeContacts = false`) solves joints
+  before contacts in each velocity iteration, like the default order. Solving
+  joints last left light jointed bodies closing on their contacts, and
+  restitution bounced that speed back: scenes with 1:40 to 1:350 jointed mass
+  ratios gained up to 32% energy. The default order is unchanged bit for bit.
 - Documented the joint mass-ratio limit and redundant joints (see
   [joints](docs/joints-and-sleeping.md)).
 
