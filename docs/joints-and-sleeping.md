@@ -27,12 +27,13 @@ Keep the mass ratio of jointed bodies under about 1:10 where you can, and put at
 most one joint on a pair (a `WeldJoint` locks a pair completely). Two joints
 on one pair can ask for the same thing twice (a revolute and a prismatic joint
 both fix the relative rotation), which an iterative solver cannot satisfy
-exactly. In the legacy step order (`enableSpeculativeContacts = false`) the
-World fuzz, whose jointed pairs reach 1:350, gains energy in piles: two
-every-shape seeds threw bodies out at up to 180 m/s, both from pairs of 1:40
-and 1:350 that also had a second joint, and a scene without redundant joints
-still exceeded its energy budget by 15%. The default step order passes the
-same scenes.
+exactly. Both step orders solve joint velocities before contact velocities in
+each iteration, so the contacts end the solve with no closing speed. The
+legacy step order (`enableSpeculativeContacts = false`) used to solve joints
+last: with jointed pairs of 1:40 and 1:350 in a pile, the joint pass left the
+light body closing on its contact, and the next step bounced that speed back
+with restitution. The World fuzz gained up to 32% energy that way, with and
+without redundant joints; it now passes in both orders.
 
 Distance and revolute solvers compute rotated levers, point velocities, effective
 masses, and impulses in double precision. No physical mass or nonzero distance is

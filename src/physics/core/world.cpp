@@ -589,10 +589,13 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             const bool alreadySolved = integratedPlan && island.joints.empty() &&
                 std::all_of(island.contacts.begin(), island.contacts.end(),
                             [&](const ContactConstraint *c) { return c == integratedConstraint; });
+            // Joints first, contacts last, as in the speculative order: a
+            // joint solved last can leave a light body closing on a contact,
+            // and the next step bounces that closing speed back (restitution).
             for (int iter=0; !alreadySolved && iter<simulationConfig.solverIterations; ++iter) {
+                for (const auto& joint : island.joints) joint->solveVelocity();
                 for (auto* constraint : island.contacts)
                     if (constraint != integratedConstraint) CollisionResolver::SolveVelocity(*constraint);
-                for (const auto& joint : island.joints) joint->solveVelocity();
             }
             // Joint and contact impulses may pass the limits applied when
             // velocities integrated; the next step moves bodies with these.

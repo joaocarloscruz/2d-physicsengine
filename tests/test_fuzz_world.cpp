@@ -499,14 +499,11 @@ TEST_CASE("Random scenes with CCD bullets of every shape stay sealed (long)", "[
     // with 32, at least 5 of these 8 seeds ran out of budget on 5 consecutive
     // steps after a volley (bullets hitting bodies); with 64, none did. The
     // stall check is there to catch impulse loops, not a busy volley.
-    // Speculative order only, like the other harder variants above: in the
-    // legacy order seed 7 launched a non-CCD capsule at 177 m/s in a collision
-    // with another non-CCD body (bullets are filtered from both), and seed 4
-    // with bullets hitting bodies blew up in a pile. Both started at jointed
-    // pairs with mass ratios of 1:40 and 1:350 that also had a second joint
-    // (revolute plus prismatic, prismatic plus distance); see the mass-ratio
-    // note in joints-and-sleeping.md. Allowing one joint per pair changed the
-    // default seed 20261029 enough to fail in the legacy order too, so the
-    // generator keeps its duplicates.
-    CheckAnyShapeBullets(1, 8, 64, {true});
+    // The legacy order once gained energy here (seed 4 with bullets hitting
+    // bodies, seed 7 without), starting at jointed pairs of 1:40 and 1:350:
+    // its velocity solve ran joints after contacts, so a joint could leave a
+    // light body closing on its contact, and the next step bounced that
+    // closing speed back with restitution. Contacts now come last in both
+    // orders; see the mass-ratio note in joints-and-sleeping.md.
+    CheckAnyShapeBullets(1, 8, 64, {true, false});
 }

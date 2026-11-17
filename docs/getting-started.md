@@ -262,8 +262,8 @@ still runs for them. Statistics for the last step are in
 - Dynamic polygons rotate about their shape origin, so build them centered (see
   [polygon centering](polygon-centering.md)).
 - Keep jointed mass ratios under about 1:10 and put at most one joint on a
-  pair of bodies. Larger ratios and redundant joints can gain energy, most of
-  all in the legacy step order (see [joints](joints-and-sleeping.md)).
+  pair of bodies. The iterative solver cannot satisfy redundant joints exactly
+  and converges slowly at larger ratios (see [joints](joints-and-sleeping.md)).
 
 The [rigid-contact benchmark](rigid-contact-benchmark.md) measures stacking,
 friction and impact accuracy against physical oracles, and the
