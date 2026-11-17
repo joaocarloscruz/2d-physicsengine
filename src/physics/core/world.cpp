@@ -1474,6 +1474,83 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
     std::vector<char> frozen(count, 0);
     // Impacts and advances so far; freezes are free (see below).
     int used = 0;
+    // Candidate pairs, sorted by (i, j): every pair the loop below could act
+    // on, so that it scans these rather than all pairs. A body's bounds hold
+    // it over the rest of the step from its pose when they were taken (a
+    // turning body by its bounding circle), grown by a margin that covers the
+    // touching band, float drift and the distance from which TimeOfImpact
+    // could still use up its iterations (each one advances at least
+    // (gap - target) / closing-speed bound). A pair whose bounds stay apart
+    // can then never be offered. An impact changes the motion of its two
+    // bodies, so their bounds are taken again and their pairs rescanned; a
+    // freeze only stops bodies, which the old bounds still hold.
+    struct Bounds { double minX, minY, maxX, maxY; };
+    std::vector<Bounds> bounds(count);
+    const auto takeBounds = [&](std::size_t i) {
+        const RigidBody& body = *bodies[i];
+        const Detail::CcdProxy& proxy = proxies[i];
+        const double px = body.position.x, py = body.position.y;
+        const double ex = px + double(motion[i].x) * remaining, ey = py + double(motion[i].y) * remaining;
+        double lowX = std::min(px, ex), lowY = std::min(py, ey), highX = std::max(px, ex), highY = std::max(py, ey);
+        if (turning[i]) {
+            const double r = proxy.reach + proxy.radius;
+            lowX -= r; lowY -= r; highX += r; highY += r;
+        } else {
+            const double c = std::cos(double(body.orientation)), s = std::sin(double(body.orientation));
+            double minX = std::numeric_limits<double>::infinity(), minY = minX, maxX = -minX, maxY = -minX;
+            for (std::size_t k = 0; k < proxy.count; ++k) {
+                const Vector2& v = proxy.vertex(k);
+                const double x = c * v.x - s * v.y, y = s * v.x + c * v.y;
+                minX = std::min(minX, x); maxX = std::max(maxX, x);
+                minY = std::min(minY, y); maxY = std::max(maxY, y);
+            }
+            lowX += minX - proxy.radius; lowY += minY - proxy.radius;
+            highX += maxX + proxy.radius; highY += maxY + proxy.radius;
+        }
+        const double speed = std::hypot(double(motion[i].x), double(motion[i].y)) + std::abs(spin[i]) * proxy.reach;
+        const double scale = std::max({std::abs(lowX), std::abs(lowY), std::abs(highX), std::abs(highY)});
+        const double margin = 2.0 * touchTolerance + 1e-5 * (1.0 + scale) + double(remaining) * speed / 16.0;
+        Bounds b{lowX - margin, lowY - margin, highX + margin, highY + margin};
+        if (!(std::isfinite(b.minX) && std::isfinite(b.minY) && std::isfinite(b.maxX) && std::isfinite(b.maxY))) {
+            const double inf = std::numeric_limits<double>::infinity();
+            b = {-inf, -inf, inf, inf};
+        }
+        bounds[i] = b;
+    };
+    // The loop's own filters, less the closing tests (it repeats all of them).
+    const auto candidate = [&](std::size_t i, std::size_t j) {
+        const auto& a = bodies[i]; const auto& b = bodies[j];
+        if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
+            (a->IsStatic() && b->IsStatic()) || !sweepable[i] || !sweepable[j]) return false;
+        const auto still = [&](std::size_t k) { return motion[k].x == 0 && motion[k].y == 0 && spin[k] == 0; };
+        if (still(i) && still(j)) return false;
+        const Bounds& p = bounds[i]; const Bounds& q = bounds[j];
+        if (p.maxX < q.minX || q.maxX < p.minX || p.maxY < q.minY || q.maxY < p.minY) return false;
+        return pairCollides({a, b});
+    };
+    std::vector<std::pair<std::size_t, std::size_t>> candidates;
+    for (std::size_t i = 0; i < count; ++i)
+        if (sweepable[i]) takeBounds(i);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!sweepable[i] || !bodies[i]->IsCcdEnabled()) continue;
+        for (std::size_t j = 0; j < count; ++j) {
+            // A pair of two CCD bodies is found from its lower index only.
+            if (j == i || (j < i && bodies[j]->IsCcdEnabled())) continue;
+            if (candidate(std::min(i, j), std::max(i, j))) candidates.emplace_back(std::min(i, j), std::max(i, j));
+        }
+    }
+    std::sort(candidates.begin(), candidates.end());
+    const auto rescan = [&](std::size_t k) {
+        if (!sweepable[k]) return;
+        takeBounds(k);
+        const std::size_t before = candidates.size();
+        for (std::size_t j = 0; j < count; ++j)
+            if (j != k && candidate(std::min(k, j), std::max(k, j)))
+                candidates.emplace_back(std::min(k, j), std::max(k, j));
+        if (candidates.size() == before) return;
+        std::sort(candidates.begin(), candidates.end());
+        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    };
     while (used < simulationConfig.maximumCcdImpacts) {
         bool found = false, exact = true;
         float earliest = 1;
@@ -1486,8 +1563,9 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
             found = true; earliest = fraction; kind = k; hitA = i; hitB = j;
             return true;
         };
-        for (std::size_t i=0; i<count; ++i) {
-            for (std::size_t j=i+1; j<count; ++j) {
+        for (const auto& pair : candidates) {
+            {
+                const std::size_t i = pair.first, j = pair.second;
                 const auto& a = bodies[i]; const auto& b = bodies[j];
                 if ((!a->IsCcdEnabled() && !b->IsCcdEnabled()) ||
                     (a->IsStatic() && b->IsStatic()) || !sweepable[i] || !sweepable[j] || !pairCollides({a, b})) continue;
@@ -1661,6 +1739,8 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
             changed[k] = 1;
         }
         if (remaining <= 0) { complete = true; return impacts; }
+        rescan(hitA);
+        rescan(hitB);
     }
     // Stay at the last safe time when the work budget is exhausted.
     statistics.ccdIterationLimitReached = true;

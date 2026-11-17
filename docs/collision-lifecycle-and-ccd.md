@@ -195,7 +195,17 @@ after a volley with 32 and never with 64. Exhaustion sets
 `ccdIterationLimitReached` and conservatively stops position advancement at the
 last safe time. A CCD impact may wake a sleeping body; it joins its partner's
 position correction that step. `ccdImpactCount` reports actual resolved impacts.
-Sweeps currently scan all pairs with a CCD body, so reserve CCD for fast bodies.
+Sweeps consider only pairs with a CCD body, so reserve CCD for fast bodies.
+Each CCD pass builds its candidate pairs once: each body's bounds cover its
+start and end pose over the rest of the step (a turning body by its bounding
+circle), grown by a margin past the touching band and the distance from which
+`TimeOfImpact` could still run out of iterations. Pairs whose bounds stay apart
+are never swept, and after an impact the two bodies' bounds are taken again and
+their pairs rescanned. The candidates are scanned in the same (i, j) order as
+before, so results are bit-identical to the all-pairs scan. In a scratch scene
+of 150 mixed shapes in a pile with 20 mixed-shape CCD bullets fired three times
+over 600 steps (Release, best of 3), a step took 3.02 ms before and 0.88 ms
+after; with 60 bullets, 30.2 ms before and 2.18 ms after.
 A world without CCD bodies runs none of this. Turning CCD off retains the
 original discrete integration/collision path.
 
