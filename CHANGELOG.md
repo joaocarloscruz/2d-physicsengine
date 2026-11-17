@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- CCD sweeps only the pairs whose bounds over the step overlap, instead of
+  every pair with a CCD body on every impact: a 150-body pile hit by 60 CCD
+  bullets of mixed shapes takes 2.2 ms per step instead of 30 ms. Results are
+  unchanged bit for bit.
+- Documented the joint mass-ratio limit and redundant joints (see
+  [joints](docs/joints-and-sleeping.md)).
+
 ## 1.0.0
 
 The first release considered complete for its documented scope: a 2D rigid-body
