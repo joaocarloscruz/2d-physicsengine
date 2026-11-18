@@ -575,6 +575,14 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
         auto islands = buildIslands(constraints);
         statistics.islandCount = static_cast<std::uint32_t>(islands.size());
         statistics.solverIterationCount = integratedPlan ? 0 : simulationConfig.solverIterations;
+        // Static bodies, which position correction must not push others into
+        // (sweepLegacyCorrections), and the poses each island is corrected from.
+        std::vector<std::size_t> statics;
+        if (!strategy)
+            for (std::size_t i = 0; i < bodies.size(); ++i)
+                if (bodies[i]->IsStatic() && !bodies[i]->IsSensor()) statics.push_back(i);
+        std::vector<Vector2> fromPositions;
+        std::vector<float> fromAngles;
         for (auto& island : islands) {
             wakeIsland(island);
             if (!island.bodies.front()->IsAwake()) {
@@ -605,6 +613,15 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             // Joint and contact impulses may pass the limits applied when
             // velocities integrated; the next step moves bodies with these.
             for (auto* body : island.bodies) ReapplyVelocityLimits(*body, simulationConfig);
+            const bool guard = !alreadySolved && !statics.empty();
+            if (guard) {
+                fromPositions.resize(island.bodies.size());
+                fromAngles.resize(island.bodies.size());
+                for (std::size_t n = 0; n < island.bodies.size(); ++n) {
+                    fromPositions[n] = island.bodies[n]->position;
+                    fromAngles[n] = island.bodies[n]->orientation;
+                }
+            }
             // Experimental integration strategies own their displacement.
             if (!alreadySolved && deltaTime > 0 && !strategy && simulationConfig.enableFrictionDisplacementCorrection)
                 ApplyContactDisplacement(island.contacts, integratedConstraint, deltaTime, ccdImpacted);
@@ -618,6 +635,7 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
                         simulationConfig.maxPositionCorrection) && solved;
                 if (solved) break;
             }
+            if (guard) sweepLegacyCorrections(island, fromPositions, fromAngles, statics);
             if (simulationConfig.enableSleeping && deltaTime > 0) {
                 bool canSleep = std::none_of(island.joints.begin(), island.joints.end(),
                     [](const JointPtr& joint) { return joint->preventsSleeping(); });
@@ -1887,6 +1905,79 @@ void World::sweepCcdCorrections(float deltaTime) {
         body->position = hit ? from[i] + correction*earliest : corrected;
         body->orientation = !hit || turn == 0 ? correctedAngle
             : std::remainder(static_cast<float>(fromAngles[i] + turn * earliest), 6.283185307179586f);
+    }
+}
+
+void World::sweepLegacyCorrections(const Island& island, const std::vector<Vector2>& fromPositions,
+    const std::vector<float>& fromAngles, const std::vector<std::size_t>& statics) {
+    // The legacy order detects contacts once, after integrating positions,
+    // and corrects positions on those contacts alone, each by up to
+    // maxPositionCorrection per iteration. A light body squeezed by heavier
+    // ones is moved by all of their contacts and could be pushed into, and
+    // through, a static body that it was not touching when contacts were
+    // detected, since that body is not in the solve. Each moved body sweeps
+    // its correction against the static bodies it has no contact with and
+    // stops where it would first enter one, as sweepCcdCorrections does for
+    // CCD bodies; corrections that separate or slide pass unchanged. A static
+    // body it already touches has a contact row in the solve and is left to it.
+    if (statics.empty()) return;
+    const float touchTolerance = std::max(0.25f * simulationConfig.penetrationSlop, 1e-6f);
+    const double target = 0.5 * touchTolerance, tolerance = 0.25 * touchTolerance;
+    std::vector<const RigidBody*> touching;
+    for (std::size_t n = 0; n < island.bodies.size(); ++n) {
+        RigidBody& body = *island.bodies[n];
+        const Vector2 correction = body.position - fromPositions[n];
+        const double turn = body.shape->type == ShapeType::CIRCLE
+            ? 0.0 : std::remainder(double(body.orientation) - fromAngles[n], kTwoPi);
+        if (correction.x == 0 && correction.y == 0 && turn == 0) continue;
+        Detail::CcdProxy proxy;
+        if (!Detail::MakeCcdProxy(*body.shape, proxy)) continue;
+        touching.clear();
+        for (const ContactConstraint* c : island.contacts) {
+            if (c->bodyA == &body && c->bodyB->IsStatic()) touching.push_back(c->bodyB);
+            if (c->bodyB == &body && c->bodyA->IsStatic()) touching.push_back(c->bodyA);
+        }
+        // The body's bounding circle over the path of its origin.
+        const double reach = proxy.reach + proxy.radius + 2.0 * touchTolerance;
+        const double lowX = std::min<double>(fromPositions[n].x, body.position.x) - reach;
+        const double highX = std::max<double>(fromPositions[n].x, body.position.x) + reach;
+        const double lowY = std::min<double>(fromPositions[n].y, body.position.y) - reach;
+        const double highY = std::max<double>(fromPositions[n].y, body.position.y) + reach;
+        const Detail::CcdMotion motion{{fromPositions[n].x, fromPositions[n].y, double(fromAngles[n])},
+                                       correction.x, correction.y, turn};
+        bool hit = false;
+        double earliest = 1;
+        for (const std::size_t j : statics) {
+            const RigidBody* other = bodies[j].get();
+            if (std::find(touching.begin(), touching.end(), other) != touching.end()) continue;
+            const AABB box = other->GetAABB();
+            if (box.max.x < lowX || box.min.x > highX || box.max.y < lowY || box.min.y > highY) continue;
+            if (!pairCollides({bodies[j], bodies[bodyIndex(&body)]})) continue;
+            Detail::CcdProxy wall;
+            if (!Detail::MakeCcdProxy(*other->shape, wall)) continue;
+            const Detail::CcdMotion still{{other->position.x, other->position.y, double(other->orientation)}, 0, 0, 0};
+            const Detail::CcdSeparation now = Detail::ComputeSeparation(proxy, motion.pose, wall, still.pose);
+            double goal = target;
+            if (now.distance <= touchTolerance) {
+                // Within the touching band but not detected as a contact.
+                if (Detail::ClosingSpeed(now, motion, motion.pose, still, still.pose) < -1e-6) {
+                    hit = true;
+                    earliest = 0;
+                    continue;
+                }
+                goal = TouchingGoal(now.distance, touchTolerance);
+            }
+            const auto toi = Detail::TimeOfImpact(proxy, motion, wall, still, 1.0, goal, tolerance);
+            if (toi.state == Detail::CcdToi::State::Separated) continue;
+            if (toi.time < earliest) {
+                hit = true;
+                earliest = toi.time;
+            }
+        }
+        if (!hit) continue;
+        body.position = fromPositions[n] + correction * static_cast<float>(earliest);
+        if (turn != 0)
+            body.orientation = std::remainder(static_cast<float>(fromAngles[n] + turn * earliest), 6.283185307179586f);
     }
 }
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- In the legacy step order, position correction no longer pushes a body into
+  a static body it was not touching. Contacts there are detected once, after
+  integration, so a light body squeezed by a heavy one could be corrected
+  into, and through, a floor that was not yet in the solve: a ball under a
+  box 100 times as heavy, overlapping it by 0.5 m, ended below a 20 cm floor.
+  Each corrected body is now swept against the static bodies it has no
+  contact with and stops where it would enter one. The default order is
+  unchanged bit for bit.
 - `SimulationConfig::enableJointSubsteps` (off by default) lets groups whose
   joints are all distance or revolute joints take the soft substep path:
   soft joint rows toward the position error at the current poses

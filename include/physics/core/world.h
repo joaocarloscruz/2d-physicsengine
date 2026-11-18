@@ -131,6 +131,11 @@ private:
     // Sweeps each body's correction from its advanceCcd pose and stops it at a
     // static body it would otherwise be moved into (CCD pairs only).
     void sweepCcdCorrections(float deltaTime);
+    // Legacy order: cuts each island body's position correction (since the
+    // given poses) where it would first enter a static body that it had no
+    // contact with this step.
+    void sweepLegacyCorrections(const Island& island, const std::vector<Vector2>& fromPositions,
+        const std::vector<float>& fromAngles, const std::vector<std::size_t>& statics);
     void endContacts(std::uint64_t bodyId);
     std::unordered_map<ContactKey, PendingEvent, ContactKeyHash> contactEvents;
     std::vector<PendingEvent> pendingEvents;

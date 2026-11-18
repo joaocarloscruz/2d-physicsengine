@@ -316,6 +316,7 @@ elseif(BUILD_TESTING)
         ${TESTS_SRC_DIR}/test_ccd_driven.cpp
         ${TESTS_SRC_DIR}/test_ccd_shapes.cpp
         ${TESTS_SRC_DIR}/test_ccd_corrections.cpp
+        ${TESTS_SRC_DIR}/test_legacy_corrections.cpp
         ${TESTS_SRC_DIR}/test_speculative_contacts.cpp
         ${TESTS_SRC_DIR}/test_concurrent_worlds.cpp
         ${TESTS_SRC_DIR}/test_rigid_contact_benchmark.cpp
