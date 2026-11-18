@@ -37,7 +37,21 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Run native tests
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: bash
+        # Job logs need a GitHub sign-in; annotations are public, so a
+        # failure's output is repeated there (one annotation per 60 lines).
+        run: |
+          set +e
+          ctest --test-dir build -C Release --output-on-failure 2>&1 | tee ctest.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            { grep -A12 "The following tests FAILED" ctest.log; grep -B4 -A10 "FAILED:" ctest.log; } | head -120 > failures.txt
+            split -l 60 failures.txt part.
+            for part in part.*; do
+              echo "::error title=ctest failure::$(sed -e 's/%/%25/g' -e 's/\r//g' "$part" | awk '{printf "%s%%0A", $0}')"
+            done
+          fi
+          exit "$status"
 
       - name: Verify installed package with external consumer
         shell: bash
