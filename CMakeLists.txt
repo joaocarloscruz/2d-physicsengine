@@ -14,6 +14,14 @@ set(TESTS_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Keep every multiply and add separately rounded. GCC fuses a*b+c into one
+# rounding (FMA) by default whenever the target CPU has FMA (for example
+# -march=x86-64-v3), which changes results between builds and breaks the exact
+# symmetric cancellations the tests check; the ubuntu-latest CI compiler did.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-ffp-contract=off)
+endif()
+
 # Emscripten links the engine into the generated WebAssembly module. Native
 # consumers continue to receive the shared library used by the visualizer.
 if(EMSCRIPTEN)
