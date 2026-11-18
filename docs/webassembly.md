@@ -1011,6 +1011,7 @@ returned by `getSimulationConfig`. Use that complete object when changing fields
 It holds every native `SimulationConfig` field: besides the timestep, solver,
 velocity-limit, sleeping and CCD fields it carries `solverSubsteps` (integer,
 1 to 64), `contactHertz`, `contactDampingRatio`, `contactPushSpeed`,
+`enableJointSubsteps`, `jointHertz`, `jointDampingRatio`,
 `enableSpeculativeContacts` and `enableFrictionDisplacementCorrection`
 (see [simulation configuration](simulation-configuration.md)). All integer
 fields, including `solverSubsteps`, reject fractional, non-finite and

@@ -70,6 +70,13 @@ substep rate, so 60 Hz needs a 60 Hz step with 4 substeps. `contactDampingRatio`
 3 m/s) caps the speed at which overlap is pushed out. See
 [contact solver](contact-solver.md#substepped-soft-contacts).
 
+`enableJointSubsteps` (default false) lets groups whose joints are all
+distance or revolute joints take the substeps too, with soft joints of
+stiffness `jointHertz` (positive, default 60, capped at half the substep rate)
+and damping `jointDampingRatio` (non-negative, default 2). It holds jointed
+mass ratios up to about 1:100; see
+[joints](joints-and-sleeping.md).
+
 Contacts slower than the restitution velocity threshold are solved without a
 bounce, which prevents resting contacts from injecting energy. Velocity
 components at or below the velocity tolerance are treated as settled. Maximum
@@ -78,7 +85,8 @@ position correction caps the distance repaired by one position iteration.
 The same value object is available through WebAssembly using
 `engine.getSimulationConfig()` and `engine.setSimulationConfig(config)`. It
 carries every native field, including `solverSubsteps`, `contactHertz`,
-`contactDampingRatio`, `contactPushSpeed`, `enableSpeculativeContacts` and
+`contactDampingRatio`, `contactPushSpeed`, `enableJointSubsteps`,
+`jointHertz`, `jointDampingRatio`, `enableSpeculativeContacts` and
 `enableFrictionDisplacementCorrection`. `setSimulationConfig` needs all fields,
 so start from the object `getSimulationConfig()` returns. The integer fields
 (`maxSubstepsPerAdvance`, `solverIterations`, `maximumCcdImpacts`,

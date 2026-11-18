@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `SimulationConfig::enableJointSubsteps` (off by default) lets groups whose
+  joints are all distance or revolute joints take the soft substep path:
+  soft joint rows toward the position error at the current poses
+  (`jointHertz`, default 60; `jointDampingRatio`, default 2), warm-started
+  every substep, plus a rigid relax. A 10-link chain holding a 100x heavier
+  box stretches 0.14 m instead of 0.53 m and jitters at 0.12 m/s instead of
+  2.3 m/s. Motors, limits, springs and torque caps work per substep. With the
+  option off every result is unchanged bit for bit. The fields are bound in
+  the WebAssembly `SimulationConfig` value object.
 - CCD sweeps only the pairs whose bounds over the step overlap, instead of
   every pair with a CCD body on every impact: a 150-body pile hit by 60 CCD
   bullets of mixed shapes takes 2.2 ms per step instead of 30 ms. Results are

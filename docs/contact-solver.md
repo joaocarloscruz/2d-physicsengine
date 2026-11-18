@@ -42,8 +42,8 @@ in the Box2D order with speculative contacts:
    persistent contact count also come from this end-of-step detection, with
    pairs within `0.25 * penetrationSlop` counted as touching.
 
-Steps 3 and 4 run as described for groups with joints and for groups that
-take the rigid solve. Other groups of contacts take substeps instead; see
+Steps 3 and 4 run as described for groups with joints (unless
+`enableJointSubsteps` is on) and for groups that take the rigid solve. Other groups of contacts take substeps instead; see
 [substepped soft contacts](#substepped-soft-contacts).
 
 Islands for sleeping and waking only follow touching contacts. A speculative
@@ -140,7 +140,14 @@ sag from each contact's cached impulse and sends the whole group to the rigid
 single pass once it exceeds 1.25 times `min(penetrationSlop, 1% of the smaller
 body's size)`, back below 0.75 times (the choice is cached per contact).
 Groups with joints also take the single pass, so joint motors and limits keep
-their one-solve-per-step semantics. Cached impulses record the substep count
+their one-solve-per-step semantics, unless `enableJointSubsteps` is on and all
+of the group's joints are distance or revolute joints. Those groups substep
+too: each substep warm-starts the joints before the contacts, solves them
+first in each iteration as soft rows (`jointHertz`, capped at half the substep
+rate, and `jointDampingRatio`) toward the position error at the current poses,
+and relaxes them rigidly before the contacts. The position pass afterwards
+leaves up to `0.5 * penetrationSlop` of joint separation to the soft rows.
+Joint impulses are rescaled when a group changes path, like the contacts'. Cached impulses record the substep count
 they were solved with and are rescaled when a contact changes path.
 
 `solverSubsteps = 1` takes the single pass everywhere and reproduces the

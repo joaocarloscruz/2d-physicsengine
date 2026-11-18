@@ -23,8 +23,29 @@ Bodies joined by a joint do not collide with each other unless
 overlap at their shared anchor, and those contacts would fight the joint. The
 tests include analytical momentum transfer and 3,000-step pendulums.
 
-Keep the mass ratio of jointed bodies under about 1:10 where you can, and put at
-most one joint on a pair (a `WeldJoint` locks a pair completely). Two joints
+Keep the mass ratio of jointed bodies under about 1:10 where you can with the
+default rigid joint solve. Past that the single velocity solve cannot pass a
+heavy load up a light chain: a 10-link chain of capsules holding a box 100
+times as heavy as one link stretches 0.53 m (18% of its 3 m length) and
+jitters at 2.3 m/s, never coming to rest. `SimulationConfig::enableJointSubsteps`
+(off by default) moves groups whose joints are all distance or revolute joints
+onto the soft substep path the contacts use: each substep warm-starts the
+joints, solves them as soft constraints toward their position error at the
+current poses (`jointHertz`, default 60, capped at half the substep rate;
+`jointDampingRatio`, default 2), and relaxes them rigidly. The same chain then
+stretches 0.14 m and jitters at 0.12 m/s; a 1:100 light link between a heavy
+box and a static anchor separates at most 2.0 cm instead of 3.6 cm, and a 1:20
+ragdoll still settles. Up to about 1:100 the substepped joints stay connected
+to a few centimeters, so treat 1:100 as their practical limit. Under load a
+soft joint sags: a 1:1 chain hangs with up to `0.5 * penetrationSlop` (2.5 mm)
+of anchor separation, which the position pass leaves alone so that the chain
+comes to rest. Groups with a prismatic, weld, wheel or mouse joint keep the
+rigid solve even when the option is on. With substeps the motor cap applies
+per substep (`maxTorque * dt / solverSubsteps`) and `getMotorTorque()` reports
+the last substep's average. 1:1 swinging chains separate slightly more with the
+option (4.6 mm instead of 4.2 mm), which is why it is off by default.
+
+Put at most one joint on a pair (a `WeldJoint` locks a pair completely). Two joints
 on one pair can ask for the same thing twice (a revolute and a prismatic joint
 both fix the relative rotation), which an iterative solver cannot satisfy
 exactly. Both step orders solve joint velocities before contact velocities in
