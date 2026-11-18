@@ -1793,7 +1793,17 @@ void World::sweepCcdCorrections(float deltaTime) {
     // correction (translation and, except for a circle, rotation) against
     // the static bodies of its CCD pairs and stops at the first one it would
     // enter, as advanceCcd does; corrections that only separate or slide
-    // along a surface pass unchanged.
+    // along a surface pass unchanged. A CCD body also sweeps against the
+    // moving (non-static) bodies it collides with, each held at the pose it
+    // ends this pass in: its corrected pose, or its cut pose if it was swept
+    // already (bodies go in index order, so the later of two CCD bodies sees
+    // the earlier one's end pose). That is the conservative choice: the
+    // target is taken to be at its end pose for the whole correction, so the
+    // CCD body can neither end overlapping it nor cross it, while sweeping
+    // against the target's own path would need both bodies cut together,
+    // which also drops the target's corrections (its joints, its contacts)
+    // for a body that did not ask for CCD. Only a CCD body's own correction
+    // is cut.
     if (!scratch || deltaTime <= 0) return;
     const auto& from = scratch->ccdPositions;
     const auto& fromAngles = scratch->ccdAngles;
@@ -1824,11 +1834,25 @@ void World::sweepCcdCorrections(float deltaTime) {
         if (turn != 0) body->orientation = fromAngles[i];
         for (std::size_t j = 0; j < bodies.size(); ++j) {
             const auto& other = bodies[j];
-            if (!other->IsStatic() || !sweepable[j] || (!body->IsCcdEnabled() && !other->IsCcdEnabled())
-                || !pairCollides({body, other})) continue;
+            if (j == i || !sweepable[j] || (!other->IsStatic() && !body->IsCcdEnabled())
+                || (!body->IsCcdEnabled() && !other->IsCcdEnabled())) continue;
+            if (!other->IsStatic()) {
+                // Skip a body the correction cannot reach: its bounding
+                // circle against this body's, over the path of the origin,
+                // plus the margin of the touching band.
+                const double r = proxies[i].reach + proxies[i].radius + proxies[j].reach + proxies[j].radius;
+                const double lowX = std::min<double>(from[i].x, corrected.x), highX = std::max<double>(from[i].x, corrected.x);
+                const double lowY = std::min<double>(from[i].y, corrected.y), highY = std::max<double>(from[i].y, corrected.y);
+                const double scale = std::max({std::abs(lowX), std::abs(lowY), std::abs(highX), std::abs(highY),
+                                               std::abs(double(other->position.x)), std::abs(double(other->position.y))});
+                const double margin = r + 2.0 * touchTolerance + 1e-5 * (1.0 + scale);
+                if (other->position.x < lowX - margin || other->position.x > highX + margin
+                    || other->position.y < lowY - margin || other->position.y > highY + margin) continue;
+            }
+            if (!pairCollides({body, other})) continue;
             if (HasCircle(*body, *other) && turn == 0) {
                 const SweepHit sweep = SweepPair(*body, correction, *other, {});
-                // Same approach test as advanceCcd, with the static body at rest.
+                // Same approach test as advanceCcd, with the target at rest.
                 if (sweep.hit && (motion*-1.0f).dot(sweep.normal) < -1e-6f && sweep.fraction < earliest) {
                     hit = true;
                     earliest = sweep.fraction;

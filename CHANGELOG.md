@@ -11,6 +11,13 @@
   2.3 m/s. Motors, limits, springs and torque caps work per substep. With the
   option off every result is unchanged bit for bit. The fields are bound in
   the WebAssembly `SimulationConfig` value object.
+- CCD now sweeps position corrections (joint and contact position solves)
+  against moving bodies as well as static ones. A joint pulling a thin CCD
+  body toward a thin dynamic plank carried it through the plank in one step,
+  since only static targets were swept; now a CCD body's correction is also
+  cut at contact with any body it collides with, each target held at the pose
+  it ends the step in (a target without CCD keeps its whole correction).
+  Scenes without CCD bodies are unchanged bit for bit.
 - CCD sweeps only the pairs whose bounds over the step overlap, instead of
   every pair with a CCD body on every impact: a 150-body pile hit by 60 CCD
   bullets of mixed shapes takes 2.2 ms per step instead of 30 ms. Results are

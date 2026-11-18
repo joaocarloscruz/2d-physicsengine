@@ -157,7 +157,6 @@ round, for example): it may sink to an overlap of the touching tolerance, or,
 if it is already deeper, by half of the touching tolerance, before CCD acts
 (after an impulse, no further than the set depth, or half the touching
 tolerance past it when it is already there, where closing freezes it).
-Corrections between two moving bodies (below) are not swept.
 
 The world outline of a polygon is its validated local outline rotated and
 translated in float, which can turn a strictly convex corner by an ulp or make
@@ -175,13 +174,29 @@ inside the limits is never changed by the second application.
 Position correction (joint and contact position solves, and the legacy
 friction displacement) runs after the sweep, so it is swept separately: each
 body's correction (its translation and, for a polygon or capsule, its rotation)
-starts from its swept pose and stops at the first static body of a CCD pair it
-would move into, with the same two methods. A correction that separates from or
+starts from its swept pose and stops at the first body of a CCD pair it would
+move into, with the same two methods. A correction that separates from or
 slides along a surface is kept whole; one that would enter a static body is cut
 at contact (dropped entirely when the body already touches it and closes on
 it), so a joint pulling a CCD body toward a body beyond a wall leaves it against
-the wall. This second sweep covers static targets only; corrections between two
-moving bodies are not swept.
+the wall.
+
+A CCD body's correction is swept against the moving (non-static) bodies it
+collides with in the same way, with each target held at the pose it ends the
+pass in: its corrected pose, or its cut pose when it is a CCD body already
+swept (bodies go in index order, so the later of two CCD bodies sees the
+earlier one's end pose). Taking the target to stand at its end pose for the
+whole correction is the conservative choice: the CCD body can neither end
+overlapping the target nor cross its end pose, whichever way the target's own
+correction moves it. Sweeping against the target's own path instead would
+have to cut both bodies at the first contact, which drops the target's
+corrections (its joints, its contacts) for a body that did not ask for CCD,
+and changed the outcome of the destructible wall example (a CCD ball into a
+wall of welded boxes). So only a CCD body's own correction is ever cut, a
+target without CCD keeps its whole correction, and the pair is not swept for
+the target's sake (a non-CCD body pulled into a CCD body is the application's
+choice not to protect). Targets that the correction cannot reach (by bounding
+circles) are skipped without a sweep.
 
 In the speculative step order a pair that CCD sweeps gets only the fixed
 speculative allowance of `4 * penetrationSlop`; that now applies to every CCD
