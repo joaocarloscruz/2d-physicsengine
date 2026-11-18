@@ -19,6 +19,11 @@
   2.3 m/s. Motors, limits, springs and torque caps work per substep. With the
   option off every result is unchanged bit for bit. The fields are bound in
   the WebAssembly `SimulationConfig` value object.
+- A CCD circle whose spin an impact changes (friction at the contact) now ends
+  the step at the orientation that spin implies: the old spin up to the impact
+  and the new one after it, as its position already did. It used to keep
+  turning at the pre-impact spin for the whole step. Circles whose spin an
+  impact leaves alone are unchanged.
 - CCD now sweeps position corrections (joint and contact position solves)
   against moving bodies as well as static ones. A joint pulling a thin CCD
   body toward a thin dynamic plank carried it through the plank in one step,

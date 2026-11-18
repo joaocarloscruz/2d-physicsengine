@@ -114,10 +114,17 @@ brute-force sub-stepping of 1000 random pairs moving at up to 200 m/s and
 30 rad/s it took 2.5 distance evaluations on average (at most 8) with the
 World's target, and its impact time was never after the target crossing.
 
-A circle's orientation does not change its outline, so CCD leaves it as
-integrated. A turning polygon or capsule that takes no impact ends the step at
-its integrated orientation exactly; one that takes an impact continues from its
-orientation at the impact with its new angular velocity.
+A circle's orientation does not change its outline, so CCD never sweeps it
+and its spin is not part of the pair tests. A circle that takes no impact, or
+whose impact leaves its angular velocity unchanged, ends the step at its
+integrated orientation exactly. One whose angular velocity an impact changes
+(friction at the contact, say) ends at the angle its old spin gave it up to
+the impact plus the new spin's over the rest of the step, as its position
+already follows the new velocity. A turning polygon or capsule that takes no
+impact ends the step at its integrated orientation exactly; one that takes an
+impact continues from its orientation at the impact with its new angular
+velocity. A body frozen in place keeps its spin (a circle) or stops turning (a
+polygon or capsule), as before.
 
 The approach test uses the centres' motion for the exact sweeps and the
 velocity of the closest points, rotation included, for the others.

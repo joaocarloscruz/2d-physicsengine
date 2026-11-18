@@ -1451,14 +1451,19 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
     // here so that the recording itself cannot throw.
     scratch->ccdPositions.resize(count);
     scratch->ccdAngles.resize(count);
-    // Rotation over the rest of the step. A circle's orientation does not
-    // change its outline and is left as integrated. Another body that turns
-    // this step is swept from its start orientation (turning); unless an
-    // impact or a freeze changes its spin, it ends at its integrated
-    // orientation exactly.
+    // Rotation over the rest of the step. A body that turns this step is
+    // swept from its start orientation (turning); unless an impact or a
+    // freeze changes its spin, it ends at its integrated orientation exactly.
+    // A circle's orientation does not change its outline, so it is never
+    // swept (its spin stays 0 here and the exact circle sweeps apply). It
+    // only tracks the angle its spin has reached (rollAngle): an impact that
+    // changes the spin leaves it at the old spin's angle up to the impact
+    // plus the new spin's after it.
     std::vector<double> spin(count, 0.0), angle(count, 0.0);
     std::vector<float> endAngle(count, 0.0f);
     std::vector<char> turning(count, 0), changed(count, 0);
+    std::vector<double> rollSpin(count, 0.0), rollAngle(count, 0.0);
+    std::vector<char> rolling(count, 0), rollChanged(count, 0);
     // Likewise a body whose motion no impact or freeze changed ends a
     // completed sweep at its integrated position exactly, rather than at the
     // sum of the pieces it was advanced by.
@@ -1469,7 +1474,9 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
         World& world;
         const std::vector<char>& turning;
         const std::vector<char>& changed;
+        const std::vector<char>& rollChanged;
         const std::vector<double>& angle;
+        const std::vector<double>& rollAngle;
         const std::vector<float>& endAngle;
         const std::vector<Vector2>& endPosition;
         const std::vector<char>& moved;
@@ -1479,12 +1486,14 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
                 if (turning[i])
                     world.bodies[i]->orientation = changed[i]
                         ? std::remainder(static_cast<float>(angle[i]), 6.283185307179586f) : endAngle[i];
+                else if (rollChanged[i])
+                    world.bodies[i]->orientation = std::remainder(static_cast<float>(rollAngle[i]), 6.283185307179586f);
                 if (complete && !moved[i]) world.bodies[i]->position = endPosition[i];
                 world.scratch->ccdPositions[i] = world.bodies[i]->position;
                 world.scratch->ccdAngles[i] = world.bodies[i]->orientation;
             }
         }
-    } record{*this, turning, changed, angle, endAngle, endPosition, moved, complete};
+    } record{*this, turning, changed, rollChanged, angle, rollAngle, endAngle, endPosition, moved, complete};
     auto& proxies = scratch->ccdProxies;
     auto& sweepable = scratch->ccdSweepable;
     proxies.resize(count);
@@ -1496,11 +1505,16 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
         motion[i] = (body.position-starts[i])/deltaTime;
         endPosition[i] = body.position;
         body.position = starts[i];
-        if (body.shape->type == ShapeType::CIRCLE) continue;
         // The integrated turn, on the branch nearest angularVelocity * dt.
         double turn = std::remainder(double(body.orientation) - startAngles[i], kTwoPi);
         turn += kTwoPi * std::round((double(body.angularVelocity) * deltaTime - turn) / kTwoPi);
         if (turn == 0 || !std::isfinite(turn)) continue;
+        if (body.shape->type == ShapeType::CIRCLE) {
+            rolling[i] = 1;
+            rollSpin[i] = turn / deltaTime;
+            rollAngle[i] = startAngles[i];
+            continue;
+        }
         turning[i] = 1;
         spin[i] = turn / deltaTime;
         angle[i] = startAngles[i];
@@ -1720,6 +1734,7 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
                 angle[i] += spin[i] * advance;
                 bodies[i]->orientation = static_cast<float>(angle[i]);
             }
+            if (rolling[i]) rollAngle[i] += rollSpin[i] * advance;
         }
         remaining -= advance;
         if (!found) { complete = true; return impacts; }
@@ -1770,6 +1785,7 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
             }
         }
         bodyA->Wake(); bodyB->Wake();
+        const float spinBefore[2] = {bodyA->angularVelocity, bodyB->angularVelocity};
         ContactImpulseCache cache;
         auto constraint = CollisionResolver::PrepareConstraint(manifold, cache, simulationConfig, true);
         for (int i=0; i<simulationConfig.solverIterations; ++i)
@@ -1785,7 +1801,20 @@ std::vector<CollisionManifold> World::advanceCcd(float deltaTime, SimulationStat
             moved[k] = 1;
             // A frozen body's new velocity waits for the next step.
             motion[k] = body.IsStatic() || frozen[k] ? Vector2{} : body.velocity;
-            if (body.IsStatic() || frozen[k] || body.shape->type == ShapeType::CIRCLE) continue;
+            if (body.IsStatic() || frozen[k]) continue;
+            if (body.shape->type == ShapeType::CIRCLE) {
+                // Only a changed spin changes the orientation, so that a
+                // circle whose spin the impact leaves alone ends exactly at
+                // its integrated orientation.
+                if (body.angularVelocity == spinBefore[k == hitA ? 0 : 1]) continue;
+                if (!rolling[k]) {
+                    rolling[k] = 1;
+                    rollAngle[k] = body.orientation;
+                }
+                rollSpin[k] = body.angularVelocity;
+                rollChanged[k] = 1;
+                continue;
+            }
             if (!turning[k]) {
                 if (body.angularVelocity == 0) continue;
                 turning[k] = 1;
