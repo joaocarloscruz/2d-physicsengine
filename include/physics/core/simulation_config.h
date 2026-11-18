@@ -51,6 +51,16 @@ struct SimulationConfig {
     float contactDampingRatio = 2.0f;
     // Fastest speed (m/s) at which a substep pushes overlapping bodies apart.
     float contactPushSpeed = 3.0f;
+    // Speculative order only. Lets groups with distance and revolute joints
+    // take the soft substep path too: each substep warm-starts the joints,
+    // solves them as soft constraints toward their position error at the
+    // current poses, and relaxes them rigidly. Groups with any other joint
+    // type, and every group when false, keep the single rigid solve.
+    bool enableJointSubsteps = false;
+    // Soft joint stiffness, capped at half of the substep rate, and its
+    // damping ratio.
+    float jointHertz = 60.0f;
+    float jointDampingRatio = 2.0f;
 
     void Validate() const;
 };

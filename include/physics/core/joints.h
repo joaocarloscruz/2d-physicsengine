@@ -26,9 +26,36 @@ protected:
     virtual void warmStart(float factor) { (void)factor; }
     virtual void solveVelocity() = 0;
     virtual bool solvePosition(float tolerance, float maxCorrection) = 0;
+    // Soft substep solve (SimulationConfig::enableJointSubsteps). Box2D v3's
+    // soft row: lambda = -massScale * M * (Cdot + biasRate * C)
+    // - impulseScale * accumulated.
+    struct SubstepSoftness {
+        double biasRate = 0, massScale = 1, impulseScale = 0;
+    };
+    virtual bool supportsSubsteps() const { return false; }
+    // Puts the accumulated impulses on the scale of `substeps` solves per
+    // step (1 is the rigid single solve) and, when substepping, makes the
+    // motor caps, springs and stops use the substep duration.
+    void matchSubsteps(int substeps, float substepDuration);
+    // With useBias, soft rows toward the position error at the current poses;
+    // without, the rigid relax (no push toward the error).
+    virtual void solveSubstep(const SubstepSoftness &softness, bool useBias) {
+        (void)softness;
+        (void)useBias;
+        solveVelocity();
+    }
+    // Position projection after a substepped step: separation within the
+    // allowance is left to the soft rows.
+    virtual bool solveSubstepPosition(float allowance, float tolerance, float maxCorrection) {
+        (void)allowance;
+        return solvePosition(tolerance, maxCorrection);
+    }
+    virtual void scaleImpulses(double factor) { (void)factor; }
+    virtual void setSubstepDuration(float duration) { (void)duration; }
     RigidBodyPtr a, b;
     Vector2 localA, localB;
     bool collideConnected = false;
+    int impulseSubsteps = 1;
 };
 using JointPtr = std::shared_ptr<IJoint>;
 
@@ -56,7 +83,13 @@ protected:
     void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
+    bool supportsSubsteps() const override { return true; }
+    void solveSubstep(const SubstepSoftness &softness, bool useBias) override;
+    void scaleImpulses(double factor) override;
+    void setSubstepDuration(float duration) override { stepDuration = duration; }
+    bool solveSubstepPosition(float allowance, float tolerance, float maxCorrection) override;
 private:
+    bool projectPosition(float tolerance, float maxCorrection, float allowance);
     bool rigid() const { return springFrequency == 0 && minLength == maxLength; }
     float length;
     bool warmStartable = false;
@@ -91,7 +124,13 @@ protected:
     void warmStart(float factor) override;
     void solveVelocity() override;
     bool solvePosition(float tolerance, float maxCorrection) override;
+    bool supportsSubsteps() const override { return true; }
+    void solveSubstep(const SubstepSoftness &softness, bool useBias) override;
+    void scaleImpulses(double factor) override;
+    void setSubstepDuration(float duration) override { stepDuration = duration; }
+    bool solveSubstepPosition(float allowance, float tolerance, float maxCorrection) override;
 private:
+    bool projectPosition(float tolerance, float maxCorrection, float allowance);
     bool motorEnabled = false;
     float motorSpeed = 0;
     float maxMotorTorque = 0;

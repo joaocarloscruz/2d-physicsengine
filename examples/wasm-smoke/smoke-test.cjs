@@ -143,6 +143,9 @@ function testSimulationConfig(physics) {
     assert.equal(defaults.contactHertz, 60);
     assert.equal(defaults.contactDampingRatio, 2);
     assert.equal(defaults.contactPushSpeed, 3);
+    assert.equal(defaults.enableJointSubsteps, false);
+    assert.equal(defaults.jointHertz, 60);
+    assert.equal(defaults.jointDampingRatio, 2);
     assert.equal(defaults.enableSpeculativeContacts, true);
     assert.equal(defaults.enableFrictionDisplacementCorrection, false);
     assert.equal(defaults.enableSleeping, false);
@@ -150,6 +153,7 @@ function testSimulationConfig(physics) {
 
     const changed = {
         solverSubsteps: 7, contactHertz: 30.5, contactDampingRatio: 0, contactPushSpeed: 1.25,
+        enableJointSubsteps: true, jointHertz: 30.5, jointDampingRatio: 0,
         enableSpeculativeContacts: false, enableFrictionDisplacementCorrection: true,
     };
     for (const [key, value] of Object.entries(changed)) {
@@ -171,6 +175,8 @@ function testSimulationConfig(physics) {
         ["contactHertz", [NaN, Infinity, 0, -1]],
         ["contactDampingRatio", [-0.5, NaN, Infinity]],
         ["contactPushSpeed", [0, -1, NaN, Infinity]],
+        ["jointHertz", [NaN, Infinity, 0, -1]],
+        ["jointDampingRatio", [-0.5, NaN, Infinity]],
     ];
     for (const [key, values] of invalid)
         for (const value of values) {

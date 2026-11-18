@@ -149,7 +149,10 @@ EMSCRIPTEN_BINDINGS(physics_engine) {
         .field("solverSubsteps", &SimulationConfigInput::solverSubstepCount)
         .field("contactHertz", &SimulationConfig::contactHertz)
         .field("contactDampingRatio", &SimulationConfig::contactDampingRatio)
-        .field("contactPushSpeed", &SimulationConfig::contactPushSpeed);
+        .field("contactPushSpeed", &SimulationConfig::contactPushSpeed)
+        .field("enableJointSubsteps", &SimulationConfig::enableJointSubsteps)
+        .field("jointHertz", &SimulationConfig::jointHertz)
+        .field("jointDampingRatio", &SimulationConfig::jointDampingRatio);
 
     value_object<FixedStepResult>("FixedStepResult")
         .field("stepsPerformed", &FixedStepResult::stepsPerformed)

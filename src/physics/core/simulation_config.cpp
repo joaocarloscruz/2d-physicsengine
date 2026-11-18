@@ -70,6 +70,12 @@ void SimulationConfig::Validate() const {
     if (!std::isfinite(contactPushSpeed) || contactPushSpeed <= 0.0f) {
         throw std::invalid_argument("Contact push speed must be positive and finite.");
     }
+    if (!std::isfinite(jointHertz) || jointHertz <= 0.0f) {
+        throw std::invalid_argument("Joint hertz must be positive and finite.");
+    }
+    if (!std::isfinite(jointDampingRatio) || jointDampingRatio < 0.0f) {
+        throw std::invalid_argument("Joint damping ratio must be finite and non-negative.");
+    }
     if (enableLinearVelocityLimit
         && (!std::isfinite(maxLinearSpeed) || maxLinearSpeed <= 0.0f)) {
         throw std::invalid_argument(

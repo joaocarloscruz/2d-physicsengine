@@ -275,6 +275,14 @@ void IJoint::prepareStep(float deltaTime) {
     Validate(*b);
 }
 
+void IJoint::matchSubsteps(int substeps, float substepDuration) {
+    if (substeps != impulseSubsteps) {
+        scaleImpulses(double(impulseSubsteps) / substeps);
+        impulseSubsteps = substeps;
+    }
+    if (substeps > 1) setSubstepDuration(substepDuration);
+}
+
 DistanceJoint::DistanceJoint(RigidBodyPtr a, RigidBodyPtr b, float length, Vector2 la, Vector2 lb)
     : IJoint(std::move(a), std::move(b), la, lb), length(length), minLength(length),
       maxLength(length) {
@@ -372,6 +380,12 @@ void DistanceJoint::solveVelocity() {
     impulse = Checked(impulse + lambda);
 }
 bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
+    return projectPosition(tolerance, maxCorrection, 0);
+}
+bool DistanceJoint::solveSubstepPosition(float allowance, float tolerance, float maxCorrection) {
+    return projectPosition(tolerance, maxCorrection, allowance);
+}
+bool DistanceJoint::projectPosition(float tolerance, float maxCorrection, float allowance) {
     ValidateCorrection(tolerance, maxCorrection);
     if (!rigid()) {
         // The spring corrects itself; only a violated stop is projected.
@@ -387,12 +401,39 @@ bool DistanceJoint::solvePosition(float tolerance, float maxCorrection) {
         return std::abs(error) <= tolerance;
     }
     const Geometry g(*a, *b, localA, localB);
-    const double distance = std::hypot(g.delta.x, g.delta.y), error = distance - length;
+    const double distance = std::hypot(g.delta.x, g.delta.y);
+    double error = distance - length;
+    if (allowance > 0) error -= std::clamp(error, -double(allowance), double(allowance));
     const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
     const double k = InverseEffectiveMass(*a, *b, g.ra, g.rb, n);
     Apply(*a, *b, g.ra, g.rb,
           n * (-std::clamp(error, -double(maxCorrection), double(maxCorrection)) / k), true);
     return std::abs(error) <= tolerance;
+}
+
+void DistanceJoint::scaleImpulses(double factor) {
+    impulse *= factor;
+    springImpulse *= factor;
+    lowerImpulse *= factor;
+    upperImpulse *= factor;
+}
+void DistanceJoint::solveSubstep(const SubstepSoftness &soft, bool useBias) {
+    // The spring and the stops already use the substep duration.
+    if (!rigid()) {
+        solveVelocity();
+        return;
+    }
+    const Geometry g(*a, *b, localA, localB);
+    const double distance = std::hypot(g.delta.x, g.delta.y);
+    const D2 n = distance != 0 ? g.delta * (1 / distance) : D2{1, 0};
+    const double k = InverseEffectiveMass(*a, *b, g.ra, g.rb, n);
+    const double speed = (PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra)).dot(n);
+    const double lambda =
+        useBias ? Checked(-soft.massScale * (speed + soft.biasRate * (distance - length)) / k -
+                          soft.impulseScale * impulse)
+                : Checked(-speed / k);
+    Apply(*a, *b, g.ra, g.rb, n * lambda, false);
+    impulse = Checked(impulse + lambda);
 }
 
 RevoluteJoint::RevoluteJoint(RigidBodyPtr a, RigidBodyPtr b, Vector2 la, Vector2 lb)
@@ -498,10 +539,19 @@ void RevoluteJoint::solveVelocity() {
     accumulatePoint(impulse);
 }
 bool RevoluteJoint::solvePosition(float tolerance, float maxCorrection) {
+    return projectPosition(tolerance, maxCorrection, 0);
+}
+bool RevoluteJoint::solveSubstepPosition(float allowance, float tolerance, float maxCorrection) {
+    return projectPosition(tolerance, maxCorrection, allowance);
+}
+bool RevoluteJoint::projectPosition(float tolerance, float maxCorrection, float allowance) {
     ValidateCorrection(tolerance, maxCorrection);
     const Geometry g(*a, *b, localA, localB);
     D2 error = g.delta;
     const double distance = std::hypot(error.x, error.y);
+    // A soft joint keeps the separation inside the allowance (its sag under
+    // load); projecting it away would fight the next step's soft rows.
+    if (allowance > 0) error = distance > allowance ? error * (1 - allowance / distance) : D2{};
     if (distance > maxCorrection)
         error = error * (maxCorrection / distance);
     double angularError = 0;
@@ -519,5 +569,59 @@ bool RevoluteJoint::solvePosition(float tolerance, float maxCorrection) {
     }
     Apply(*a, *b, g.ra, g.rb, SolvePointMass(*a, *b, g.ra, g.rb, error * -1), true);
     return distance <= tolerance && std::abs(angularError) <= AngularTolerance;
+}
+void RevoluteJoint::scaleImpulses(double factor) {
+    motorImpulse *= factor;
+    lowerImpulse *= factor;
+    upperImpulse *= factor;
+    lockImpulse *= factor;
+    pointImpulseX *= factor;
+    pointImpulseY *= factor;
+}
+void RevoluteJoint::solveSubstep(const SubstepSoftness &soft, bool useBias) {
+    // The relax pass is the rigid solve; the motor, the stops' speculative
+    // gaps and the caps use the substep duration either way.
+    if (!useBias || stepDuration <= 0) {
+        solveVelocity();
+        return;
+    }
+    const Geometry g(*a, *b, localA, localB);
+    const auto accumulatePoint = [this](D2 impulse) {
+        pointImpulseX = Checked(pointImpulseX + impulse.x);
+        pointImpulseY = Checked(pointImpulseY + impulse.y);
+    };
+    const double angularMass = static_cast<double>(a->inverseInertia) + b->inverseInertia;
+    if (motorEnabled && angularMass > 0) {
+        const double cap = static_cast<double>(maxMotorTorque) * stepDuration;
+        accumulatePoint(SolveCoupledVelocity(*a, *b, g, motorSpeed, motorImpulse, -cap, cap));
+    }
+    if (limitsEnabled && angularMass > 0) {
+        const double angle = getAngle();
+        if (lowerLimit == upperLimit) {
+            const auto impulse =
+                SolveHingeVelocity(*a, *b, g.ra, g.rb, -soft.biasRate * (angle - lowerLimit));
+            Apply(*a, *b, g.ra, g.rb, impulse.linear, false, impulse.angular, &impulse.change);
+            accumulatePoint(impulse.linear);
+            lockImpulse = Checked(lockImpulse + impulse.angular);
+        } else {
+            // Speculative toward an open stop, a soft push out of a passed one.
+            const double lowerGap = angle - lowerLimit;
+            const double lowerBias =
+                lowerGap > 0 ? lowerGap / stepDuration : soft.biasRate * lowerGap;
+            accumulatePoint(SolveCoupledVelocity(*a, *b, g, -lowerBias, lowerImpulse, 0,
+                                                 std::numeric_limits<double>::infinity()));
+            const double upperGap = upperLimit - angle;
+            const double upperBias =
+                upperGap > 0 ? upperGap / stepDuration : soft.biasRate * upperGap;
+            accumulatePoint(SolveCoupledVelocity(*a, *b, g, upperBias, upperImpulse,
+                                                 -std::numeric_limits<double>::infinity(), 0));
+        }
+    }
+    // Soft point row toward the anchor separation at the current poses.
+    const D2 velocity = PointVelocity(*b, g.rb) - PointVelocity(*a, g.ra);
+    const D2 target = SolvePointMass(*a, *b, g.ra, g.rb, (velocity + g.delta * soft.biasRate) * -1);
+    const D2 impulse = target * soft.massScale - D2{pointImpulseX, pointImpulseY} * soft.impulseScale;
+    Apply(*a, *b, g.ra, g.rb, impulse, false);
+    accumulatePoint(impulse);
 }
 } // namespace PhysicsEngine

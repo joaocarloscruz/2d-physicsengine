@@ -967,7 +967,8 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     // pass) unless one of its contacts would sag past its tolerance under the
     // soft model (CollisionResolver::UpdateRigidSolve: small boxes, heavy
     // loads on a small slop). Those groups, groups with joints (which keep
-    // their one-solve-per-step semantics) and every group when
+    // their one-solve-per-step semantics unless enableJointSubsteps is on and
+    // every joint of the group has a substep solve) and every group when
     // solverSubsteps is 1 take the rigid single velocity solve.
     const int substeps = deltaTime > 0 ? config.solverSubsteps : 1;
     const double substep = dt / substeps;
@@ -976,6 +977,13 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         ? CollisionResolver::MakeSoftness(std::min(double(config.contactHertz), 0.25 / substep),
                                           config.contactDampingRatio, substep)
         : CollisionResolver::Softness{};
+    // Soft joints may be twice as stiff as contacts (Box2D v3's jointHertz).
+    IJoint::SubstepSoftness jointSoftness;
+    if (substeps > 1) {
+        const auto soft = CollisionResolver::MakeSoftness(std::min(double(config.jointHertz), 0.5 / substep),
+                                                          config.jointDampingRatio, substep);
+        jointSoftness = {soft.biasRate, soft.massScale, soft.impulseScale};
+    }
     std::vector<char> groupSubstepped(groups.size(), 0), substepped(bodies.size(), 0);
     // Each dynamic body's size bound for UpdateRigidSolve, computed on first use.
     std::vector<double> sizeLimits;
@@ -996,7 +1004,11 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
     };
     for (std::size_t g = 0; g < groups.size(); ++g) {
         auto& group = groups[g];
-        bool rigid = substeps <= 1 || !group.joints.empty() || group.contacts.empty();
+        const bool substepJoints = config.enableJointSubsteps
+            && std::all_of(group.joints.begin(), group.joints.end(),
+                           [](const JointPtr& joint) { return joint->supportsSubsteps(); });
+        bool rigid = substeps <= 1 || (!group.joints.empty() && !substepJoints)
+            || (group.contacts.empty() && group.joints.empty());
         for (auto* c : group.contacts)
             rigid = (chooseSolve && c->cache
                 ? CollisionResolver::UpdateRigidSolve(*c, softness, substeps, sizeLimit(c->bodyA), sizeLimit(c->bodyB))
@@ -1006,6 +1018,12 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
             CollisionResolver::MatchImpulseSubsteps(*c, rigid ? 1 : substeps);
             if (!rigid)
                 for (const RigidBody* body : {c->bodyA, c->bodyB})
+                    if (!body->IsStatic()) substepped[bodyIndex(body)] = 1;
+        }
+        for (const auto& joint : group.joints) {
+            joint->matchSubsteps(rigid ? 1 : substeps, float(substep));
+            if (!rigid)
+                for (const RigidBody* body : {joint->getBodyA().get(), joint->getBodyB().get()})
                     if (!body->IsStatic()) substepped[bodyIndex(body)] = 1;
         }
     }
@@ -1065,11 +1083,16 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
             for (std::size_t g = 0; g < groups.size(); ++g) {
                 if (!groupSubstepped[g]) continue;
                 const auto& contacts = groups[g].contacts;
+                const auto& joints = groups[g].joints;
+                // The warm-start factor decays the impulses once per step.
+                for (const auto& joint : joints) joint->warmStart(k == 0 ? config.warmStartFactor : 1.0f);
                 for (auto* c : contacts) CollisionResolver::WarmStartSubstep(*c);
-                for (int iter = 0; iter < iterations; ++iter)
+                for (int iter = 0; iter < iterations; ++iter) {
+                    for (const auto& joint : joints) joint->solveSubstep(jointSoftness, true);
                     for (auto* c : contacts)
                         CollisionResolver::SolveSubstep(*c, inverseSubstep, softness, config.contactPushSpeed,
                                                         true, true);
+                }
             }
             for (std::size_t i = 0; i < bodies.size(); ++i) {
                 if (!substepped[i]) continue;
@@ -1090,6 +1113,7 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
             const bool gapRows = k + 1 < substeps;
             for (std::size_t g = 0; g < groups.size(); ++g) {
                 if (!groupSubstepped[g]) continue;
+                for (const auto& joint : groups[g].joints) joint->solveSubstep(jointSoftness, false);
                 for (auto* c : groups[g].contacts)
                     CollisionResolver::SolveSubstep(*c, inverseSubstep, softness, config.contactPushSpeed,
                                                     false, gapRows);
@@ -1227,8 +1251,14 @@ void World::stepSpeculative(float deltaTime, SimulationStatistics& statistics,
         for (int iter = 0; iter < config.solverIterations; ++iter) {
             bool done = true;
             for (auto* c : positionContacts[g]) done = CollisionResolver::SolvePosition(*c) && done;
+            // A soft joint's separation under load stays with its soft rows
+            // up to half the slop; projecting it away would make the next
+            // step's rows pull it back, a jitter at rest.
             for (const auto& joint : groups[g].joints)
-                done = joint->solvePosition(config.penetrationSlop, config.maxPositionCorrection) && done;
+                done = (groupSubstepped[g]
+                    ? joint->solveSubstepPosition(0.5f * config.penetrationSlop, config.penetrationSlop,
+                                                  config.maxPositionCorrection)
+                    : joint->solvePosition(config.penetrationSlop, config.maxPositionCorrection)) && done;
             if (done) break;
         }
     }
