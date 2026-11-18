@@ -11,6 +11,11 @@
   joints last left light jointed bodies closing on their contacts, and
   restitution bounced that speed back: scenes with 1:40 to 1:350 jointed mass
   ratios gained up to 32% energy. The default order is unchanged bit for bit.
+- GCC and Clang builds disable floating-point contraction
+  (`-ffp-contract=off`). GCC fused multiply-adds whenever the target CPU had
+  FMA, so builds for newer CPUs (`-march=x86-64-v3`, and the current
+  ubuntu-latest CI compiler) gave different results and failed exact-cancellation
+  tests. Baseline x86-64 builds are unchanged bit for bit.
 - Documented the joint mass-ratio limit and redundant joints (see
   [joints](docs/joints-and-sleeping.md)).
 

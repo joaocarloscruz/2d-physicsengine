@@ -168,6 +168,9 @@ records such changes. Rebuild all consumers on upgrades; binary ABI compatibilit
 is not promised. CMake accepts any 1.x package for a 1.0 request. Export schemas are
 versioned independently (`schemaVersion: 1`); readers should ignore new fields.
 Bitwise reproducibility is expected only for identical inputs, builds and platforms.
+The CMake build passes `-ffp-contract=off` to GCC and Clang, so a build for a
+CPU with fused multiply-add (`-march=x86-64-v3`) gives the same results as a
+baseline x86-64 build; keep that flag if you compile the sources yourself.
 
 Migration from the previous unversioned API: replace shape casts such as
 `static_cast<Circle*>(body.shape)` with `static_cast<const Circle*>(body.shape.get())`.
