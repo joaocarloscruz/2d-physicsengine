@@ -43,7 +43,10 @@ comes to rest. Groups with a prismatic, weld, wheel or mouse joint keep the
 rigid solve even when the option is on. With substeps the motor cap applies
 per substep (`maxTorque * dt / solverSubsteps`) and `getMotorTorque()` reports
 the last substep's average. 1:1 swinging chains separate slightly more with the
-option (4.6 mm instead of 4.2 mm), which is why it is off by default.
+option (4.6 mm instead of 4.2 mm), which is why it is off by default. With the
+option on, a CCD box held against a static wall by a joint ends about 0.2 mm
+deeper than the rigid joint solve leaves it, and joints with anchors near
+`1e20` overflow (`std::overflow_error`) where the rigid solve does not.
 
 Put at most one joint on a pair (a `WeldJoint` locks a pair completely). Two joints
 on one pair can ask for the same thing twice (a revolute and a prismatic joint

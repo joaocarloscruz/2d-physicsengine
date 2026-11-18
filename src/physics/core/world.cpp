@@ -583,7 +583,12 @@ bool World::stepInternal(float deltaTime, Detail::IntegrationStrategy *strategy)
             }
             ++statistics.solvedIslandCount;
             statistics.solvedConstraintCount += static_cast<std::uint32_t>(island.contacts.size()+island.joints.size());
-            for (const auto& joint : island.joints) joint->warmStart(simulationConfig.warmStartFactor);
+            for (const auto& joint : island.joints) {
+                // Impulses left on the per-substep scale by enableJointSubsteps
+                // return to the single-solve scale before warm starting.
+                joint->matchSubsteps(1, deltaTime);
+                joint->warmStart(simulationConfig.warmStartFactor);
+            }
             for (auto* constraint : island.contacts)
                 if (constraint != integratedConstraint) CollisionResolver::WarmStart(*constraint);
             const bool alreadySolved = integratedPlan && island.joints.empty() &&
